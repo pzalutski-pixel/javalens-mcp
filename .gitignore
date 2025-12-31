@@ -1,0 +1,50 @@
+# Gradle
+.gradle/
+build/
+# Note: gradle/, gradlew, gradlew.bat are NOT ignored - they should be committed
+# so others can build without installing Gradle
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+*.swp
+*~
+
+# Build outputs
+*.jar
+*.class
+out/
+target/
+
+# Working folder - session continuity docs (not tracked)
+working/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temp files
+*.tmp
+*.bak
+*.javalens.bak
+
+# Environment
+.env
+.env.local
+
+# JavaLens Eclipse workspace metadata (generated when using javalens MCP)
+.javalens-workspace/
+
+# MCP configuration (machine-specific)
+.mcp.json
+
+# Claude Code configuration (machine-specific)
+.claude/
