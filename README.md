@@ -90,21 +90,17 @@ JavaLens wraps **Eclipse JDT Core** directly via OSGi, providing:
 
 ### Prerequisites
 
-- **Java 21** or later
+- **Java 21** or later (must be on PATH or set JAVA_HOME)
 
 ### Download
 
-Download the platform-specific distribution from [Releases](https://github.com/pzalutski-pixel/javalens-mcp/releases):
+Download from [Releases](https://github.com/pzalutski-pixel/javalens-mcp/releases):
 
 | Platform | File |
 |----------|------|
-| Windows | `javalens-win32.win32.x86_64.zip` |
-| Linux x64 | `javalens-linux.gtk.x86_64.tar.gz` |
-| Linux ARM64 | `javalens-linux.gtk.aarch64.tar.gz` |
-| macOS x64 | `javalens-macosx.cocoa.x86_64.tar.gz` |
-| macOS ARM64 | `javalens-macosx.cocoa.aarch64.tar.gz` |
+| All platforms | `javalens.zip` or `javalens.tar.gz` |
 
-Extract to a location of your choice.
+Extract to a location of your choice (e.g., `/opt/javalens` or `C:\javalens`).
 
 ### Configure MCP Client
 
@@ -114,8 +110,8 @@ Add to your MCP configuration (e.g., `.mcp.json` for Claude Code):
 {
   "mcpServers": {
     "javalens": {
-      "command": "/path/to/javalens/javalensc",
-      "args": ["-data", "/path/to/javalens-workspaces"]
+      "command": "java",
+      "args": ["-jar", "/path/to/javalens/javalens.jar", "-data", "/path/to/javalens-workspaces"]
     }
   }
 }
@@ -131,8 +127,8 @@ Set `JAVA_PROJECT_PATH` to auto-load a project when the server starts:
 {
   "mcpServers": {
     "javalens": {
-      "command": "/path/to/javalens/javalensc",
-      "args": ["-data", "/path/to/javalens-workspaces"],
+      "command": "java",
+      "args": ["-jar", "/path/to/javalens/javalens.jar", "-data", "/path/to/javalens-workspaces"],
       "env": {
         "JAVA_PROJECT_PATH": "/path/to/your/java/project"
       }

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <?pde version="3.5"?>
-<product name="JavaLens" uid="org.javalens.product" application="org.javalens.mcp.application" version="1.0.0.qualifier" type="bundles" includeLaunchers="true" autoIncludeRequirements="true" useFeatures="false">
+<product name="JavaLens" uid="org.javalens.product" application="org.javalens.mcp.application" version="1.0.0.qualifier" type="bundles" includeLaunchers="false" autoIncludeRequirements="true" useFeatures="false">
 
    <configIni use="default">
    </configIni>
@@ -16,11 +16,6 @@
       <vmArgsMac>-XstartOnFirstThread -Dorg.eclipse.swt.internal.carbon.smallFonts
       </vmArgsMac>
    </launcherArgs>
-
-   <launcher name="javalens">
-      <win useIco="false">
-      </win>
-   </launcher>
 
    <vm>
    </vm>
@@ -43,6 +38,7 @@
       <plugin id="org.eclipse.jdt.launching"/>
       <plugin id="org.eclipse.debug.core"/>
       <plugin id="org.eclipse.osgi"/>
+      <plugin id="org.eclipse.equinox.launcher"/>
       <plugin id="org.eclipse.text"/>
       <plugin id="org.apache.felix.scr"/>
    </plugins>

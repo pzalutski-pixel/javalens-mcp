@@ -48,3 +48,4 @@ logs/
 
 # Claude Code configuration (machine-specific)
 .claude/
+org.javalens.launcher/dependency-reduced-pom.xml

@@ -25,12 +25,19 @@ jobs:
     - name: Build and Test
       run: ./mvnw clean verify
 
+    - name: Create Universal Distribution
+      run: |
+        cd org.javalens.product/target/products/org.javalens.product/linux/gtk/x86_64
+        mv javalens javalens-${{ github.ref_name }}
+        zip -r ../../../../../javalens-${{ github.ref_name }}.zip javalens-${{ github.ref_name }}
+        tar -czvf ../../../../../javalens-${{ github.ref_name }}.tar.gz javalens-${{ github.ref_name }}
+
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v1
       with:
         files: |
-          org.javalens.product/target/products/*.zip
-          org.javalens.product/target/products/*.tar.gz
+          org.javalens.product/target/products/javalens-${{ github.ref_name }}.zip
+          org.javalens.product/target/products/javalens-${{ github.ref_name }}.tar.gz
         generate_release_notes: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

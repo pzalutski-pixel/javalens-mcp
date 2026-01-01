@@ -37,6 +37,7 @@
         <module>org.javalens.core.tests</module>
         <module>org.javalens.mcp</module>
         <module>org.javalens.mcp.tests</module>
+        <module>org.javalens.launcher</module>
         <module>org.javalens.product</module>
     </modules>
 

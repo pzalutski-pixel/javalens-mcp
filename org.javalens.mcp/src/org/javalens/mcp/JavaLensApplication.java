@@ -72,15 +72,13 @@ import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.UUID;
 
 /**
  * OSGi application entry point for JavaLens MCP server.
  * Reads JSON-RPC messages from stdin and writes responses to stdout.
  *
- * <p>Each session creates its own isolated workspace with a unique UUID.
- * The base workspace directory is provided via the -data OSGi parameter.
- * Session workspace: {base}/{uuid}/
+ * <p>Session isolation is handled by the JavaLensLauncher wrapper which
+ * injects a unique UUID into the workspace path before OSGi starts.
  */
 public class JavaLensApplication implements IApplication {
 
@@ -91,18 +89,9 @@ public class JavaLensApplication implements IApplication {
     private ToolRegistry toolRegistry;
     private McpProtocolHandler protocolHandler;
 
-    /** Unique session ID for this MCP instance */
-    private final String sessionId = UUID.randomUUID().toString().substring(0, 8);
-
-    /** Path to this session's workspace (for cleanup) */
-    private Path sessionWorkspacePath;
-
     @Override
     public Object start(IApplicationContext context) throws Exception {
-        log.info("JavaLens MCP Server starting (session: {})...", sessionId);
-
-        // Create unique workspace for this session BEFORE anything else
-        initializeSessionWorkspace();
+        log.info("JavaLens MCP Server starting...");
 
         // Initialize tool registry and register tools
         toolRegistry = new ToolRegistry();
@@ -119,47 +108,8 @@ public class JavaLensApplication implements IApplication {
         // Run the main message loop
         runMessageLoop();
 
-        // Clean up workspace files on exit
-        cleanup();
-
         log.info("JavaLens MCP Server stopped");
         return IApplication.EXIT_OK;
-    }
-
-    /**
-     * Initialize a unique workspace for this session.
-     * Creates a subdirectory under the base workspace with this session's UUID.
-     * This ensures each MCP instance has isolated .metadata and search index.
-     */
-    private void initializeSessionWorkspace() {
-        // Get base workspace from osgi.instance.area (set by -data parameter)
-        String baseArea = System.getProperty("osgi.instance.area");
-        if (baseArea == null) {
-            log.warn("osgi.instance.area not set, workspace isolation disabled");
-            return;
-        }
-
-        try {
-            // Convert file:/ URL to path
-            String pathStr = baseArea.replace("file:/", "").replace("file:", "");
-            Path basePath = Path.of(pathStr).normalize();
-
-            // Create session-specific workspace: {base}/{sessionId}/
-            sessionWorkspacePath = basePath.resolve(sessionId);
-            Files.createDirectories(sessionWorkspacePath);
-
-            // Override osgi.instance.area to point to session workspace
-            // This MUST happen before ResourcesPlugin is activated
-            String sessionAreaUrl = "file:/" + sessionWorkspacePath.toString().replace("\\", "/");
-            System.setProperty("osgi.instance.area", sessionAreaUrl);
-            System.setProperty("osgi.instance.area.default", sessionAreaUrl);
-
-            log.info("Session workspace created: {}", sessionWorkspacePath);
-
-        } catch (Exception e) {
-            log.error("Failed to create session workspace: {}", e.getMessage(), e);
-            // Continue without isolation - fall back to shared workspace
-        }
     }
 
     /**
@@ -328,42 +278,5 @@ public class JavaLensApplication implements IApplication {
     public void stop() {
         log.info("Stop requested");
         running = false;
-        cleanup();
-    }
-
-    /**
-     * Clean up this session's workspace on shutdown.
-     * Only deletes our session's unique workspace directory, not other sessions.
-     */
-    private void cleanup() {
-        if (sessionWorkspacePath == null) {
-            log.debug("No session workspace to clean up");
-            return;
-        }
-
-        try {
-            if (Files.exists(sessionWorkspacePath)) {
-                log.info("Cleaning up session workspace: {}", sessionWorkspacePath);
-                deleteDirectory(sessionWorkspacePath);
-            }
-        } catch (Exception e) {
-            log.warn("Failed to cleanup session workspace: {}", e.getMessage());
-        }
-    }
-
-    private void deleteDirectory(Path path) {
-        try {
-            Files.walk(path)
-                .sorted((a, b) -> b.compareTo(a)) // Reverse order - files before dirs
-                .forEach(p -> {
-                    try {
-                        Files.delete(p);
-                    } catch (Exception e) {
-                        log.trace("Could not delete: {}", p);
-                    }
-                });
-        } catch (Exception e) {
-            log.debug("Error walking directory for cleanup: {}", e.getMessage());
-        }
     }
 }
