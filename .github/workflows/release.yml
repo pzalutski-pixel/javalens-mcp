@@ -29,8 +29,8 @@ jobs:
       run: |
         cd org.javalens.product/target/products/org.javalens.product/linux/gtk/x86_64
         mv javalens javalens-${{ github.ref_name }}
-        zip -r ../../../../../javalens-${{ github.ref_name }}.zip javalens-${{ github.ref_name }}
-        tar -czvf ../../../../../javalens-${{ github.ref_name }}.tar.gz javalens-${{ github.ref_name }}
+        zip -r ../../../../javalens-${{ github.ref_name }}.zip javalens-${{ github.ref_name }}
+        tar -czvf ../../../../javalens-${{ github.ref_name }}.tar.gz javalens-${{ github.ref_name }}
 
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v1
