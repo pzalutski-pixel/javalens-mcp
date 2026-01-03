@@ -7,6 +7,8 @@ import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.IJdtService;
 import org.javalens.core.exceptions.ProjectNotLoadedException;
+import org.javalens.mcp.JavaLensApplication;
+import org.javalens.mcp.ProjectLoadingState;
 import org.javalens.mcp.models.ToolResponse;
 
 import java.util.ArrayList;
@@ -73,12 +75,25 @@ public abstract class AbstractTool implements Tool {
     /**
      * Default execute implementation that checks for loaded project
      * then delegates to executeWithService.
+     *
+     * <p>Handles three cases:
+     * <ul>
+     *   <li>Project is loading - returns "loading" message with hint to check health_check</li>
+     *   <li>Project load failed - returns error with the failure reason</li>
+     *   <li>No project loaded - returns standard "project not loaded" error</li>
+     * </ul>
      */
     @Override
     public ToolResponse execute(JsonNode arguments) {
         IJdtService service = serviceSupplier.get();
         if (service == null) {
-            return ToolResponse.projectNotLoaded();
+            // Check loading state to provide more specific feedback
+            ProjectLoadingState loadingState = JavaLensApplication.getLoadingState();
+            return switch (loadingState) {
+                case LOADING -> ToolResponse.projectLoading();
+                case FAILED -> ToolResponse.projectLoadFailed(JavaLensApplication.getLoadingError());
+                default -> ToolResponse.projectNotLoaded();
+            };
         }
         return executeWithService(service, arguments);
     }

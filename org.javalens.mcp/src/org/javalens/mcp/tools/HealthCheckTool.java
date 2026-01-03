@@ -1,6 +1,7 @@
 package org.javalens.mcp.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.javalens.mcp.ProjectLoadingState;
 import org.javalens.mcp.models.ToolResponse;
 
 import java.time.Duration;
@@ -21,12 +22,18 @@ public class HealthCheckTool implements Tool {
 
     private final Supplier<Boolean> projectLoadedSupplier;
     private final Supplier<Integer> toolCountSupplier;
+    private final Supplier<ProjectLoadingState> loadingStateSupplier;
+    private final Supplier<String> loadingErrorSupplier;
     private final Instant startTime;
 
     public HealthCheckTool(Supplier<Boolean> projectLoadedSupplier,
-                           Supplier<Integer> toolCountSupplier) {
+                           Supplier<Integer> toolCountSupplier,
+                           Supplier<ProjectLoadingState> loadingStateSupplier,
+                           Supplier<String> loadingErrorSupplier) {
         this.projectLoadedSupplier = projectLoadedSupplier;
         this.toolCountSupplier = toolCountSupplier;
+        this.loadingStateSupplier = loadingStateSupplier;
+        this.loadingErrorSupplier = loadingErrorSupplier;
         this.startTime = Instant.now();
     }
 
@@ -62,26 +69,44 @@ public class HealthCheckTool implements Tool {
     @Override
     public ToolResponse execute(JsonNode arguments) {
         Map<String, Object> status = new LinkedHashMap<>();
+        ProjectLoadingState loadingState = loadingStateSupplier.get();
 
-        // Basic status
-        status.put("status", projectLoadedSupplier.get() ? "Ready" : "Waiting for project");
+        // Basic status based on loading state
+        String statusMessage = switch (loadingState) {
+            case NOT_LOADED -> "Waiting for project";
+            case LOADING -> "Loading project...";
+            case LOADED -> "Ready";
+            case FAILED -> "Project load failed";
+        };
+        status.put("status", statusMessage);
         status.put("message", "JavaLens MCP Server is operational");
         status.put("version", "2.0.0-SNAPSHOT");
         status.put("startedAt", startTime.toString());
         status.put("uptime", getUptimeString());
 
-        // Project status
-        if (projectLoadedSupplier.get()) {
-            status.put("project", Map.of(
-                "loaded", true,
-                "message", "Project loaded successfully"
-            ));
-        } else {
-            status.put("project", Map.of(
-                "loaded", false,
-                "message", "No project loaded. Use load_project to load a Java project."
-            ));
+        // Project status with detailed loading state
+        Map<String, Object> projectStatus = new LinkedHashMap<>();
+        projectStatus.put("status", loadingState.name().toLowerCase());
+
+        switch (loadingState) {
+            case NOT_LOADED -> {
+                projectStatus.put("loaded", false);
+                projectStatus.put("message", "No project loaded. Use load_project to load a Java project.");
+            }
+            case LOADING -> {
+                projectStatus.put("loaded", false);
+                projectStatus.put("message", "Project is loading, please wait...");
+            }
+            case LOADED -> {
+                projectStatus.put("loaded", true);
+                projectStatus.put("message", "Project loaded successfully");
+            }
+            case FAILED -> {
+                projectStatus.put("loaded", false);
+                projectStatus.put("message", "Project failed to load: " + loadingErrorSupplier.get());
+            }
         }
+        status.put("project", projectStatus);
 
         // Java/OS info
         status.put("java", Map.of(

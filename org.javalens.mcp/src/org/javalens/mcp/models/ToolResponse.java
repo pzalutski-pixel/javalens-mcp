@@ -77,6 +77,25 @@ public class ToolResponse {
     }
 
     /**
+     * Create a project loading in progress response.
+     * Used when auto-load is still running asynchronously.
+     */
+    public static ToolResponse projectLoading() {
+        return error("PROJECT_LOADING",
+            "Project is loading, please wait...",
+            "The project is being loaded asynchronously. Call health_check to monitor loading status.");
+    }
+
+    /**
+     * Create a project load failed error.
+     */
+    public static ToolResponse projectLoadFailed(String errorMessage) {
+        return error("PROJECT_LOAD_FAILED",
+            "Project failed to load: " + errorMessage,
+            "Check the project path and ensure it's a valid Java project.");
+    }
+
+    /**
      * Create a file not found error.
      */
     public static ToolResponse fileNotFound(String path) {

@@ -72,6 +72,7 @@ import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * OSGi application entry point for JavaLens MCP server.
@@ -86,12 +87,35 @@ public class JavaLensApplication implements IApplication {
 
     private volatile boolean running = true;
     private volatile IJdtService jdtService;
+    private volatile ProjectLoadingState loadingState = ProjectLoadingState.NOT_LOADED;
+    private volatile String loadingError = null;
     private ToolRegistry toolRegistry;
     private McpProtocolHandler protocolHandler;
+
+    // Static instance for loading state access by tools
+    private static volatile JavaLensApplication instance;
+
+    /**
+     * Get the current project loading state.
+     * Used by tools to provide appropriate feedback when project is loading.
+     */
+    public static ProjectLoadingState getLoadingState() {
+        JavaLensApplication app = instance;
+        return app != null ? app.loadingState : ProjectLoadingState.NOT_LOADED;
+    }
+
+    /**
+     * Get the loading error message if loading failed.
+     */
+    public static String getLoadingError() {
+        JavaLensApplication app = instance;
+        return app != null ? app.loadingError : null;
+    }
 
     @Override
     public Object start(IApplicationContext context) throws Exception {
         log.info("JavaLens MCP Server starting...");
+        instance = this;
 
         // Initialize tool registry and register tools
         toolRegistry = new ToolRegistry();
@@ -102,10 +126,12 @@ public class JavaLensApplication implements IApplication {
 
         log.info("Registered {} tools", toolRegistry.getToolCount());
 
-        // Auto-load project from environment variable if set
-        autoLoadProjectFromEnv();
+        // Auto-load project from environment variable asynchronously
+        // This allows the MCP server to respond to initialize immediately
+        // while the project loads in the background
+        CompletableFuture.runAsync(this::autoLoadProjectFromEnv);
 
-        // Run the main message loop
+        // Run the main message loop (starts immediately, doesn't wait for project load)
         runMessageLoop();
 
         log.info("JavaLens MCP Server stopped");
@@ -114,44 +140,56 @@ public class JavaLensApplication implements IApplication {
 
     /**
      * Auto-load project from JAVA_PROJECT_PATH environment variable.
-     * This allows pre-configuring the project without calling load_project.
+     * This runs asynchronously to allow the MCP server to respond immediately.
+     * The loading state is tracked and can be queried via health_check.
      */
     private void autoLoadProjectFromEnv() {
         String projectPath = System.getenv("JAVA_PROJECT_PATH");
         if (projectPath == null || projectPath.isBlank()) {
             log.debug("JAVA_PROJECT_PATH not set, waiting for load_project call");
+            // State remains NOT_LOADED
             return;
         }
 
         Path path = Path.of(projectPath).toAbsolutePath().normalize();
         if (!Files.exists(path)) {
             log.warn("JAVA_PROJECT_PATH points to non-existent path: {}", projectPath);
+            loadingState = ProjectLoadingState.FAILED;
+            loadingError = "JAVA_PROJECT_PATH points to non-existent path: " + projectPath;
             return;
         }
 
         if (!Files.isDirectory(path)) {
             log.warn("JAVA_PROJECT_PATH is not a directory: {}", projectPath);
+            loadingState = ProjectLoadingState.FAILED;
+            loadingError = "JAVA_PROJECT_PATH is not a directory: " + projectPath;
             return;
         }
 
         log.info("Auto-loading project from JAVA_PROJECT_PATH: {}", path);
+        loadingState = ProjectLoadingState.LOADING;
 
         try {
             JdtServiceImpl service = new JdtServiceImpl();
             service.loadProject(path);
             this.jdtService = service;
+            loadingState = ProjectLoadingState.LOADED;
             log.info("Project auto-loaded successfully: {} files, {} packages",
                 service.getSourceFileCount(), service.getPackageCount());
         } catch (Exception e) {
             log.error("Failed to auto-load project from JAVA_PROJECT_PATH: {}", e.getMessage(), e);
+            loadingState = ProjectLoadingState.FAILED;
+            loadingError = e.getMessage();
         }
     }
 
     private void registerTools() {
-        // Register HealthCheckTool with suppliers for project status and tool count
+        // Register HealthCheckTool with suppliers for project status, tool count, and loading state
         toolRegistry.register(new HealthCheckTool(
             () -> jdtService != null,
-            () -> toolRegistry.getToolCount()
+            () -> toolRegistry.getToolCount(),
+            () -> loadingState,
+            () -> loadingError
         ));
 
         // Register LoadProjectTool - stores the JdtService when a project is loaded

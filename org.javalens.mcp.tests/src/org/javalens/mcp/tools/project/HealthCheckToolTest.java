@@ -1,6 +1,7 @@
 package org.javalens.mcp.tools.project;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.javalens.mcp.ProjectLoadingState;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.HealthCheckTool;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,12 +16,17 @@ class HealthCheckToolTest {
 
     private HealthCheckTool toolWithProject;
     private HealthCheckTool toolWithoutProject;
+    private HealthCheckTool toolLoading;
     private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() {
-        toolWithProject = new HealthCheckTool(() -> true, () -> 56);
-        toolWithoutProject = new HealthCheckTool(() -> false, () -> 56);
+        toolWithProject = new HealthCheckTool(() -> true, () -> 56,
+            () -> ProjectLoadingState.LOADED, () -> null);
+        toolWithoutProject = new HealthCheckTool(() -> false, () -> 56,
+            () -> ProjectLoadingState.NOT_LOADED, () -> null);
+        toolLoading = new HealthCheckTool(() -> false, () -> 56,
+            () -> ProjectLoadingState.LOADING, () -> null);
         objectMapper = new ObjectMapper();
     }
 

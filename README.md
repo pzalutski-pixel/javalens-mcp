@@ -137,6 +137,8 @@ Set `JAVA_PROJECT_PATH` to auto-load a project when the server starts:
 }
 ```
 
+> **Note:** Project loading happens asynchronously in the background. The MCP server responds immediately while the project loads. Use `health_check` to monitor loading status—it will show `"project.status": "loading"` until complete, then `"loaded"` when ready.
+
 ## How Workspaces Work
 
 Unlike in-memory code models, Eclipse JDT requires a **workspace directory** to store:
