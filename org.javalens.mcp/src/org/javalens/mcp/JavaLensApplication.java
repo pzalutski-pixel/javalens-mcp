@@ -169,17 +169,20 @@ public class JavaLensApplication implements IApplication {
         log.info("Auto-loading project from JAVA_PROJECT_PATH: {}", path);
         loadingState = ProjectLoadingState.LOADING;
 
+        long startTime = System.currentTimeMillis();
         try {
             JdtServiceImpl service = new JdtServiceImpl();
             service.loadProject(path);
             this.jdtService = service;
             loadingState = ProjectLoadingState.LOADED;
-            log.info("Project auto-loaded successfully: {} files, {} packages",
-                service.getSourceFileCount(), service.getPackageCount());
-        } catch (Exception e) {
-            log.error("Failed to auto-load project from JAVA_PROJECT_PATH: {}", e.getMessage(), e);
+            
+            long totalTime = System.currentTimeMillis() - startTime;
+            log.info("Project auto-loaded successfully in {} ms: {} files, {} packages",
+                totalTime, service.getSourceFileCount(), service.getPackageCount());
+        } catch (Throwable e) {
+            log.error("CRITICAL: Failed to auto-load project from JAVA_PROJECT_PATH: {}", e.getMessage(), e);
             loadingState = ProjectLoadingState.FAILED;
-            loadingError = e.getMessage();
+            loadingError = e.getClass().getSimpleName() + ": " + e.getMessage();
         }
     }
 

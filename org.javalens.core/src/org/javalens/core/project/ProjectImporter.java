@@ -17,8 +17,13 @@ import java.io.File;
 import java.io.InputStreamReader;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.FileVisitOption;
+import java.nio.file.FileVisitResult;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
@@ -26,7 +31,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /**
- * Imports external Java projects (Maven/Gradle) into the Eclipse workspace
+ * Imports external Java projects (Maven/Gradle/Bazel) into the Eclipse workspace
  * with proper classpath configuration for JDT analysis.
  *
  * Uses linked folders to keep all Eclipse metadata in the workspace,
@@ -36,7 +41,7 @@ public class ProjectImporter {
 
     private static final Logger log = LoggerFactory.getLogger(ProjectImporter.class);
 
-    public enum BuildSystem { MAVEN, GRADLE, UNKNOWN }
+    public enum BuildSystem { MAVEN, GRADLE, BAZEL, UNKNOWN }
 
     // Source folder mapping: external relative path -> linked folder name
     private static final String[][] SOURCE_MAPPINGS = {
@@ -46,6 +51,13 @@ public class ProjectImporter {
         {"src/test/kotlin", "src-test-kotlin"},
         {"src", "src"}
     };
+
+    // Directories to ignore during recursive scanning
+    private static final List<String> IGNORED_DIRS = List.of(
+        ".git", ".svn", ".mvn", ".gradle", ".settings", ".metadata", ".project", ".classpath",
+        "node_modules", "target", "build", "bin", "out", "dist",
+        "bazel-bin", "bazel-out", "bazel-testlogs", "bazel-genfiles"
+    );
 
     // Pattern to extract module names from pom.xml
     private static final Pattern MODULE_PATTERN = Pattern.compile("<module>([^<]+)</module>");
@@ -103,6 +115,12 @@ public class ProjectImporter {
             Files.exists(projectPath.resolve("build.gradle.kts"))) {
             return BuildSystem.GRADLE;
         }
+        if (Files.exists(projectPath.resolve("WORKSPACE")) ||
+            Files.exists(projectPath.resolve("WORKSPACE.bazel")) ||
+            Files.exists(projectPath.resolve("BUILD")) ||
+            Files.exists(projectPath.resolve("BUILD.bazel"))) {
+            return BuildSystem.BAZEL;
+        }
         return BuildSystem.UNKNOWN;
     }
 
@@ -110,6 +128,9 @@ public class ProjectImporter {
      * Detect if this is a multi-module Maven project.
      */
     public boolean isMultiModuleProject(java.nio.file.Path projectPath) {
+        if (detectBuildSystem(projectPath) != BuildSystem.MAVEN) {
+            return false;
+        }
         java.nio.file.Path pomPath = projectPath.resolve("pom.xml");
         if (!Files.exists(pomPath)) {
             return false;
@@ -154,18 +175,56 @@ public class ProjectImporter {
 
     /**
      * Get all source directories, including from submodules if multi-module project.
+     * For Bazel or unknown structures, recursively scan subdirectories.
      */
     private List<java.nio.file.Path> getAllSourcePaths(java.nio.file.Path projectPath) {
         List<java.nio.file.Path> sourcePaths = new ArrayList<>();
+        BuildSystem bs = detectBuildSystem(projectPath);
 
-        // First check the root project
+        log.info("Collecting source paths for {} project: {}", bs, projectPath);
+
+        // 1. Check the root project
         addSourcePathsFromDirectory(projectPath, sourcePaths);
 
-        // If multi-module, also check each module
+        // 2. Handle Maven modules
         if (isMultiModuleProject(projectPath)) {
             for (java.nio.file.Path modulePath : getModules(projectPath)) {
                 addSourcePathsFromDirectory(modulePath, sourcePaths);
             }
+        }
+
+        // 3. For Bazel or UNKNOWN (like microservices at root), scan recursively (depth 5)
+        // This handles cases like: root/microservice1/src/main/java
+        if (bs == BuildSystem.BAZEL || bs == BuildSystem.UNKNOWN || sourcePaths.isEmpty()) {
+            log.info("Scanning for subproject source folders (depth 5)...");
+            try {
+                Files.walkFileTree(projectPath, EnumSet.noneOf(FileVisitOption.class), 5, new SimpleFileVisitor<java.nio.file.Path>() {
+                    @Override
+                    public FileVisitResult preVisitDirectory(java.nio.file.Path dir, BasicFileAttributes attrs) {
+                        String name = dir.getFileName().toString();
+                        if (IGNORED_DIRS.contains(name)) {
+                            return FileVisitResult.SKIP_SUBTREE;
+                        }
+                        
+                        // Avoid walking into already found source paths
+                        if (sourcePaths.stream().anyMatch(sp -> dir.startsWith(sp))) {
+                            return FileVisitResult.SKIP_SUBTREE;
+                        }
+
+                        if (!dir.equals(projectPath)) {
+                            addSourcePathsFromDirectory(dir, sourcePaths);
+                        }
+                        return FileVisitResult.CONTINUE;
+                    }
+                });
+            } catch (IOException e) {
+                log.warn("Error scanning for subprojects: {}", e.getMessage());
+            }
+        }
+
+        log.info("Found total {} source paths", sourcePaths.size());
+        for (java.nio.file.Path p : sourcePaths) {
+            log.debug("Source path: {}", p);
         }
 
         return sourcePaths;
@@ -235,9 +294,12 @@ public class ProjectImporter {
     private void addDependencyEntries(List<IClasspathEntry> entries, java.nio.file.Path projectPath) {
         BuildSystem buildSystem = detectBuildSystem(projectPath);
 
+        log.info("Adding dependencies for {} project...", buildSystem);
+
         List<String> jars = switch (buildSystem) {
             case MAVEN -> getMavenDependencies(projectPath);
             case GRADLE -> getGradleDependencies(projectPath);
+            case BAZEL -> getBazelDependencies(projectPath);
             default -> List.of();
         };
 
@@ -249,14 +311,55 @@ public class ProjectImporter {
             }
         }
 
-        // Add compiled classes directories (Maven)
+        // Standard output locations
         addIfExists(entries, projectPath, "target/classes");
         addIfExists(entries, projectPath, "target/test-classes");
-        // Add compiled classes directories (Gradle)
         addIfExists(entries, projectPath, "build/classes/java/main");
         addIfExists(entries, projectPath, "build/classes/java/test");
 
-        log.info("Added {} dependency entries from {}", jars.size(), buildSystem);
+        // Bazel-specific output locations (searching for compiled classes in bazel-bin)
+        if (buildSystem == BuildSystem.BAZEL) {
+            findBazelOutputDirs(projectPath, entries);
+        }
+
+        log.info("Added {} dependency entries (JARs/Classes)", entries.size());
+    }
+
+    private List<String> getBazelDependencies(java.nio.file.Path projectPath) {
+        List<String> jars = new ArrayList<>();
+        java.nio.file.Path bazelBin = projectPath.resolve("bazel-bin");
+        
+        if (Files.exists(bazelBin) && Files.isSymbolicLink(bazelBin)) {
+            log.info("Bazel-bin detected, scanning for dependency JARs...");
+            try (Stream<java.nio.file.Path> stream = Files.walk(bazelBin, 4)) {
+                stream.filter(p -> p.toString().endsWith(".jar"))
+                      .filter(p -> !p.toString().contains("-src.jar"))
+                      .filter(p -> !p.toString().contains("-sources.jar"))
+                      .map(p -> p.toAbsolutePath().toString())
+                      .forEach(jars::add);
+            } catch (IOException e) {
+                log.warn("Error scanning bazel-bin for JARs: {}", e.getMessage());
+            }
+        }
+        return jars;
+    }
+
+    private void findBazelOutputDirs(java.nio.file.Path projectPath, List<IClasspathEntry> entries) {
+        java.nio.file.Path bazelBin = projectPath.resolve("bazel-bin");
+        if (Files.exists(bazelBin)) {
+            log.info("Scanning bazel-bin for compiled class directories...");
+            try (Stream<java.nio.file.Path> stream = Files.walk(bazelBin, 6)) {
+                stream.filter(Files::isDirectory)
+                      .filter(p -> p.getFileName().toString().equals("classes") || p.toString().contains("_javac"))
+                      .forEach(p -> {
+                          IPath eclipsePath = new Path(p.toAbsolutePath().toString());
+                          entries.add(JavaCore.newLibraryEntry(eclipsePath, null, null));
+                          log.debug("Added Bazel class directory: {}", p);
+                      });
+            } catch (IOException e) {
+                log.warn("Error scanning bazel-bin for classes: {}", e.getMessage());
+            }
+        }
     }
 
     private void addIfExists(List<IClasspathEntry> entries, java.nio.file.Path projectPath, String relativePath) {

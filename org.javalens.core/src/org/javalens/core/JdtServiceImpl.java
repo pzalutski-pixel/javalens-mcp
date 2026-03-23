@@ -83,35 +83,54 @@ public class JdtServiceImpl implements IJdtService {
      * @throws CoreException if project loading fails
      */
     public void loadProject(Path path) throws CoreException {
-        log.info("Loading project: {}", path);
+        long startTime = System.currentTimeMillis();
+        log.info("=== PROJECT LOADING START: {} ===", path);
 
         this.projectRoot = path.toAbsolutePath().normalize();
         this.pathUtils = new PathUtilsImpl(projectRoot);
 
-        // Initialize workspace
+        // 1. Initialize workspace
+        long stepStart = System.currentTimeMillis();
+        log.info("[1/6] Initializing Eclipse workspace...");
         workspaceManager.initialize();
+        log.info("Workspace initialized in {} ms", System.currentTimeMillis() - stepStart);
 
-        // Detect build system and collect project info
+        // 2. Build system detection and project info
+        stepStart = System.currentTimeMillis();
+        log.info("[2/6] Detecting build system and scanning for sources...");
         this.buildSystem = projectImporter.detectBuildSystem(projectRoot);
         this.sourceFileCount = projectImporter.countSourceFiles(projectRoot);
         this.packages = projectImporter.findPackages(projectRoot);
         this.packageCount = packages.size();
 
-        log.info("Detected {} build system, {} source files, {} packages",
-            buildSystem, sourceFileCount, packageCount);
+        log.info("Detected {} build system, {} source files, {} packages in {} ms",
+            buildSystem, sourceFileCount, packageCount, System.currentTimeMillis() - stepStart);
 
-        // Create project in workspace (metadata stays in workspace, not user's project)
+        // 3. Create project in workspace
+        stepStart = System.currentTimeMillis();
         String projectName = "javalens-" + projectRoot.getFileName();
+        log.info("[3/6] Creating project in workspace: {}", projectName);
         IProject project = workspaceManager.createLinkedProject(projectName, projectRoot);
+        log.info("Project created in {} ms", System.currentTimeMillis() - stepStart);
 
-        // Configure as Java project with linked source folders
+        // 4. Configure as Java project
+        stepStart = System.currentTimeMillis();
+        log.info("[4/6] Configuring JDT classpath and linked folders...");
         this.javaProject = projectImporter.configureJavaProject(project, projectRoot, workspaceManager);
+        log.info("Classpath configured in {} ms. Entry count: {}", 
+            System.currentTimeMillis() - stepStart, getClasspathEntryCount());
 
-        // Initialize search service
+        // 5. Initialize search service
+        stepStart = System.currentTimeMillis();
+        log.info("[5/6] Initializing Search Service (indexing)...");
         this.searchService = new SearchService(javaProject);
+        log.info("Search service ready in {} ms", System.currentTimeMillis() - stepStart);
 
+        // 6. Finalize
         this.loadedAt = Instant.now();
-        log.info("Project loaded successfully at {}", loadedAt);
+        long totalTime = System.currentTimeMillis() - startTime;
+        log.info("[6/6] Project loaded successfully in {} ms at {}", totalTime, loadedAt);
+        log.info("=== PROJECT LOADING COMPLETE ===");
     }
 
     @Override

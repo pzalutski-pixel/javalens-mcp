@@ -78,6 +78,22 @@ class ProjectImporterTest {
     }
 
     @Test
+    @DisplayName("detectBuildSystem should detect Bazel project with WORKSPACE")
+    void detectBuildSystem_detectsBazelWorkspace(@TempDir Path tempDir) throws IOException {
+        Files.writeString(tempDir.resolve("WORKSPACE"), "# Bazel workspace");
+        ProjectImporter.BuildSystem buildSystem = importer.detectBuildSystem(tempDir);
+        assertEquals(ProjectImporter.BuildSystem.BAZEL, buildSystem);
+    }
+
+    @Test
+    @DisplayName("detectBuildSystem should detect Bazel project with BUILD file")
+    void detectBuildSystem_detectsBazelBuild(@TempDir Path tempDir) throws IOException {
+        Files.writeString(tempDir.resolve("BUILD"), "# Bazel build file");
+        ProjectImporter.BuildSystem buildSystem = importer.detectBuildSystem(tempDir);
+        assertEquals(ProjectImporter.BuildSystem.BAZEL, buildSystem);
+    }
+
+    @Test
     @DisplayName("detectBuildSystem should return UNKNOWN for plain project")
     void detectBuildSystem_returnsUnknownForPlainProject(@TempDir Path tempDir) throws IOException {
         // Create a plain Java project with no build file
