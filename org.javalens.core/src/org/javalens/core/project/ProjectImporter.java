@@ -106,21 +106,36 @@ public class ProjectImporter {
 
     /**
      * Detect build system from project structure.
+     * Checks root and subdirectories (depth 2) to support multi-service repositories.
      */
     public BuildSystem detectBuildSystem(java.nio.file.Path projectPath) {
         if (Files.exists(projectPath.resolve("pom.xml"))) {
+            log.info("Detected MAVEN project at root");
             return BuildSystem.MAVEN;
         }
-        if (Files.exists(projectPath.resolve("build.gradle")) ||
+        if (Files.exists(projectPath.resolve("build.gradle")) || 
             Files.exists(projectPath.resolve("build.gradle.kts"))) {
+            log.info("Detected GRADLE project at root");
             return BuildSystem.GRADLE;
         }
-        if (Files.exists(projectPath.resolve("WORKSPACE")) ||
-            Files.exists(projectPath.resolve("WORKSPACE.bazel")) ||
-            Files.exists(projectPath.resolve("BUILD")) ||
-            Files.exists(projectPath.resolve("BUILD.bazel"))) {
-            return BuildSystem.BAZEL;
+            
+        // Check for Bazel files at root or in subdirectories (depth 2)
+        log.info("Scanning for Bazel workspace files (WORKSPACE, MODULE.bazel, BUILD)...");
+        try (Stream<java.nio.file.Path> stream = Files.walk(projectPath, 2)) {
+            boolean isBazel = stream.anyMatch(p -> {
+                String name = p.getFileName().toString();
+                return name.equals("WORKSPACE") || name.equals("WORKSPACE.bazel") ||
+                       name.equals("BUILD") || name.equals("BUILD.bazel") ||
+                       name.equals("MODULE.bazel");
+            });
+            if (isBazel) {
+                log.info("Detected BAZEL project structure");
+                return BuildSystem.BAZEL;
+            }
+        } catch (IOException e) {
+            log.debug("Error during build system detection: {}", e.getMessage());
         }
+        
         return BuildSystem.UNKNOWN;
     }
 
@@ -327,38 +342,76 @@ public class ProjectImporter {
 
     private List<String> getBazelDependencies(java.nio.file.Path projectPath) {
         List<String> jars = new ArrayList<>();
-        java.nio.file.Path bazelBin = projectPath.resolve("bazel-bin");
         
-        if (Files.exists(bazelBin) && Files.isSymbolicLink(bazelBin)) {
-            log.info("Bazel-bin detected, scanning for dependency JARs...");
-            try (Stream<java.nio.file.Path> stream = Files.walk(bazelBin, 4)) {
-                stream.filter(p -> p.toString().endsWith(".jar"))
-                      .filter(p -> !p.toString().contains("-src.jar"))
-                      .filter(p -> !p.toString().contains("-sources.jar"))
-                      .map(p -> p.toAbsolutePath().toString())
-                      .forEach(jars::add);
+        // 1. Priorité racine : Si bazel-bin est à la racine, on ne prend que celui-là
+        java.nio.file.Path rootBazelBin = projectPath.resolve("bazel-bin");
+        if (Files.exists(rootBazelBin)) {
+            log.info("Root bazel-bin detected. Using only root dependencies.");
+            collectJarsFromBazelBin(rootBazelBin, jars);
+        } else {
+            // 2. Stratégie Microservices : Scan des sous-répertoires au niveau 1
+            log.info("No root bazel-bin. Scanning subdirectories for microservice dependencies...");
+            try (Stream<java.nio.file.Path> stream = Files.list(projectPath)) {
+                stream.filter(Files::isDirectory)
+                      .map(p -> p.resolve("bazel-bin"))
+                      .filter(Files::exists)
+                      .forEach(bin -> {
+                          log.info("Found bazel-bin in microservice: {}", bin.getParent().getFileName());
+                          collectJarsFromBazelBin(bin, jars);
+                      });
             } catch (IOException e) {
-                log.warn("Error scanning bazel-bin for JARs: {}", e.getMessage());
+                log.warn("Error scanning subdirectories for bazel-bin: {}", e.getMessage());
             }
         }
+        
+        if (jars.size() > 1000) {
+            log.warn("Too many JARs ({}) found. Limiting to first 1000 to prevent classpath overflow.", jars.size());
+            return jars.subList(0, 1000);
+        }
+        
         return jars;
     }
 
+    private void collectJarsFromBazelBin(java.nio.file.Path bazelBin, List<String> jars) {
+        try (Stream<java.nio.file.Path> stream = Files.walk(bazelBin, 3)) {
+            stream.filter(p -> p.toString().endsWith(".jar"))
+                  .filter(p -> !p.toString().contains("-src.jar"))
+                  .filter(p -> !p.toString().contains("-sources.jar"))
+                  .map(p -> p.toAbsolutePath().toString())
+                  .forEach(jars::add);
+        } catch (IOException e) {
+            log.warn("Error collecting JARs from {}: {}", bazelBin, e.getMessage());
+        }
+    }
+
     private void findBazelOutputDirs(java.nio.file.Path projectPath, List<IClasspathEntry> entries) {
-        java.nio.file.Path bazelBin = projectPath.resolve("bazel-bin");
-        if (Files.exists(bazelBin)) {
-            log.info("Scanning bazel-bin for compiled class directories...");
-            try (Stream<java.nio.file.Path> stream = Files.walk(bazelBin, 6)) {
+        // Logique hiérarchique identique pour les dossiers de classes
+        java.nio.file.Path rootBazelBin = projectPath.resolve("bazel-bin");
+        if (Files.exists(rootBazelBin)) {
+            collectClassesFromBazelBin(rootBazelBin, entries);
+        } else {
+            try (Stream<java.nio.file.Path> stream = Files.list(projectPath)) {
                 stream.filter(Files::isDirectory)
-                      .filter(p -> p.getFileName().toString().equals("classes") || p.toString().contains("_javac"))
-                      .forEach(p -> {
-                          IPath eclipsePath = new Path(p.toAbsolutePath().toString());
-                          entries.add(JavaCore.newLibraryEntry(eclipsePath, null, null));
-                          log.debug("Added Bazel class directory: {}", p);
-                      });
+                      .map(p -> p.resolve("bazel-bin"))
+                      .filter(Files::exists)
+                      .forEach(bin -> collectClassesFromBazelBin(bin, entries));
             } catch (IOException e) {
-                log.warn("Error scanning bazel-bin for classes: {}", e.getMessage());
+                log.debug("Error scanning subdirectories for bazel-bin classes: {}", e.getMessage());
             }
+        }
+    }
+
+    private void collectClassesFromBazelBin(java.nio.file.Path bazelBin, List<IClasspathEntry> entries) {
+        try (Stream<java.nio.file.Path> stream = Files.walk(bazelBin, 5)) {
+            stream.filter(Files::isDirectory)
+                  .filter(p -> p.getFileName().toString().equals("classes") || p.toString().contains("_javac"))
+                  .forEach(p -> {
+                      IPath eclipsePath = new Path(p.toAbsolutePath().toString());
+                      entries.add(JavaCore.newLibraryEntry(eclipsePath, null, null));
+                      log.debug("Added Bazel class directory: {}", p);
+                  });
+        } catch (IOException e) {
+            log.debug("Error collecting classes from {}: {}", bazelBin, e.getMessage());
         }
     }
 
