@@ -22,6 +22,12 @@
             <artifactId>org.eclipse.equinox.launcher</artifactId>
             <version>1.6.900</version>
         </dependency>
+        <!-- Logger provider to see logs in console/file -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-simple</artifactId>
+            <version>2.0.9</version>
+        </dependency>
     </dependencies>
 
     <build>
