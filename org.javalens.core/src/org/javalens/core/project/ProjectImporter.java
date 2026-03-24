@@ -9,8 +9,6 @@ import org.eclipse.jdt.core.IClasspathEntry;
 import org.eclipse.jdt.core.IJavaProject;
 import org.eclipse.jdt.core.JavaCore;
 import org.eclipse.jdt.launching.JavaRuntime;
-import org.eclipse.jdt.launching.environments.IExecutionEnvironment;
-import org.eclipse.jdt.launching.environments.IExecutionEnvironmentsManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -83,14 +81,10 @@ public class ProjectImporter {
         List<IClasspathEntry> entries = new ArrayList<>();
 
         // 1. Add JRE container - Force JavaSE-21 for consistency in Docker
-        IExecutionEnvironmentsManager envManager = JavaRuntime.getExecutionEnvironmentsManager();
-        IExecutionEnvironment env = envManager.getEnvironment("JavaSE-21");
-        IPath jreContainerPath;
-        if (env != null) {
-            jreContainerPath = JavaRuntime.newJREContainerPath(env);
-        } else {
-            jreContainerPath = JavaRuntime.getDefaultJREContainerEntry().getPath();
-        }
+        // We use the direct path string to avoid access restrictions on internal APIs
+        IPath jreContainerPath = new Path(JavaRuntime.JRE_CONTAINER)
+                                    .append("org.eclipse.jdt.internal.debug.ui.launcher.StandardVMType")
+                                    .append("JavaSE-21");
         entries.add(JavaCore.newContainerEntry(jreContainerPath));
 
         // 2. Create linked folders and add source entries
