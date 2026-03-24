@@ -80,15 +80,53 @@ public class ProjectImporter {
         // Build classpath entries
         List<IClasspathEntry> entries = new ArrayList<>();
 
-        // 1. Add JRE container - Force JavaSE-21 for consistency in Docker
-        // We use the direct path string to avoid access restrictions on internal APIs
-        IPath jreContainerPath = new Path(JavaRuntime.JRE_CONTAINER)
-                                    .append("org.eclipse.jdt.internal.debug.ui.launcher.StandardVMType")
-                                    .append("JavaSE-21");
-        entries.add(JavaCore.newContainerEntry(jreContainerPath));
+        // 1. Add JRE/JDK entries
+        addJdkEntries(entries);
 
         // 2. Create linked folders and add source entries
         addSourceEntries(entries, project, projectPath, workspaceManager);
+...
+    private void addJdkEntries(List<IClasspathEntry> entries) {
+        // 1. Try JAVA_HOME from environment
+        String javaHome = System.getenv("JAVA_HOME");
+        if (javaHome == null || javaHome.isBlank()) {
+            javaHome = System.getProperty("java.home");
+        }
+
+        if (javaHome != null && !javaHome.isBlank()) {
+            java.nio.file.Path jdkPath = java.nio.file.Path.of(javaHome);
+            log.info("Detected JDK at: {}", jdkPath);
+
+            // In Java 9+, the modules are in the 'lib/modules' file or 'jmods' directory
+            java.nio.file.Path jmods = jdkPath.resolve("jmods");
+            if (Files.exists(jmods)) {
+                log.info("Adding JDK modules from jmods directory...");
+                try (Stream<java.nio.file.Path> stream = Files.list(jmods)) {
+                    stream.filter(p -> p.toString().endsWith(".jmod"))
+                          .forEach(p -> {
+                              IPath eclipsePath = new Path(p.toAbsolutePath().toString());
+                              entries.add(JavaCore.newLibraryEntry(eclipsePath, null, null));
+                          });
+                    return;
+                } catch (IOException e) {
+                    log.warn("Error reading jmods: {}", e.getMessage());
+                }
+            }
+            
+            // Fallback for some distributions: check lib/modules
+            java.nio.file.Path modules = jdkPath.resolve("lib").resolve("modules");
+            if (Files.exists(modules)) {
+                log.info("Adding JDK modules from lib/modules...");
+                entries.add(JavaCore.newLibraryEntry(new Path(modules.toAbsolutePath().toString()), null, null));
+                return;
+            }
+        }
+
+        // Final fallback: Standard JRE container
+        log.info("Using standard JRE container fallback");
+        IPath jrePath = JavaRuntime.getDefaultJREContainerEntry().getPath();
+        entries.add(JavaCore.newContainerEntry(jrePath));
+    }
 
         // 3. Add dependency JARs from build system
         addDependencyEntries(entries, projectPath);
