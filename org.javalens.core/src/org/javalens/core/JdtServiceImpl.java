@@ -5,6 +5,7 @@ import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IResource;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IPath;
+import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IJavaProject;
@@ -84,53 +85,51 @@ public class JdtServiceImpl implements IJdtService {
      */
     public void loadProject(Path path) throws CoreException {
         long startTime = System.currentTimeMillis();
-        log.info("=== PROJECT LOADING START: {} ===", path);
+        System.err.println("=== PROJECT LOADING START: " + path + " ===");
 
         this.projectRoot = path.toAbsolutePath().normalize();
         this.pathUtils = new PathUtilsImpl(projectRoot);
 
         // 1. Initialize workspace
         long stepStart = System.currentTimeMillis();
-        log.info("[1/6] Initializing Eclipse workspace...");
+        System.err.println("[1/6] Initializing Eclipse workspace...");
         workspaceManager.initialize();
-        log.info("Workspace initialized in {} ms", System.currentTimeMillis() - stepStart);
+        System.err.println("Workspace initialized in " + (System.currentTimeMillis() - stepStart) + " ms");
 
         // 2. Build system detection and project info
         stepStart = System.currentTimeMillis();
-        log.info("[2/6] Detecting build system and scanning for sources...");
+        System.err.println("[2/6] Detecting build system and scanning for sources...");
         this.buildSystem = projectImporter.detectBuildSystem(projectRoot);
         this.sourceFileCount = projectImporter.countSourceFiles(projectRoot);
         this.packages = projectImporter.findPackages(projectRoot);
         this.packageCount = packages.size();
 
-        log.info("Detected {} build system, {} source files, {} packages in {} ms",
-            buildSystem, sourceFileCount, packageCount, System.currentTimeMillis() - stepStart);
+        System.err.println("Detected " + buildSystem + " build system, " + sourceFileCount + " source files, " + packageCount + " packages in " + (System.currentTimeMillis() - stepStart) + " ms");
 
         // 3. Create project in workspace
         stepStart = System.currentTimeMillis();
         String projectName = "javalens-" + projectRoot.getFileName();
-        log.info("[3/6] Creating project in workspace: {}", projectName);
+        System.err.println("[3/6] Creating project in workspace: " + projectName);
         IProject project = workspaceManager.createLinkedProject(projectName, projectRoot);
-        log.info("Project created in {} ms", System.currentTimeMillis() - stepStart);
+        System.err.println("Project created in " + (System.currentTimeMillis() - stepStart) + " ms");
 
         // 4. Configure as Java project
         stepStart = System.currentTimeMillis();
-        log.info("[4/6] Configuring JDT classpath and linked folders...");
+        System.err.println("[4/6] Configuring JDT classpath and linked folders...");
         this.javaProject = projectImporter.configureJavaProject(project, projectRoot, workspaceManager);
-        log.info("Classpath configured in {} ms. Entry count: {}", 
-            System.currentTimeMillis() - stepStart, getClasspathEntryCount());
+        System.err.println("Classpath configured in " + (System.currentTimeMillis() - stepStart) + " ms. Entry count: " + getClasspathEntryCount());
 
         // 5. Initialize search service
         stepStart = System.currentTimeMillis();
-        log.info("[5/6] Initializing Search Service (indexing)...");
+        System.err.println("[5/6] Initializing Search Service (indexing)...");
         this.searchService = new SearchService(javaProject);
-        log.info("Search service ready in {} ms", System.currentTimeMillis() - stepStart);
+        System.err.println("Search service ready in " + (System.currentTimeMillis() - stepStart) + " ms");
 
         // 6. Finalize
         this.loadedAt = Instant.now();
         long totalTime = System.currentTimeMillis() - startTime;
-        log.info("[6/6] Project loaded successfully in {} ms at {}", totalTime, loadedAt);
-        log.info("=== PROJECT LOADING COMPLETE ===");
+        System.err.println("[6/6] Project loaded successfully in " + totalTime + " ms at " + loadedAt);
+        System.err.println("=== PROJECT LOADING COMPLETE ===");
     }
 
     @Override
@@ -174,8 +173,6 @@ public class JdtServiceImpl implements IJdtService {
         }
     }
 
-    // Getters for project info (used by LoadProjectTool response)
-
     @Override
     public IJavaProject getJavaProject() {
         return javaProject;
@@ -214,22 +211,12 @@ public class JdtServiceImpl implements IJdtService {
         }
     }
 
-    // ========== New Interface Methods for Tools ==========
-
     @Override
     public ICompilationUnit getCompilationUnit(Path filePath) {
-        if (javaProject == null) {
-            return null;
-        }
-
+        if (javaProject == null) return null;
         try {
-            // Convert path to a format we can search for
             String pathStr = filePath.toString().replace('\\', '/');
-
-            // Extract the package-qualified class path (e.g., dev/javalens/tools/SearchSymbolsTool.java)
             String classPath = pathStr;
-
-            // Remove common source prefixes to get the class path
             String[] sourcePrefixes = {"src/main/java/", "src/test/java/", "src/main/kotlin/", "src/test/kotlin/", "src/"};
             for (String prefix : sourcePrefixes) {
                 if (pathStr.contains(prefix)) {
@@ -238,40 +225,24 @@ public class JdtServiceImpl implements IJdtService {
                     break;
                 }
             }
-
-            // Convert path to package + class name
             String withoutExt = classPath.replace(".java", "");
             String qualifiedName = withoutExt.replace('/', '.');
-
-            // Try to find the type by qualified name
             IType type = javaProject.findType(qualifiedName);
-            if (type != null) {
-                return type.getCompilationUnit();
-            }
-
-            // Fallback: search through all source folders
+            if (type != null) return type.getCompilationUnit();
             for (IPackageFragmentRoot root : javaProject.getPackageFragmentRoots()) {
                 if (root.getKind() == IPackageFragmentRoot.K_SOURCE) {
-                    // Extract package name from classPath
                     int lastSlash = classPath.lastIndexOf('/');
                     String packageName = lastSlash > 0 ? classPath.substring(0, lastSlash).replace('/', '.') : "";
                     String className = lastSlash > 0 ? classPath.substring(lastSlash + 1) : classPath;
-
                     IPackageFragment pkg = root.getPackageFragment(packageName);
                     if (pkg != null && pkg.exists()) {
                         ICompilationUnit cu = pkg.getCompilationUnit(className);
-                        if (cu != null && cu.exists()) {
-                            return cu;
-                        }
+                        if (cu != null && cu.exists()) return cu;
                     }
                 }
             }
-
-            log.debug("Compilation unit not found for: {}", filePath);
             return null;
-
         } catch (Exception e) {
-            log.warn("Error getting compilation unit for {}: {}", filePath, e.getMessage());
             return null;
         }
     }
@@ -279,211 +250,112 @@ public class JdtServiceImpl implements IJdtService {
     @Override
     public IJavaElement getElementAtPosition(Path filePath, int line, int column) {
         ICompilationUnit cu = getCompilationUnit(filePath);
-        if (cu == null) {
-            log.debug("Compilation unit not found for: {}", filePath);
-            return null;
-        }
-
+        if (cu == null) return null;
         try {
-            // Ensure the compilation unit is open and reconciled for codeSelect to work
-            if (!cu.isOpen()) {
-                cu.open(null);
-            }
-
-            // Reconcile to ensure the AST is up to date
+            if (!cu.isOpen()) cu.open(null);
             cu.reconcile(ICompilationUnit.NO_AST, false, null, null);
-
             int offset = getOffset(cu, line, column);
-            log.debug("Looking for element at {}:{}:{} (offset {})", filePath, line, column, offset);
-
             IJavaElement[] elements = cu.codeSelect(offset, 0);
-            if (elements.length > 0) {
-                log.debug("Found element: {} ({})", elements[0].getElementName(), elements[0].getClass().getSimpleName());
-                return elements[0];
-            }
-
-            // Fallback: try to find element at offset using getElementAt
-            IJavaElement element = cu.getElementAt(offset);
-            if (element != null) {
-                log.debug("Found element via getElementAt: {} ({})", element.getElementName(), element.getClass().getSimpleName());
-                return element;
-            }
-
-            log.debug("No element found at position");
-            return null;
-        } catch (JavaModelException e) {
-            log.warn("Error getting element at position: {}", e.getMessage());
-            return null;
-        }
+            if (elements.length > 0) return elements[0];
+            return cu.getElementAt(offset);
+        } catch (JavaModelException e) { return null; }
     }
 
     @Override
     public IType getTypeAtPosition(Path filePath, int line, int column) {
         IJavaElement element = getElementAtPosition(filePath, line, column);
-        if (element instanceof IType type) {
-            return type;
-        }
-        // If the element is within a type, try to get the enclosing type
-        if (element != null) {
-            IType enclosingType = (IType) element.getAncestor(IJavaElement.TYPE);
-            return enclosingType;
-        }
+        if (element instanceof IType type) return type;
+        if (element != null) return (IType) element.getAncestor(IJavaElement.TYPE);
         return null;
     }
 
     @Override
     public IType findType(String typeName) {
-        if (javaProject == null || typeName == null || typeName.isBlank()) {
-            return null;
-        }
-
+        if (javaProject == null || typeName == null || typeName.isBlank()) return null;
         try {
-            // First try as fully qualified name
             IType type = javaProject.findType(typeName);
-            if (type != null) {
-                return type;
-            }
-
-            // Try searching for simple name in all packages
+            if (type != null) return type;
             for (IPackageFragmentRoot root : javaProject.getPackageFragmentRoots()) {
                 if (root.getKind() == IPackageFragmentRoot.K_SOURCE) {
                     for (IJavaElement child : root.getChildren()) {
                         if (child instanceof IPackageFragment pkg) {
                             for (ICompilationUnit cu : pkg.getCompilationUnits()) {
                                 for (IType t : cu.getTypes()) {
-                                    if (t.getElementName().equals(typeName)) {
-                                        return t;
-                                    }
+                                    if (t.getElementName().equals(typeName)) return t;
                                 }
                             }
                         }
                     }
                 }
             }
-
             return null;
-        } catch (JavaModelException e) {
-            log.warn("Error finding type {}: {}", typeName, e.getMessage());
-            return null;
-        }
+        } catch (JavaModelException e) { return null; }
     }
 
     @Override
     public String getContextLine(ICompilationUnit cu, int offset) {
         try {
             String source = cu.getSource();
-            if (source == null) {
-                return "";
-            }
-
-            // Find line start
+            if (source == null) return "";
             int lineStart = offset;
-            while (lineStart > 0 && source.charAt(lineStart - 1) != '\n') {
-                lineStart--;
-            }
-
-            // Find line end
+            while (lineStart > 0 && source.charAt(lineStart - 1) != '\n') lineStart--;
             int lineEnd = offset;
-            while (lineEnd < source.length() && source.charAt(lineEnd) != '\n' && source.charAt(lineEnd) != '\r') {
-                lineEnd++;
-            }
-
-            String line = source.substring(lineStart, Math.min(lineEnd, lineStart + 200));
-            return line.trim();
-        } catch (JavaModelException e) {
-            log.trace("Error getting context line: {}", e.getMessage());
-            return "";
-        }
+            while (lineEnd < source.length() && source.charAt(lineEnd) != '\n' && source.charAt(lineEnd) != '\r') lineEnd++;
+            return source.substring(lineStart, Math.min(lineEnd, lineStart + 200)).trim();
+        } catch (JavaModelException e) { return ""; }
     }
 
     @Override
     public int getOffset(ICompilationUnit cu, int line, int column) {
         try {
             String source = cu.getSource();
-            if (source == null) {
-                return 0;
-            }
-
+            if (source == null) return 0;
             int offset = 0;
             int currentLine = 0;
-
-            // Navigate to the correct line
             while (currentLine < line && offset < source.length()) {
-                if (source.charAt(offset) == '\n') {
-                    currentLine++;
-                }
+                if (source.charAt(offset) == '\n') currentLine++;
                 offset++;
             }
-
-            // Add column offset
             return Math.min(offset + column, source.length());
-        } catch (JavaModelException e) {
-            log.warn("Error calculating offset: {}", e.getMessage());
-            return 0;
-        }
+        } catch (JavaModelException e) { return 0; }
     }
 
     @Override
     public int getLineNumber(ICompilationUnit cu, int offset) {
         try {
             String source = cu.getSource();
-            if (source == null) {
-                return 0;
-            }
-
+            if (source == null) return 0;
             int line = 0;
             for (int i = 0; i < offset && i < source.length(); i++) {
-                if (source.charAt(i) == '\n') {
-                    line++;
-                }
+                if (source.charAt(i) == '\n') line++;
             }
             return line;
-        } catch (JavaModelException e) {
-            log.warn("Error calculating line number: {}", e.getMessage());
-            return 0;
-        }
+        } catch (JavaModelException e) { return 0; }
     }
 
     @Override
     public int getColumnNumber(ICompilationUnit cu, int offset) {
         try {
             String source = cu.getSource();
-            if (source == null) {
-                return 0;
-            }
-
+            if (source == null) return 0;
             int column = 0;
             for (int i = offset - 1; i >= 0; i--) {
-                if (source.charAt(i) == '\n') {
-                    break;
-                }
+                if (source.charAt(i) == '\n') break;
                 column++;
             }
             return column;
-        } catch (JavaModelException e) {
-            log.warn("Error calculating column number: {}", e.getMessage());
-            return 0;
-        }
+        } catch (JavaModelException e) { return 0; }
     }
 
     @Override
     public List<Path> getAllJavaFiles() {
         List<Path> files = new ArrayList<>();
-
-        if (javaProject == null) {
-            return files;
-        }
-
+        if (javaProject == null) return files;
         try {
             for (IPackageFragmentRoot root : javaProject.getPackageFragmentRoots()) {
-                if (root.getKind() == IPackageFragmentRoot.K_SOURCE) {
-                    collectJavaFiles(root, files);
-                }
+                if (root.getKind() == IPackageFragmentRoot.K_SOURCE) collectJavaFiles(root, files);
             }
-        } catch (JavaModelException e) {
-            log.warn("Error getting Java files: {}", e.getMessage());
-        }
-
+        } catch (JavaModelException e) { }
         return files;
     }
 
@@ -494,9 +366,7 @@ public class JdtServiceImpl implements IJdtService {
                     IResource resource = cu.getResource();
                     if (resource != null) {
                         IPath location = resource.getLocation();
-                        if (location != null) {
-                            files.add(Path.of(location.toOSString()));
-                        }
+                        if (location != null) files.add(Path.of(location.toOSString()));
                     }
                 }
             }
