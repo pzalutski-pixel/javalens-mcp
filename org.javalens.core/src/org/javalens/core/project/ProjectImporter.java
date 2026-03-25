@@ -55,6 +55,14 @@ public class ProjectImporter {
     public IJavaProject configureJavaProject(IProject project, java.nio.file.Path projectPath,
             org.javalens.core.workspace.WorkspaceManager workspaceManager) throws CoreException {
         IJavaProject javaProject = JavaCore.create(project);
+        
+        // Fix for NPE in headless environment: provide default options if preference service is missing
+        try {
+            javaProject.setOptions(JavaCore.getOptions());
+        } catch (Exception e) {
+            System.err.println("Warning: Could not set project options, JDT might be unstable: " + e.getMessage());
+        }
+
         List<IClasspathEntry> entries = new ArrayList<>();
 
         addJdkEntries(entries);
@@ -269,14 +277,20 @@ public class ProjectImporter {
     }
 
     public int countSourceFiles(java.nio.file.Path projectPath) {
-        try (Stream<java.nio.file.Path> stream = Files.walk(projectPath, 10)) {
-            return (int) stream.filter(p -> p.toString().endsWith(".java")).count();
-        } catch (IOException e) { return 0; }
+        System.err.println("Counting source files in: " + projectPath);
+        try (Stream<java.nio.file.Path> stream = Files.walk(projectPath, 20, FileVisitOption.FOLLOW_LINKS)) {
+            return (int) stream.filter(p -> p.toString().endsWith(".java"))
+                               .peek(p -> System.err.println("Found java file: " + p))
+                               .count();
+        } catch (IOException e) { 
+            System.err.println("Error counting source files: " + e.getMessage());
+            return 0; 
+        }
     }
 
     public List<String> findPackages(java.nio.file.Path projectPath) {
         List<String> packages = new ArrayList<>();
-        try (Stream<java.nio.file.Path> stream = Files.walk(projectPath, 10)) {
+        try (Stream<java.nio.file.Path> stream = Files.walk(projectPath, 20, FileVisitOption.FOLLOW_LINKS)) {
             stream.filter(p -> p.toString().endsWith(".java"))
                   .map(this::extractPackage)
                   .filter(p -> p != null && !p.isEmpty()).distinct().forEach(packages::add);
@@ -297,7 +311,7 @@ public class ProjectImporter {
     }
 
     private boolean hasJavaFiles(java.nio.file.Path dir) {
-        try (Stream<java.nio.file.Path> stream = Files.list(dir)) {
+        try (Stream<java.nio.file.Path> stream = Files.walk(dir, 10)) {
             return stream.anyMatch(p -> p.toString().endsWith(".java"));
         } catch (IOException e) { return false; }
     }

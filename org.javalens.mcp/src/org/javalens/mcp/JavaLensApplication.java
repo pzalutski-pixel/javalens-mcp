@@ -6,6 +6,8 @@ import org.javalens.mcp.protocol.McpProtocolHandler;
 import org.javalens.core.IJdtService;
 import org.javalens.core.JdtServiceImpl;
 import org.javalens.mcp.tools.*;
+import org.osgi.framework.Bundle;
+import org.osgi.framework.FrameworkUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -46,6 +48,9 @@ public class JavaLensApplication implements IApplication {
         // Use System.err for guaranteed logging visibility in javalens.log
         System.err.println("=== JavaLens MCP Server Starting (v2.0.0-SNAPSHOT) ===");
         instance = this;
+        
+        // Ensure critical bundles are started for headless execution
+        ensureBundlesStarted();
 
         try {
             // Initialize tools
@@ -204,6 +209,31 @@ public class JavaLensApplication implements IApplication {
         toolRegistry.register(new GetComplexityMetricsTool(() -> jdtService));
         toolRegistry.register(new GetDependencyGraphTool(() -> jdtService));
         toolRegistry.register(new FindCircularDependenciesTool(() -> jdtService));
+    }
+
+    private void ensureBundlesStarted() {
+        try {
+            Bundle bundle = FrameworkUtil.getBundle(JavaLensApplication.class);
+            if (bundle != null && bundle.getBundleContext() != null) {
+                for (Bundle b : bundle.getBundleContext().getBundles()) {
+                    String name = b.getSymbolicName();
+                    if (name.equals("org.eclipse.equinox.preferences") || 
+                        name.equals("org.eclipse.core.resources") ||
+                        name.equals("org.eclipse.jdt.core")) {
+                        if (b.getState() != Bundle.ACTIVE) {
+                            System.err.println("Forcing bundle start: " + name);
+                            try {
+                                b.start(Bundle.START_TRANSIENT);
+                            } catch (Exception e) {
+                                System.err.println("Failed to start " + name + ": " + e.getMessage());
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            System.err.println("Warning: Bundle starter failed: " + t.getMessage());
+        }
     }
 
     @Override
