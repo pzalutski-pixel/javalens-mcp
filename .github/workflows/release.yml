@@ -22,6 +22,12 @@ jobs:
         java-version: '21'
         distribution: 'temurin'
 
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        registry-url: 'https://registry.npmjs.org'
+
     - name: Build and Test
       run: ./mvnw clean verify
 
@@ -41,3 +47,12 @@ jobs:
         generate_release_notes: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Publish to npm
+      working-directory: npm
+      run: |
+        VERSION="${GITHUB_REF_NAME#v}"
+        npm version "$VERSION" --no-git-tag-version
+        npm publish
+      env:
+        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

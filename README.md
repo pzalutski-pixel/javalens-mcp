@@ -94,6 +94,24 @@ JavaLens wraps **Eclipse JDT Core** directly via OSGi, providing:
 
 JavaLens is an analytical server, not a compiler. It uses Eclipse JDT 2024-09 to parse and understand Java source code from **version 1.1 through 23**. Java 21 is required only as the server runtime.
 
+### Install via npm
+
+```json
+{
+  "mcpServers": {
+    "javalens": {
+      "command": "npx",
+      "args": ["-y", "javalens-mcp"],
+      "env": {
+        "JAVA_PROJECT_PATH": "/path/to/your/java/project"
+      }
+    }
+  }
+}
+```
+
+The distribution (~19 MB) is downloaded and cached on first run.
+
 ### Download
 
 Download from [Releases](https://github.com/pzalutski-pixel/javalens-mcp/releases):

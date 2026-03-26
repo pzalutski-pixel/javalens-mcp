@@ -46,6 +46,9 @@ logs/
 # MCP configuration (machine-specific)
 .mcp.json
 
+# npm wrapper
+npm/node_modules/
+
 # Claude Code configuration (machine-specific)
 .claude/
 org.javalens.launcher/dependency-reduced-pom.xml

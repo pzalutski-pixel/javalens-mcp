@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.1.1 - 2026-03-25
+
+### Added
+- npm package distribution (`npx -y javalens-mcp`)
+  - Downloads and caches the JavaLens distribution on first run
+  - Verifies Java 21+ before launching
+  - Reads JVM arguments from eclipse.ini automatically
+
+### Fixed
+- Updated all project versions from 1.0.0 to 1.1.1 across pom.xml, MANIFEST.MF, and product files
+  - Previously version was stuck at 1.0.0 in source while releases used git tags
+
 ## 1.1.0 - 2026-03-25
 
 ### Added

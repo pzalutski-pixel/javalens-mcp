@@ -2,9 +2,9 @@ Manifest-Version: 1.0
 Bundle-ManifestVersion: 2
 Bundle-Name: JavaLens Core Tests
 Bundle-SymbolicName: org.javalens.core.tests
-Bundle-Version: 1.0.0.qualifier
+Bundle-Version: 1.1.1.qualifier
 Bundle-Vendor: JavaLens
-Fragment-Host: org.javalens.core;bundle-version="1.0.0"
+Fragment-Host: org.javalens.core;bundle-version="1.1.1"
 Bundle-RequiredExecutionEnvironment: JavaSE-21
 Require-Bundle: junit-jupiter-api;bundle-version="[5.0.0,6.0.0)",
  junit-jupiter-params;bundle-version="[5.0.0,6.0.0)"
