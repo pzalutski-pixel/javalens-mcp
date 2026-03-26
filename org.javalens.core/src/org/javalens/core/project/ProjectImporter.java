@@ -347,29 +347,29 @@ public class ProjectImporter {
 
     /**
      * Get dependency JARs from Bazel build output.
-     * Scans bazel-bin for JAR files rather than running a Bazel subprocess,
+     * Scans bazel-bin and bazel-out for JAR files rather than running a Bazel subprocess,
      * similar to how Gradle dependencies are resolved via build output.
      */
     private List<String> getBazelDependencies(java.nio.file.Path projectPath) {
         List<String> jars = new ArrayList<>();
-        java.nio.file.Path bazelBin = projectPath.resolve("bazel-bin");
+        scanBazelDirForJars(projectPath.resolve("bazel-bin"), jars);
+        scanBazelDirForJars(projectPath.resolve("bazel-out"), jars);
+        log.debug("Found {} JARs from Bazel output", jars.size());
+        return jars;
+    }
 
-        if (!Files.exists(bazelBin)) {
-            log.debug("No bazel-bin directory found, skipping Bazel dependency scan");
-            return jars;
+    private void scanBazelDirForJars(java.nio.file.Path dir, List<String> jars) {
+        if (!Files.exists(dir)) {
+            return;
         }
-
-        try (Stream<java.nio.file.Path> stream = Files.walk(bazelBin)) {
+        try (Stream<java.nio.file.Path> stream = Files.walk(dir)) {
             stream.filter(p -> p.toString().endsWith(".jar"))
                   .filter(Files::isRegularFile)
                   .map(java.nio.file.Path::toString)
                   .forEach(jars::add);
         } catch (IOException e) {
-            log.warn("Failed to scan bazel-bin for JARs: {}", e.getMessage());
+            log.warn("Failed to scan {} for JARs: {}", dir, e.getMessage());
         }
-
-        log.debug("Found {} JARs in bazel-bin", jars.size());
-        return jars;
     }
 
     private boolean isWindows() {

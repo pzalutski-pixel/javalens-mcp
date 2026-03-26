@@ -1,6 +1,6 @@
 {
   "name": "javalens-mcp",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "MCP server for semantic Java code analysis, built on Eclipse JDT. Provides 56 tools for navigation, refactoring, and code intelligence.",
   "bin": {
     "javalens-mcp": "index.js"

@@ -372,6 +372,7 @@ Each MCP session is independent with its own workspace UUID. Multiple sessions c
 | `JAVA_PROJECT_PATH` | Auto-load project on startup | (none) |
 | `JAVALENS_TIMEOUT_SECONDS` | Operation timeout | 30 |
 | `JAVALENS_LOG_LEVEL` | TRACE/DEBUG/INFO/WARN/ERROR | INFO |
+| `JAVA_TOOL_OPTIONS` | JVM options, e.g. `-Xmx2g` for large projects | (default: 512m via eclipse.ini) |
 
 ## Building from Source
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.2 - 2026-03-26
+
+### Added
+- Bazel `bazel-out/` directory scanning for dependency JARs
+- Documented `JAVA_TOOL_OPTIONS` for JVM memory configuration on large projects
+
 ## 1.1.1 - 2026-03-25
 
 ### Added
