@@ -86,6 +86,10 @@ JavaLens wraps **Eclipse JDT Core** directly via OSGi, providing:
 - **Indexed search**: 10x faster than AST walking for large codebases
 - **Full AST access**: Direct manipulation for complex refactorings
 
+## Hosted deployment
+
+A hosted deployment is available on [Fronteir AI](https://fronteir.ai/mcp/pzalutski-pixel-javalens-mcp).
+
 ## Installation
 
 ### Prerequisites
