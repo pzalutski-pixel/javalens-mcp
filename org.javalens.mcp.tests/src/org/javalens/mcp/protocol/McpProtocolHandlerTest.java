@@ -259,6 +259,28 @@ class McpProtocolHandlerTest {
         assertNull(json.get("error"));
     }
 
+    // ========== Stdio Isolation Tests ==========
+
+    @Test
+    @DisplayName("processMessage should not write anything to stdout")
+    void processMessage_doesNotWriteToStdout() {
+        java.io.PrintStream originalOut = System.out;
+        java.io.ByteArrayOutputStream captured = new java.io.ByteArrayOutputStream();
+        System.setOut(new java.io.PrintStream(captured));
+
+        try {
+            // Process a request that triggers logging
+            handler.processMessage("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}");
+            handler.processMessage("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}");
+            handler.processMessage("{ invalid json }");
+
+            assertEquals(0, captured.size(),
+                "Protocol handler must not write to stdout — stdout is reserved for MCP responses");
+        } finally {
+            System.setOut(originalOut);
+        }
+    }
+
     // ========== Unknown Method Tests ==========
 
     @Test

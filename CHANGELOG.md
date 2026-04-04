@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.3 - 2026-04-04
+
+### Changed
+- npm package now bundles the full distribution instead of downloading at runtime
+  - No network dependency after install, no cache corruption, no version mismatch
+- Added IGNORED_DIRS to skip .git, node_modules, target, etc. during Bazel source scanning
+- Added slf4j.simple logging binding to product for production log visibility
+
 ## 1.1.2 - 2026-03-26
 
 ### Added

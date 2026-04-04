@@ -47,6 +47,12 @@ public class ProjectImporter {
         {"src", "src"}
     };
 
+    // Directories to skip during recursive source scanning
+    private static final List<String> IGNORED_DIRS = List.of(
+        ".git", ".svn", ".mvn", ".gradle", ".settings", ".metadata",
+        "node_modules", "target", "build", "bin", "out", "dist"
+    );
+
     // Pattern to extract module names from pom.xml
     private static final Pattern MODULE_PATTERN = Pattern.compile("<module>([^<]+)</module>");
 
@@ -427,6 +433,7 @@ public class ProjectImporter {
     private void addBazelSourcePaths(java.nio.file.Path projectPath, List<java.nio.file.Path> sourcePaths) {
         try (Stream<java.nio.file.Path> stream = Files.walk(projectPath)) {
             stream.filter(Files::isDirectory)
+                  .filter(dir -> !IGNORED_DIRS.contains(dir.getFileName().toString()))
                   .filter(dir -> !isBazelOutputDirectory(projectPath, dir))
                   .filter(this::isBazelJavaPackage)
                   .forEach(sourcePaths::add);

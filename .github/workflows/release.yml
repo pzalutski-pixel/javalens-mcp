@@ -48,6 +48,9 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+    - name: Bundle distribution for npm
+      run: cp -r org.javalens.product/target/products/org.javalens.product/linux/gtk/x86_64/javalens npm/dist
+
     - name: Publish to npm
       working-directory: npm
       run: |

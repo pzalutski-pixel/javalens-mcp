@@ -48,6 +48,7 @@ logs/
 
 # npm wrapper
 npm/node_modules/
+npm/dist/
 
 # Claude Code configuration (machine-specific)
 .claude/

@@ -5,11 +5,8 @@ const { execSync, spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const https = require('https');
 
-const PACKAGE_VERSION = require('./package.json').version;
-const GITHUB_REPO = 'pzalutski-pixel/javalens-mcp';
-const CACHE_DIR = path.join(os.homedir(), '.javalens', 'versions');
+const DIST_DIR = path.join(__dirname, 'dist');
 const WORKSPACE_DIR = path.join(os.tmpdir(), 'javalens-workspaces');
 
 function log(msg) {
@@ -17,12 +14,18 @@ function log(msg) {
 }
 
 function findJava() {
+  // Try java on PATH
   try {
     const output = execSync('java -version 2>&1', { encoding: 'utf-8' });
     const match = output.match(/version "(\d+)/);
     if (match && parseInt(match[1]) >= 21) return 'java';
+    if (match) {
+      log(`Java ${match[1]} found but Java 21 or later is required.`);
+      process.exit(1);
+    }
   } catch {}
 
+  // Try JAVA_HOME
   const javaHome = process.env.JAVA_HOME;
   if (javaHome) {
     const javaBin = path.join(javaHome, 'bin', process.platform === 'win32' ? 'java.exe' : 'java');
@@ -30,86 +33,18 @@ function findJava() {
       const output = execSync(`"${javaBin}" -version 2>&1`, { encoding: 'utf-8' });
       const match = output.match(/version "(\d+)/);
       if (match && parseInt(match[1]) >= 21) return javaBin;
+      if (match) {
+        log(`Java ${match[1]} found at JAVA_HOME but Java 21 or later is required.`);
+        process.exit(1);
+      }
     } catch {}
   }
 
   return null;
 }
 
-function download(url) {
-  return new Promise((resolve, reject) => {
-    const request = (url) => {
-      https.get(url, { headers: { 'User-Agent': 'javalens-mcp-npm' } }, (res) => {
-        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          request(res.headers.location);
-          return;
-        }
-        if (res.statusCode !== 200) {
-          reject(new Error(`Download failed: HTTP ${res.statusCode}`));
-          return;
-        }
-
-        const totalBytes = parseInt(res.headers['content-length'], 10);
-        let downloaded = 0;
-        const chunks = [];
-
-        res.on('data', (chunk) => {
-          chunks.push(chunk);
-          downloaded += chunk.length;
-          if (totalBytes) {
-            const pct = Math.round(downloaded / totalBytes * 100);
-            const mb = (downloaded / 1024 / 1024).toFixed(1);
-            process.stderr.write(`\r[javalens] Downloading... ${pct}% (${mb} MB)`);
-          }
-        });
-
-        res.on('end', () => {
-          if (totalBytes) process.stderr.write('\n');
-          resolve(Buffer.concat(chunks));
-        });
-
-        res.on('error', reject);
-      }).on('error', reject);
-    };
-    request(url);
-  });
-}
-
-async function ensureInstalled() {
-  const version = PACKAGE_VERSION;
-  const installDir = path.join(CACHE_DIR, version);
-  const javalensDir = path.join(installDir, `javalens-v${version}`);
-  const jarPath = path.join(javalensDir, 'javalens.jar');
-
-  if (fs.existsSync(jarPath)) {
-    return javalensDir;
-  }
-
-  log(`Installing JavaLens v${version}...`);
-
-  const url = `https://github.com/${GITHUB_REPO}/releases/download/v${version}/javalens-v${version}.tar.gz`;
-  const tarPath = path.join(os.tmpdir(), `javalens-v${version}.tar.gz`);
-
-  try {
-    const data = await download(url);
-    fs.mkdirSync(installDir, { recursive: true });
-    fs.writeFileSync(tarPath, data);
-
-    execSync(`tar -xzf "${tarPath}" -C "${installDir}"`, { stdio: 'pipe' });
-
-    if (!fs.existsSync(jarPath)) {
-      throw new Error('javalens.jar not found after extraction');
-    }
-
-    log(`Installed to ${javalensDir}`);
-    return javalensDir;
-  } finally {
-    try { fs.unlinkSync(tarPath); } catch {}
-  }
-}
-
-function parseEclipseIni(javalensDir) {
-  const iniPath = path.join(javalensDir, 'eclipse.ini');
+function parseEclipseIni() {
+  const iniPath = path.join(DIST_DIR, 'eclipse.ini');
   if (!fs.existsSync(iniPath)) return [];
 
   const lines = fs.readFileSync(iniPath, 'utf-8').split('\n');
@@ -130,9 +65,24 @@ function parseEclipseIni(javalensDir) {
   return vmargs;
 }
 
-function launch(javaBin, javalensDir, userArgs) {
-  const vmargs = parseEclipseIni(javalensDir);
-  const jarPath = path.join(javalensDir, 'javalens.jar');
+function cleanupOldCache() {
+  const oldCacheDir = path.join(os.homedir(), '.javalens', 'versions');
+  if (fs.existsSync(oldCacheDir)) {
+    try {
+      fs.rmSync(oldCacheDir, { recursive: true, force: true });
+      log('Cleaned up old download cache.');
+    } catch {}
+  }
+}
+
+function launch(javaBin, userArgs) {
+  const vmargs = parseEclipseIni();
+  const jarPath = path.join(DIST_DIR, 'javalens.jar');
+
+  if (!fs.existsSync(jarPath)) {
+    log('Error: Bundled distribution not found. Reinstall the package.');
+    process.exit(1);
+  }
 
   const hasData = userArgs.some(a => a === '-data' || a === '--data');
 
@@ -155,20 +105,18 @@ function launch(javaBin, javalensDir, userArgs) {
   });
 }
 
-async function main() {
+function main() {
   const javaBin = findJava();
   if (!javaBin) {
-    log('Error: Java 21 or later is required.');
+    log('Error: Java not found. Install Java 21 or later.');
     log('Install from: https://adoptium.net/');
     process.exit(1);
   }
 
-  const javalensDir = await ensureInstalled();
+  cleanupOldCache();
+
   const userArgs = process.argv.slice(2);
-  launch(javaBin, javalensDir, userArgs);
+  launch(javaBin, userArgs);
 }
 
-main().catch((err) => {
-  log(`Error: ${err.message}`);
-  process.exit(1);
-});
+main();
