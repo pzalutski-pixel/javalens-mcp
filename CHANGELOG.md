@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.4 - 2026-04-04
+
+### Changed
+- Updated npm package README with full feature documentation
+
 ## 1.1.3 - 2026-04-04
 
 ### Changed
