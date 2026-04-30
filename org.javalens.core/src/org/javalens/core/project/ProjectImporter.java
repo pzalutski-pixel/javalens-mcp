@@ -287,17 +287,24 @@ public class ProjectImporter {
 
     private List<String> getMavenDependencies(java.nio.file.Path projectPath) {
         List<String> jars = new ArrayList<>();
-        java.nio.file.Path cpFile = null;
+
+        // Use a relative output filename so Maven writes one cp file per module's
+        // basedir on a multi-module reactor build. With an absolute path every
+        // module overwrites the same file in turn and only the last module's
+        // classpath survives — leaving the union incomplete (e.g. backend's
+        // spring-security deps would be lost when a sibling module runs after it).
+        // The relative filename is namespaced so it cannot collide with user files.
+        String relativeCpFileName = "javalens-mvn-cp.txt";
+        List<java.nio.file.Path> generatedFiles = new ArrayList<>();
 
         try {
-            // Create temp file in system temp directory, not in user's project
-            cpFile = Files.createTempFile("javalens-", ".classpath");
-
             String mvnCmd = isWindows() ? "mvn.cmd" : "mvn";
             ProcessBuilder pb = new ProcessBuilder(
                 mvnCmd,
+                "-fae",                 // continue past per-module failures
                 "dependency:build-classpath",
-                "-Dmdep.outputFile=" + cpFile.toAbsolutePath(),
+                "-Dmdep.outputFile=" + relativeCpFileName,
+                "-Dmdep.regenerateFile=true",
                 "-q"
             );
             pb.directory(projectPath.toFile());
@@ -318,31 +325,69 @@ public class ProjectImporter {
                 return jars;
             }
 
-            if (process.exitValue() == 0 && Files.exists(cpFile)) {
-                String classpath = Files.readString(cpFile).trim();
-
-                if (!classpath.isEmpty()) {
-                    jars.addAll(Arrays.asList(classpath.split(File.pathSeparator)));
-                }
-                log.info("Got {} classpath entries from Maven", jars.size());
-            } else {
-                log.warn("Maven classpath command failed with exit code: {}", process.exitValue());
+            if (process.exitValue() != 0) {
+                log.warn("Maven exited with code {} — collecting partial classpath",
+                        process.exitValue());
             }
+
+            // Collect every per-module cp file Maven wrote. Files appear in each
+            // module's basedir; walking the tree picks them all up regardless of
+            // nested-module depth. Dedupe across modules — sibling modules share
+            // most transitive deps so the union has heavy overlap.
+            List<java.nio.file.Path> cpFiles;
+            try (Stream<java.nio.file.Path> stream = Files.walk(projectPath)) {
+                cpFiles = stream
+                    .filter(p -> shouldVisitForCpFile(projectPath, p))
+                    .filter(p -> relativeCpFileName.equals(p.getFileName().toString()))
+                    .toList();
+            }
+            generatedFiles.addAll(cpFiles);
+
+            java.util.LinkedHashSet<String> uniqueJars = new java.util.LinkedHashSet<>();
+            int filesRead = 0;
+            for (java.nio.file.Path cpFile : cpFiles) {
+                try {
+                    String classpath = Files.readString(cpFile).trim();
+                    if (!classpath.isEmpty()) {
+                        uniqueJars.addAll(Arrays.asList(classpath.split(File.pathSeparator)));
+                        filesRead++;
+                    }
+                } catch (IOException e) {
+                    log.trace("Could not read cp file {}: {}", cpFile, e.getMessage());
+                }
+            }
+            jars.addAll(uniqueJars);
+            log.info("Got {} unique classpath entries from {} module file(s)",
+                    jars.size(), filesRead);
 
         } catch (Exception e) {
             log.error("Failed to get Maven classpath", e);
         } finally {
-            // Always clean up temp file
-            if (cpFile != null) {
+            // Always clean up the per-module files we generated in the user's tree
+            for (java.nio.file.Path p : generatedFiles) {
                 try {
-                    Files.deleteIfExists(cpFile);
+                    Files.deleteIfExists(p);
                 } catch (Exception e) {
-                    log.trace("Could not delete temp classpath file: {}", e.getMessage());
+                    log.trace("Could not delete cp file {}: {}", p, e.getMessage());
                 }
             }
         }
 
         return jars;
+    }
+
+    /**
+     * Skip ignored directories (target/, .git/, node_modules/, etc.) when
+     * walking the project tree to collect cp files.
+     */
+    private boolean shouldVisitForCpFile(java.nio.file.Path projectRoot, java.nio.file.Path p) {
+        java.nio.file.Path rel = projectRoot.relativize(p);
+        for (java.nio.file.Path part : rel) {
+            if (IGNORED_DIRS.contains(part.getFileName().toString())) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private List<String> getGradleDependencies(java.nio.file.Path projectPath) {
