@@ -9,6 +9,7 @@ Bundle-ActivationPolicy: lazy
 Export-Package: org.javalens.core,
  org.javalens.core.exceptions,
  org.javalens.core.project,
+ org.javalens.core.project.model,
  org.javalens.core.search,
  org.javalens.core.workspace
 Import-Package: org.eclipse.core.resources,

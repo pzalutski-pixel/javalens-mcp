@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.example</groupId>
+    <artifactId>broken-maven-deps</artifactId>
+    <version>1.0.0</version>
+    <packaging>jar</packaging>
+
+    <name>Broken Maven Deps</name>
+    <description>Fixture for Bug X: when mvn dependency:build-classpath fails (here because
+        the declared dependency does not exist in any reachable repository), JavaLens must
+        surface a structured warning instead of silently returning an empty classpath.</description>
+
+    <properties>
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
+    </properties>
+
+    <dependencies>
+        <!-- Intentionally non-existent coordinates so mvn dependency resolution fails. -->
+        <dependency>
+            <groupId>com.example.does.not.exist</groupId>
+            <artifactId>nonexistent-artifact</artifactId>
+            <version>99.99.99</version>
+        </dependency>
+    </dependencies>
+</project>

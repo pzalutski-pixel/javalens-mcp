@@ -15,6 +15,7 @@ import org.eclipse.jdt.core.JavaCore;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.ISourceRange;
 import org.javalens.core.project.ProjectImporter;
+import org.javalens.core.project.model.LoadWarning;
 import org.javalens.core.search.SearchService;
 import org.javalens.core.workspace.WorkspaceManager;
 import org.slf4j.Logger;
@@ -117,6 +118,11 @@ public class JdtServiceImpl implements IJdtService {
     @Override
     public IPathUtils getPathUtils() {
         return pathUtils;
+    }
+
+    @Override
+    public List<LoadWarning> getWarnings() {
+        return projectImporter.getWarnings();
     }
 
     @Override

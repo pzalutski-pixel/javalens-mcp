@@ -3,12 +3,14 @@ package org.javalens.mcp.tools;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.javalens.core.IJdtService;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.core.project.model.LoadWarning;
 import org.javalens.mcp.models.ToolResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -118,6 +120,24 @@ public class LoadProjectTool implements Tool {
 
             result.put("classpathEntryCount", service.getClasspathEntryCount());
             result.put("loadedAt", service.getLoadedAt().toString());
+
+            // Surface any warnings collected during the load (e.g., mvn subprocess failure).
+            // Bug X fix: previously these failures were silently swallowed and the user saw
+            // a successful response with a degraded classpath.
+            List<LoadWarning> warnings = service.getWarnings();
+            if (!warnings.isEmpty()) {
+                List<Map<String, Object>> warningJson = new ArrayList<>();
+                for (LoadWarning w : warnings) {
+                    Map<String, Object> entry = new LinkedHashMap<>();
+                    entry.put("code", w.code());
+                    entry.put("message", w.message());
+                    if (w.remediation() != null) entry.put("remediation", w.remediation());
+                    if (w.module() != null) entry.put("module", w.module());
+                    warningJson.add(entry);
+                }
+                result.put("warnings", warningJson);
+                log.warn("Project loaded with {} warning(s)", warnings.size());
+            }
 
             log.info("Project loaded successfully: {} files, {} packages",
                 service.getSourceFileCount(), service.getPackageCount());

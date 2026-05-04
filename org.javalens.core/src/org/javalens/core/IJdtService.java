@@ -4,6 +4,7 @@ import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IJavaProject;
 import org.eclipse.jdt.core.IType;
+import org.javalens.core.project.model.LoadWarning;
 import org.javalens.core.search.SearchService;
 
 import java.nio.file.Path;
@@ -146,4 +147,18 @@ public interface IJdtService {
      * @return List of source file paths
      */
     List<Path> getAllJavaFiles();
+
+    /**
+     * Get warnings accumulated during the most recent {@code loadProject} call.
+     *
+     * <p>Warnings are surfaced when a build-tool subprocess fails, when expected directories
+     * (generated sources, bazel-bin) are missing, or when project metadata is incomplete.
+     * MCP clients should display these to the user so degraded analysis is visible rather
+     * than silent.
+     *
+     * @return immutable list of warnings; empty if no issues were detected
+     */
+    default List<LoadWarning> getWarnings() {
+        return List.of();
+    }
 }

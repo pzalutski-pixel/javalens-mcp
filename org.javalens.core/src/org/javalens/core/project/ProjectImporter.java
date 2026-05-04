@@ -9,6 +9,7 @@ import org.eclipse.jdt.core.IClasspathEntry;
 import org.eclipse.jdt.core.IJavaProject;
 import org.eclipse.jdt.core.JavaCore;
 import org.eclipse.jdt.launching.JavaRuntime;
+import org.javalens.core.project.model.LoadWarning;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -19,6 +20,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
@@ -37,6 +39,20 @@ public class ProjectImporter {
     private static final Logger log = LoggerFactory.getLogger(ProjectImporter.class);
 
     public enum BuildSystem { MAVEN, GRADLE, BAZEL, UNKNOWN }
+
+    /**
+     * Warnings accumulated during the most recent {@link #configureJavaProject} call.
+     * Reset at the start of each invocation. {@link JdtServiceImpl#getWarnings()} reads
+     * this list to surface degraded-load scenarios in the {@code load_project} response.
+     */
+    private final List<LoadWarning> warnings = new ArrayList<>();
+
+    /**
+     * Returns the warnings from the most recent project import.
+     */
+    public List<LoadWarning> getWarnings() {
+        return Collections.unmodifiableList(warnings);
+    }
 
     // Source folder mapping: external relative path -> linked folder name
     private static final String[][] SOURCE_MAPPINGS = {
@@ -69,6 +85,9 @@ public class ProjectImporter {
      */
     public IJavaProject configureJavaProject(IProject project, java.nio.file.Path projectPath,
             org.javalens.core.workspace.WorkspaceManager workspaceManager) throws CoreException {
+        // Reset warnings from any previous load before starting fresh accumulation.
+        warnings.clear();
+
         IJavaProject javaProject = JavaCore.create(project);
 
         // Build classpath entries
@@ -288,6 +307,7 @@ public class ProjectImporter {
     private List<String> getMavenDependencies(java.nio.file.Path projectPath) {
         List<String> jars = new ArrayList<>();
         java.nio.file.Path cpFile = null;
+        StringBuilder capturedOutput = new StringBuilder();
 
         try {
             // Create temp file in system temp directory, not in user's project
@@ -304,17 +324,40 @@ public class ProjectImporter {
             pb.redirectErrorStream(true);
 
             log.info("Running Maven to get classpath...");
-            Process process = pb.start();
+            Process process;
+            try {
+                process = pb.start();
+            } catch (IOException e) {
+                // Most common cause: mvn (or mvn.cmd) not on PATH. Surface it explicitly.
+                log.warn("Cannot start Maven subprocess: {}", e.getMessage());
+                warnings.add(new LoadWarning(
+                    LoadWarning.MAVEN_SUBPROCESS_FAILED,
+                    "Could not start '" + mvnCmd + "': " + e.getMessage(),
+                    "Install Maven and ensure '" + mvnCmd + "' is on PATH for the process that " +
+                        "launches JavaLens. Project dependencies will be unresolved until this is fixed."));
+                return jars;
+            }
 
-            // Consume output to prevent blocking
+            // Consume output to prevent blocking. Capture lines so we can include them in
+            // the warning message when mvn fails — silent failures were the original bug.
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-                while (reader.readLine() != null) { /* discard */ }
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    if (capturedOutput.length() < 4096) {
+                        capturedOutput.append(line).append('\n');
+                    }
+                }
             }
 
             boolean completed = process.waitFor(120, TimeUnit.SECONDS);
             if (!completed) {
                 process.destroyForcibly();
                 log.warn("Maven classpath command timed out");
+                warnings.add(new LoadWarning(
+                    LoadWarning.MAVEN_SUBPROCESS_TIMEOUT,
+                    "Maven dependency:build-classpath did not finish within 120 seconds",
+                    "Check that the project's pom.xml resolves correctly. Try running " +
+                        "'mvn dependency:build-classpath' manually in " + projectPath));
                 return jars;
             }
 
@@ -326,11 +369,25 @@ public class ProjectImporter {
                 }
                 log.info("Got {} classpath entries from Maven", jars.size());
             } else {
-                log.warn("Maven classpath command failed with exit code: {}", process.exitValue());
+                int exitCode = process.exitValue();
+                log.warn("Maven classpath command failed with exit code: {}", exitCode);
+                String snippet = trimToLastLines(capturedOutput.toString(), 5);
+                warnings.add(new LoadWarning(
+                    LoadWarning.MAVEN_SUBPROCESS_FAILED,
+                    "mvn dependency:build-classpath exited with code " + exitCode +
+                        (snippet.isEmpty() ? "" : ". Last output: " + snippet),
+                    "Run 'mvn dependency:build-classpath' manually in " + projectPath +
+                        " to see the full error."));
             }
 
         } catch (Exception e) {
             log.error("Failed to get Maven classpath", e);
+            warnings.add(new LoadWarning(
+                LoadWarning.MAVEN_SUBPROCESS_FAILED,
+                "Maven invocation threw an unexpected error: " + e.getClass().getSimpleName() +
+                    ": " + e.getMessage(),
+                "Run 'mvn dependency:build-classpath' manually in " + projectPath +
+                    " to reproduce."));
         } finally {
             // Always clean up temp file
             if (cpFile != null) {
@@ -343,6 +400,21 @@ public class ProjectImporter {
         }
 
         return jars;
+    }
+
+    /** Returns the last {@code maxLines} of {@code text}, joined with spaces, trimmed. */
+    private static String trimToLastLines(String text, int maxLines) {
+        if (text == null || text.isBlank()) return "";
+        String[] lines = text.split("\\R");
+        int from = Math.max(0, lines.length - maxLines);
+        StringBuilder sb = new StringBuilder();
+        for (int i = from; i < lines.length; i++) {
+            String t = lines[i].trim();
+            if (t.isEmpty()) continue;
+            if (sb.length() > 0) sb.append(" | ");
+            sb.append(t);
+        }
+        return sb.toString();
     }
 
     private List<String> getGradleDependencies(java.nio.file.Path projectPath) {
