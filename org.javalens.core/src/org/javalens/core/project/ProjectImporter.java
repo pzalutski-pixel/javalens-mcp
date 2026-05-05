@@ -425,26 +425,72 @@ public class ProjectImporter {
 
     /**
      * Get dependency JARs from Bazel build output.
-     * Scans bazel-bin and bazel-out for JAR files rather than running a Bazel subprocess,
-     * similar to how Gradle dependencies are resolved via build output.
+     *
+     * <p>Bug E fix: {@code bazel-bin} is typically a symlink that resolves into
+     * {@code bazel-out/<config>/bin/}. Scanning both naively produces every jar twice.
+     * We canonicalize each scan root with {@link java.nio.file.Path#toRealPath} and skip
+     * any root whose canonical path is contained in another root we've already scanned.
+     * Within a single scan, we additionally key collected paths by their canonical form so
+     * even hardlinks or nested symlinks dedupe.
      */
     private List<String> getBazelDependencies(java.nio.file.Path projectPath) {
-        List<String> jars = new ArrayList<>();
-        scanBazelDirForJars(projectPath.resolve("bazel-bin"), jars);
-        scanBazelDirForJars(projectPath.resolve("bazel-out"), jars);
-        log.debug("Found {} JARs from Bazel output", jars.size());
+        java.util.LinkedHashSet<java.nio.file.Path> canonicalJars = new java.util.LinkedHashSet<>();
+        java.util.List<java.nio.file.Path> rootsToScan = canonicalizeAndDedupe(java.util.List.of(
+            projectPath.resolve("bazel-bin"),
+            projectPath.resolve("bazel-out")));
+        for (java.nio.file.Path root : rootsToScan) {
+            scanBazelDirForJars(root, canonicalJars);
+        }
+        List<String> jars = new ArrayList<>(canonicalJars.size());
+        for (java.nio.file.Path p : canonicalJars) jars.add(p.toString());
+        log.debug("Found {} JARs from Bazel output ({} candidate roots)", jars.size(), rootsToScan.size());
         return jars;
     }
 
-    private void scanBazelDirForJars(java.nio.file.Path dir, List<String> jars) {
+    /**
+     * Canonicalize each candidate root and drop any whose real path is contained in
+     * another root's real path (to avoid double-walking the same physical directory tree).
+     * Non-existent roots and roots whose canonicalization fails are skipped.
+     */
+    private java.util.List<java.nio.file.Path> canonicalizeAndDedupe(java.util.List<java.nio.file.Path> candidates) {
+        java.util.LinkedHashMap<java.nio.file.Path, java.nio.file.Path> realToOriginal = new java.util.LinkedHashMap<>();
+        for (java.nio.file.Path c : candidates) {
+            if (!Files.exists(c)) continue;
+            try {
+                java.nio.file.Path real = c.toRealPath();
+                realToOriginal.putIfAbsent(real, c);
+            } catch (IOException e) {
+                log.warn("Failed to canonicalize {}: {}", c, e.getMessage());
+            }
+        }
+        java.util.List<java.nio.file.Path> reals = new ArrayList<>(realToOriginal.keySet());
+        java.util.List<java.nio.file.Path> kept = new ArrayList<>();
+        for (java.nio.file.Path candidate : reals) {
+            boolean contained = false;
+            for (java.nio.file.Path other : reals) {
+                if (candidate.equals(other)) continue;
+                if (candidate.startsWith(other)) { contained = true; break; }
+            }
+            if (!contained) kept.add(realToOriginal.get(candidate));
+        }
+        return kept;
+    }
+
+    private void scanBazelDirForJars(java.nio.file.Path dir, java.util.Set<java.nio.file.Path> canonicalJars) {
         if (!Files.exists(dir)) {
             return;
         }
         try (Stream<java.nio.file.Path> stream = Files.walk(dir)) {
             stream.filter(p -> p.toString().endsWith(".jar"))
                   .filter(Files::isRegularFile)
-                  .map(java.nio.file.Path::toString)
-                  .forEach(jars::add);
+                  .forEach(p -> {
+                      try {
+                          canonicalJars.add(p.toRealPath());
+                      } catch (IOException e) {
+                          // Fall back to non-canonical path; dedup via Set semantics still helps.
+                          canonicalJars.add(p);
+                      }
+                  });
         } catch (IOException e) {
             log.warn("Failed to scan {} for JARs: {}", dir, e.getMessage());
         }
