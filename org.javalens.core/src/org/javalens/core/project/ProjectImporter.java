@@ -407,20 +407,34 @@ public class ProjectImporter {
         }
     }
 
+    /**
+     * Per-module classpath file path written by {@code dependency:build-classpath}.
+     *
+     * <p>Bug C: passing this as a *relative* path (rather than absolute) makes each reactor
+     * child write to its own {@code <module>/target/javalens-classpath.txt}; an absolute
+     * path causes every child to overwrite the same file so only the last child's classpath
+     * survives. The {@code target/} prefix is necessary because the dependency-plugin
+     * resolves relative {@code mdep.outputFile} against the module's project base directory,
+     * not its build directory.
+     */
+    private static final String MAVEN_CP_FILENAME = "javalens-classpath.txt";
+    private static final String MAVEN_CP_RELATIVE_PATH = "target/" + MAVEN_CP_FILENAME;
+
     private List<String> getMavenDependencies(java.nio.file.Path projectPath) {
-        List<String> jars = new ArrayList<>();
-        java.nio.file.Path cpFile = null;
+        java.util.LinkedHashSet<String> jars = new java.util.LinkedHashSet<>();
         StringBuilder capturedOutput = new StringBuilder();
 
         try {
-            // Create temp file in system temp directory, not in user's project
-            cpFile = Files.createTempFile("javalens-", ".classpath");
-
-            String mvnCmd = isWindows() ? "mvn.cmd" : "mvn";
+            // The system property override lets test runs (and pinned-Maven setups) point at
+            // a specific Maven binary without touching the process PATH. Production callers
+            // don't set this, so the default lookup is unchanged.
+            String mvnCmd = System.getProperty("javalens.maven.binary",
+                isWindows() ? "mvn.cmd" : "mvn");
             ProcessBuilder pb = new ProcessBuilder(
                 mvnCmd,
                 "dependency:build-classpath",
-                "-Dmdep.outputFile=" + cpFile.toAbsolutePath(),
+                "-Dmdep.outputFile=" + MAVEN_CP_RELATIVE_PATH,
+                "-Dmdep.regenerateFile=true",
                 "-q"
             );
             pb.directory(projectPath.toFile());
@@ -438,7 +452,7 @@ public class ProjectImporter {
                     "Could not start '" + mvnCmd + "': " + e.getMessage(),
                     "Install Maven and ensure '" + mvnCmd + "' is on PATH for the process that " +
                         "launches JavaLens. Project dependencies will be unresolved until this is fixed."));
-                return jars;
+                return new ArrayList<>(jars);
             }
 
             // Consume output to prevent blocking. Capture lines so we can include them in
@@ -461,15 +475,11 @@ public class ProjectImporter {
                     "Maven dependency:build-classpath did not finish within 120 seconds",
                     "Check that the project's pom.xml resolves correctly. Try running " +
                         "'mvn dependency:build-classpath' manually in " + projectPath));
-                return jars;
+                return new ArrayList<>(jars);
             }
 
-            if (process.exitValue() == 0 && Files.exists(cpFile)) {
-                String classpath = Files.readString(cpFile).trim();
-
-                if (!classpath.isEmpty()) {
-                    jars.addAll(Arrays.asList(classpath.split(File.pathSeparator)));
-                }
+            if (process.exitValue() == 0) {
+                aggregateClasspathFiles(projectPath, jars);
                 log.info("Got {} classpath entries from Maven", jars.size());
             } else {
                 int exitCode = process.exitValue();
@@ -492,17 +502,60 @@ public class ProjectImporter {
                 "Run 'mvn dependency:build-classpath' manually in " + projectPath +
                     " to reproduce."));
         } finally {
-            // Always clean up temp file
-            if (cpFile != null) {
-                try {
-                    Files.deleteIfExists(cpFile);
-                } catch (Exception e) {
-                    log.trace("Could not delete temp classpath file: {}", e.getMessage());
-                }
-            }
+            cleanupClasspathFiles(projectPath);
         }
 
-        return jars;
+        return new ArrayList<>(jars);
+    }
+
+    /**
+     * Walk the project tree for {@code <module>/target/javalens-classpath.txt} files written
+     * by {@code dependency:build-classpath} and union their contents into {@code jars}. The
+     * caller passes a {@link java.util.LinkedHashSet} so duplicates across modules collapse
+     * while preserving discovery order.
+     */
+    private void aggregateClasspathFiles(java.nio.file.Path projectPath, java.util.Set<String> jars) {
+        try (Stream<java.nio.file.Path> stream = Files.walk(projectPath)) {
+            stream.filter(p -> p.getFileName() != null
+                        && MAVEN_CP_FILENAME.equals(p.getFileName().toString()))
+                  .filter(p -> p.getParent() != null
+                        && p.getParent().getFileName() != null
+                        && "target".equals(p.getParent().getFileName().toString()))
+                  .forEach(cpFile -> {
+                      try {
+                          String content = Files.readString(cpFile).trim();
+                          if (!content.isEmpty()) {
+                              for (String entry : content.split(File.pathSeparator)) {
+                                  if (!entry.isBlank()) jars.add(entry);
+                              }
+                          }
+                      } catch (IOException e) {
+                          log.warn("Could not read classpath file {}: {}", cpFile, e.getMessage());
+                      }
+                  });
+        } catch (IOException e) {
+            log.warn("Failed to walk {} for classpath files: {}", projectPath, e.getMessage());
+        }
+    }
+
+    /**
+     * Remove every {@code <module>/target/javalens-classpath.txt} we may have written so we
+     * don't leave artifacts behind in the user's project.
+     */
+    private void cleanupClasspathFiles(java.nio.file.Path projectPath) {
+        try (Stream<java.nio.file.Path> stream = Files.walk(projectPath)) {
+            stream.filter(p -> p.getFileName() != null
+                        && MAVEN_CP_FILENAME.equals(p.getFileName().toString()))
+                  .filter(p -> p.getParent() != null
+                        && p.getParent().getFileName() != null
+                        && "target".equals(p.getParent().getFileName().toString()))
+                  .forEach(p -> {
+                      try { Files.deleteIfExists(p); }
+                      catch (IOException e) { log.trace("Could not delete {}: {}", p, e.getMessage()); }
+                  });
+        } catch (IOException e) {
+            log.trace("Cleanup walk failed for {}: {}", projectPath, e.getMessage());
+        }
     }
 
     /** Returns the last {@code maxLines} of {@code text}, joined with spaces, trimmed. */
