@@ -291,6 +291,46 @@ public class ProjectImporter {
                 sourcePaths.add(srcPath);
             }
         }
+
+        // Bug B fix: include generated-source directories. Annotation processors
+        // (Lombok, MapStruct, Dagger, JPA Metamodel) write here at build time, and the
+        // hand-written code references symbols from those generated files. Without these
+        // on the classpath as source folders, references are unresolved and many
+        // navigation / refactor tools return wrong results.
+        addGeneratedSourcePaths(projectPath, sourcePaths);
+    }
+
+    // Maven puts each annotation processor's output under its own subdirectory of
+    // target/generated-sources/ (e.g. annotations, jaxws, jpamodelgen, ...). Gradle's
+    // layout is build/generated/sources/<task>/{main,test}/java/. We probe one level
+    // deep so each processor's directory becomes its own source folder.
+    private void addGeneratedSourcePaths(java.nio.file.Path projectPath, List<java.nio.file.Path> sourcePaths) {
+        addImmediateSubdirectories(projectPath.resolve("target").resolve("generated-sources"), sourcePaths);
+        addImmediateSubdirectories(projectPath.resolve("target").resolve("generated-test-sources"), sourcePaths);
+
+        java.nio.file.Path gradleGenerated = projectPath.resolve("build").resolve("generated").resolve("sources");
+        if (Files.isDirectory(gradleGenerated)) {
+            try (Stream<java.nio.file.Path> tasks = Files.list(gradleGenerated)) {
+                tasks.filter(Files::isDirectory).forEach(taskDir -> {
+                    java.nio.file.Path mainJava = taskDir.resolve("main").resolve("java");
+                    java.nio.file.Path testJava = taskDir.resolve("test").resolve("java");
+                    if (Files.isDirectory(mainJava)) sourcePaths.add(mainJava);
+                    if (Files.isDirectory(testJava)) sourcePaths.add(testJava);
+                });
+            } catch (IOException e) {
+                log.debug("Failed to scan Gradle generated sources: {}", e.getMessage());
+            }
+        }
+    }
+
+    private void addImmediateSubdirectories(java.nio.file.Path parent, List<java.nio.file.Path> sourcePaths) {
+        if (!Files.isDirectory(parent)) return;
+        try (Stream<java.nio.file.Path> children = Files.list(parent)) {
+            children.filter(Files::isDirectory)
+                    .forEach(sourcePaths::add);
+        } catch (IOException e) {
+            log.debug("Failed to list {}: {}", parent, e.getMessage());
+        }
     }
 
     /**
