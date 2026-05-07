@@ -1,0 +1,4 @@
+rootProject.name = 'realistic-multi-project-gradle'
+include 'model'
+include 'service'
+include 'web'
