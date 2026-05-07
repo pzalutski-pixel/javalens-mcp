@@ -573,10 +573,190 @@ public class ProjectImporter {
         return sb.toString();
     }
 
+    /**
+     * Init script that registers a {@code javalensWriteClasspath} task in every Java
+     * subproject. The task collects {@code testRuntimeClasspath} (preferred — includes
+     * compile + main runtime + test) and writes it to {@code build/javalens-classpath.txt}.
+     */
+    private static final String GRADLE_INIT_SCRIPT = """
+        allprojects { proj ->
+            proj.afterEvaluate {
+                if (proj.plugins.hasPlugin('java-base')) {
+                    proj.tasks.register('javalensWriteClasspath') {
+                        doLast {
+                            def out = new File(proj.buildDir, 'javalens-classpath.txt')
+                            out.parentFile.mkdirs()
+                            def cps = [] as Set
+                            def cfg = proj.configurations.findByName('testRuntimeClasspath') ?:
+                                      proj.configurations.findByName('runtimeClasspath') ?:
+                                      proj.configurations.findByName('compileClasspath')
+                            cfg?.resolve()?.each { cps << it.absolutePath }
+                            out.text = cps.join(System.getProperty('path.separator'))
+                        }
+                    }
+                }
+            }
+        }
+        """;
+
+    private static final String GRADLE_CP_FILENAME = "javalens-classpath.txt";
+
+    /**
+     * Bug D fix: the original implementation was a stub returning {@code List.of()}, leaving
+     * Gradle projects with empty classpaths. We now ship a Gradle init script that registers a
+     * {@code javalensWriteClasspath} task in every subproject and run it via the project's
+     * Gradle Wrapper (preferred) or {@code gradle} on PATH. Per-subproject classpath files
+     * land at {@code <subproject>/build/javalens-classpath.txt}; we walk the tree and union
+     * them.
+     */
     private List<String> getGradleDependencies(java.nio.file.Path projectPath) {
-        // Gradle classpath extraction relies on build output directories
-        // which are added in addDependencyEntries
-        return List.of();
+        java.util.LinkedHashSet<String> jars = new java.util.LinkedHashSet<>();
+
+        String gradleBinary = resolveGradleBinary(projectPath);
+        if (gradleBinary == null) {
+            warnings.add(new LoadWarning(
+                LoadWarning.GRADLE_SUBPROCESS_FAILED,
+                "No Gradle binary available: neither the project's Gradle Wrapper nor a 'gradle' on PATH",
+                "Commit a Gradle Wrapper (./gradlew) into the project, or install Gradle and ensure 'gradle' is on PATH for the process that launches JavaLens."));
+            return new ArrayList<>(jars);
+        }
+
+        java.nio.file.Path initScript = null;
+        StringBuilder capturedOutput = new StringBuilder();
+        try {
+            initScript = Files.createTempFile("javalens-gradle-init-", ".gradle");
+            Files.writeString(initScript, GRADLE_INIT_SCRIPT);
+
+            ProcessBuilder pb = new ProcessBuilder(
+                gradleBinary,
+                "--init-script", initScript.toAbsolutePath().toString(),
+                "javalensWriteClasspath",
+                "-q",
+                "--console=plain"
+            );
+            pb.directory(projectPath.toFile());
+            pb.redirectErrorStream(true);
+
+            log.info("Running Gradle to get classpath...");
+            Process process;
+            try {
+                process = pb.start();
+            } catch (IOException e) {
+                log.warn("Cannot start Gradle subprocess: {}", e.getMessage());
+                warnings.add(new LoadWarning(
+                    LoadWarning.GRADLE_SUBPROCESS_FAILED,
+                    "Could not start '" + gradleBinary + "': " + e.getMessage(),
+                    "Verify the Gradle Wrapper is intact, or install Gradle and ensure 'gradle' is on PATH."));
+                return new ArrayList<>(jars);
+            }
+
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    if (capturedOutput.length() < 4096) {
+                        capturedOutput.append(line).append('\n');
+                    }
+                }
+            }
+
+            // Gradle wrapper sometimes downloads a distribution on first run, hence a generous
+            // timeout. Subsequent runs hit the cache.
+            boolean completed = process.waitFor(10, TimeUnit.MINUTES);
+            if (!completed) {
+                process.destroyForcibly();
+                log.warn("Gradle classpath command timed out");
+                warnings.add(new LoadWarning(
+                    LoadWarning.GRADLE_SUBPROCESS_FAILED,
+                    "Gradle javalensWriteClasspath did not finish within 10 minutes",
+                    "Check that the project's build.gradle resolves correctly. Try running './gradlew help' manually in " + projectPath));
+                return new ArrayList<>(jars);
+            }
+
+            if (process.exitValue() == 0) {
+                aggregateGradleClasspathFiles(projectPath, jars);
+                log.info("Got {} classpath entries from Gradle", jars.size());
+            } else {
+                int exitCode = process.exitValue();
+                log.warn("Gradle classpath command failed with exit code: {}", exitCode);
+                String snippet = trimToLastLines(capturedOutput.toString(), 5);
+                warnings.add(new LoadWarning(
+                    LoadWarning.GRADLE_SUBPROCESS_FAILED,
+                    "Gradle javalensWriteClasspath exited with code " + exitCode +
+                        (snippet.isEmpty() ? "" : ". Last output: " + snippet),
+                    "Run './gradlew help' manually in " + projectPath + " to see the full error."));
+            }
+        } catch (Exception e) {
+            log.error("Failed to get Gradle classpath", e);
+            warnings.add(new LoadWarning(
+                LoadWarning.GRADLE_SUBPROCESS_FAILED,
+                "Gradle invocation threw an unexpected error: " + e.getClass().getSimpleName() + ": " + e.getMessage(),
+                "Run './gradlew help' manually in " + projectPath + " to reproduce."));
+        } finally {
+            if (initScript != null) {
+                try { Files.deleteIfExists(initScript); }
+                catch (IOException e) { log.trace("Could not delete init script: {}", e.getMessage()); }
+            }
+            cleanupGradleClasspathFiles(projectPath);
+        }
+
+        return new ArrayList<>(jars);
+    }
+
+    /**
+     * Locate a Gradle binary to invoke. Prefers the project's Gradle Wrapper
+     * ({@code ./gradlew}), then {@code gradle} on PATH; returns {@code null} if neither is
+     * available. Test runs can override via the {@code javalens.gradle.binary} system
+     * property.
+     */
+    private String resolveGradleBinary(java.nio.file.Path projectPath) {
+        String override = System.getProperty("javalens.gradle.binary");
+        if (override != null && !override.isBlank()) return override;
+
+        String wrapperName = isWindows() ? "gradlew.bat" : "gradlew";
+        java.nio.file.Path wrapper = projectPath.resolve(wrapperName);
+        if (Files.isRegularFile(wrapper)) return wrapper.toAbsolutePath().toString();
+
+        return isWindows() ? "gradle.bat" : "gradle";
+    }
+
+    private void aggregateGradleClasspathFiles(java.nio.file.Path projectPath, java.util.Set<String> jars) {
+        try (Stream<java.nio.file.Path> stream = Files.walk(projectPath)) {
+            stream.filter(p -> p.getFileName() != null
+                        && GRADLE_CP_FILENAME.equals(p.getFileName().toString()))
+                  .filter(p -> p.getParent() != null
+                        && p.getParent().getFileName() != null
+                        && "build".equals(p.getParent().getFileName().toString()))
+                  .forEach(cpFile -> {
+                      try {
+                          String content = Files.readString(cpFile).trim();
+                          if (!content.isEmpty()) {
+                              for (String entry : content.split(File.pathSeparator)) {
+                                  if (!entry.isBlank()) jars.add(entry);
+                              }
+                          }
+                      } catch (IOException e) {
+                          log.warn("Could not read Gradle classpath file {}: {}", cpFile, e.getMessage());
+                      }
+                  });
+        } catch (IOException e) {
+            log.warn("Failed to walk {} for Gradle classpath files: {}", projectPath, e.getMessage());
+        }
+    }
+
+    private void cleanupGradleClasspathFiles(java.nio.file.Path projectPath) {
+        try (Stream<java.nio.file.Path> stream = Files.walk(projectPath)) {
+            stream.filter(p -> p.getFileName() != null
+                        && GRADLE_CP_FILENAME.equals(p.getFileName().toString()))
+                  .filter(p -> p.getParent() != null
+                        && p.getParent().getFileName() != null
+                        && "build".equals(p.getParent().getFileName().toString()))
+                  .forEach(p -> {
+                      try { Files.deleteIfExists(p); }
+                      catch (IOException e) { log.trace("Could not delete {}: {}", p, e.getMessage()); }
+                  });
+        } catch (IOException e) {
+            log.trace("Cleanup walk failed for {}: {}", projectPath, e.getMessage());
+        }
     }
 
     /**

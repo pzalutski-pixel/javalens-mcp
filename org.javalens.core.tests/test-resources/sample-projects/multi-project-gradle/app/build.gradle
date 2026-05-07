@@ -1,0 +1,16 @@
+plugins {
+    id 'java'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation project(':lib')
+    implementation 'org.apache.commons:commons-lang3:3.13.0'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+}
