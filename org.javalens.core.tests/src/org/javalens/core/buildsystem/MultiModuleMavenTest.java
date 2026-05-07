@@ -1,5 +1,8 @@
 package org.javalens.core.buildsystem;
 
+import org.eclipse.jdt.core.IType;
+import org.eclipse.jdt.core.search.IJavaSearchConstants;
+import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.JdtServiceImpl;
 import org.javalens.core.fixtures.ClasspathSnapshot;
 import org.javalens.core.fixtures.TestProjectHelper;
@@ -7,6 +10,8 @@ import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
+
+import java.util.List;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -68,6 +73,45 @@ class MultiModuleMavenTest {
                 "Expected commons-lang3 (declared in impl module) on classpath. Libraries: " + snapshot.libraries());
             assertTrue(snapshot.hasLibraryMatching(".*spring-core.*\\.jar"),
                 "Expected spring-core (declared in web module) on classpath. Libraries: " + snapshot.libraries());
+        } finally {
+            if (previousOverride == null) System.clearProperty("javalens.maven.binary");
+            else System.setProperty("javalens.maven.binary", previousOverride);
+        }
+    }
+
+    @Test
+    @DisplayName("cross-module find_references resolves callers in sibling reactor modules")
+    void crossModuleFindReferencesResolvesAcrossSiblings() throws Exception {
+        String mvn = resolveMavenBinary();
+        Assumptions.assumeTrue(mvn != null,
+            "Maven not available — cross-module navigation needs the reactor to be loaded");
+
+        String previousOverride = System.getProperty("javalens.maven.binary");
+        System.setProperty("javalens.maven.binary", mvn);
+        try {
+            Path projectRoot = helper.copyFixture("multi-module-maven");
+            runMaven(mvn, projectRoot, "install", "-DskipTests", "-B", "-fae", "-q");
+
+            JdtServiceImpl service = new JdtServiceImpl();
+            service.loadProject(projectRoot);
+
+            // Probe: does navigation cross module boundaries on the existing flat design?
+            // Greeter is declared in :api; GreeterImpl in :impl implements it. Looking up
+            // references to Greeter must surface GreeterImpl across the module boundary.
+            IType greeter = service.findType("com.example.api.Greeter");
+            assertTrue(greeter != null,
+                "Expected to resolve com.example.api.Greeter (declared in :api module)");
+
+            List<SearchMatch> refs = service.getSearchService()
+                .findReferences(greeter, IJavaSearchConstants.REFERENCES, 100);
+
+            boolean foundInImpl = refs.stream().anyMatch(m -> {
+                String resourcePath = m.getResource() != null ? m.getResource().getFullPath().toString() : "";
+                return resourcePath.contains("GreeterImpl");
+            });
+            assertTrue(foundInImpl,
+                "Expected to find GreeterImpl as a reference to Greeter across the module boundary. " +
+                "Got " + refs.size() + " matches.");
         } finally {
             if (previousOverride == null) System.clearProperty("javalens.maven.binary");
             else System.setProperty("javalens.maven.binary", previousOverride);
