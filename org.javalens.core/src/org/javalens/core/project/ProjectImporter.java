@@ -5,6 +5,8 @@ import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IPath;
 import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.core.runtime.Path;
+import org.eclipse.jdt.apt.core.util.AptConfig;
+import org.eclipse.jdt.apt.core.util.IFactoryPath;
 import org.eclipse.jdt.core.IClasspathEntry;
 import org.eclipse.jdt.core.IJavaProject;
 import org.eclipse.jdt.core.JavaCore;
@@ -116,10 +118,107 @@ public class ProjectImporter {
         // Bug G fix: apply the project's declared compiler source level. Without this, JDT
         // falls back to defaults that may be older than the source code, causing legitimate
         // language features (e.g. Java 21 record patterns) to be reported as syntax errors.
-        applyCompilerOptions(javaProject, projectPath, detectBuildSystem(projectPath));
+        BuildSystem buildSystem = detectBuildSystem(projectPath);
+        applyCompilerOptions(javaProject, projectPath, buildSystem);
+
+        // Bug H fix: enable annotation processing and register the processor jars declared
+        // by the project. Without this, code that references annotation-processor-generated
+        // members (Lombok @Data getters, MapStruct mappers, JPA metamodels) shows those
+        // members as unresolved during analysis.
+        applyAnnotationProcessing(javaProject, projectPath, buildSystem);
 
         log.info("Configured Java project with {} classpath entries", entries.size());
         return javaProject;
+    }
+
+    /**
+     * Enable JDT's APT framework on the project and register declared annotation-processor
+     * jars on its factory path. We resolve {@code <annotationProcessorPaths>} entries from
+     * Maven's pom.xml against {@code ~/.m2/repository}; Gradle/Bazel processor wiring lands
+     * with their respective classpath fixes.
+     */
+    private void applyAnnotationProcessing(IJavaProject javaProject, java.nio.file.Path projectPath, BuildSystem buildSystem) {
+        if (buildSystem != BuildSystem.MAVEN) return;
+
+        List<java.nio.file.Path> processorJars = detectMavenAnnotationProcessors(projectPath);
+        if (processorJars.isEmpty()) return;
+
+        try {
+            AptConfig.setEnabled(javaProject, true);
+            IFactoryPath factoryPath = AptConfig.getDefaultFactoryPath(javaProject);
+            int registered = 0;
+            for (java.nio.file.Path jar : processorJars) {
+                if (Files.isRegularFile(jar)) {
+                    factoryPath.addExternalJar(jar.toFile());
+                    registered++;
+                }
+            }
+            AptConfig.setFactoryPath(javaProject, factoryPath);
+            log.info("Enabled APT with {} processor jar(s)", registered);
+        } catch (CoreException e) {
+            log.warn("Failed to configure APT: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Parse {@code <annotationProcessorPaths>} blocks from {@code maven-compiler-plugin}
+     * configuration and resolve each {@code <path>} to the corresponding jar in the local
+     * Maven repository. Property references in {@code <version>} (e.g. {@code ${lombok.version}})
+     * are resolved against pom {@code <properties>}.
+     */
+    private List<java.nio.file.Path> detectMavenAnnotationProcessors(java.nio.file.Path projectPath) {
+        java.nio.file.Path pom = projectPath.resolve("pom.xml");
+        if (!Files.exists(pom)) return List.of();
+
+        List<java.nio.file.Path> jars = new ArrayList<>();
+        try {
+            String content = Files.readString(pom);
+            Matcher block = Pattern.compile(
+                "<annotationProcessorPaths>(.*?)</annotationProcessorPaths>",
+                Pattern.DOTALL).matcher(content);
+            while (block.find()) {
+                String inner = block.group(1);
+                Matcher pathBlock = Pattern.compile("<path>(.*?)</path>", Pattern.DOTALL).matcher(inner);
+                while (pathBlock.find()) {
+                    String pb = pathBlock.group(1);
+                    String group = extractXmlText(pb, "groupId");
+                    String artifact = extractXmlText(pb, "artifactId");
+                    String version = extractXmlText(pb, "version");
+                    if (group != null && artifact != null && version != null) {
+                        version = resolvePomProperty(content, version);
+                        java.nio.file.Path jar = mavenRepoJarPath(group, artifact, version);
+                        if (Files.isRegularFile(jar)) {
+                            jars.add(jar);
+                        } else {
+                            log.warn("Annotation processor jar missing in local repo: {} " +
+                                "(run 'mvn dependency:resolve' to download)", jar);
+                        }
+                    }
+                }
+            }
+        } catch (IOException e) {
+            log.debug("Failed to parse annotationProcessorPaths from pom: {}", e.getMessage());
+        }
+        return jars;
+    }
+
+    /**
+     * Resolve a Maven property reference like {@code ${lombok.version}} against the pom's
+     * own {@code <properties>}. Returns the input unchanged if it isn't a {@code ${...}}
+     * placeholder or the property isn't declared.
+     */
+    private String resolvePomProperty(String pomContent, String value) {
+        if (!value.startsWith("${") || !value.endsWith("}")) return value;
+        String name = value.substring(2, value.length() - 1);
+        String resolved = extractXmlText(pomContent, name);
+        return resolved != null ? resolved : value;
+    }
+
+    private java.nio.file.Path mavenRepoJarPath(String groupId, String artifactId, String version) {
+        String repo = System.getProperty("user.home") + "/.m2/repository";
+        String groupPath = groupId.replace('.', '/');
+        return java.nio.file.Path.of(repo, groupPath, artifactId, version,
+            artifactId + "-" + version + ".jar");
     }
 
     /**
