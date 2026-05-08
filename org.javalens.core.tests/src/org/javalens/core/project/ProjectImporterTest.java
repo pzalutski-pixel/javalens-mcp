@@ -240,6 +240,49 @@ class ProjectImporterTest {
         assertTrue(packages.isEmpty(), "Should return empty list for empty project");
     }
 
+    // ========== Nested Aggregator Module Tests ==========
+
+    @Test
+    @DisplayName("countSourceFiles should find sources in nested aggregator modules")
+    void countSourceFiles_findsNestedAggregatorSources(@TempDir Path tempDir) throws IOException {
+        // Root aggregator: lists core (itself an aggregator) and simple-module (a leaf)
+        Files.writeString(tempDir.resolve("pom.xml"),
+            "<project><modules><module>core</module><module>simple-module</module></modules></project>");
+
+        // core/ is an intermediate aggregator: no src/main/java, only sub-modules
+        Path core = tempDir.resolve("core");
+        Files.createDirectories(core);
+        Files.writeString(core.resolve("pom.xml"),
+            "<project><packaging>pom</packaging><modules><module>core-lib</module><module>core-api</module></modules></project>");
+
+        // core/core-lib/ is a leaf with sources
+        Path coreLibSrc = core.resolve("core-lib/src/main/java/com/example/core");
+        Files.createDirectories(coreLibSrc);
+        Files.writeString(core.resolve("core-lib/pom.xml"), "<project/>");
+        Files.writeString(coreLibSrc.resolve("Foo.java"), "package com.example.core; public class Foo {}");
+
+        // core/core-api/ is a leaf with sources
+        Path coreApiSrc = core.resolve("core-api/src/main/java/com/example/api");
+        Files.createDirectories(coreApiSrc);
+        Files.writeString(core.resolve("core-api/pom.xml"), "<project/>");
+        Files.writeString(coreApiSrc.resolve("Bar.java"), "package com.example.api; public class Bar {}");
+
+        // simple-module/ is a direct leaf under root
+        Path simpleSrc = tempDir.resolve("simple-module/src/main/java/com/example/simple");
+        Files.createDirectories(simpleSrc);
+        Files.writeString(tempDir.resolve("simple-module/pom.xml"), "<project/>");
+        Files.writeString(simpleSrc.resolve("Baz.java"), "package com.example.simple; public class Baz {}");
+
+        int count = importer.countSourceFiles(tempDir);
+        assertEquals(3, count, "Should find sources in all leaf modules, including nested aggregator sub-modules");
+
+        List<String> packages = importer.findPackages(tempDir);
+        assertTrue(packages.stream().anyMatch(p -> p.contains("com.example.core")),
+            "Should find packages inside nested aggregator core-lib: " + packages);
+        assertTrue(packages.stream().anyMatch(p -> p.contains("com.example.api")),
+            "Should find packages inside nested aggregator core-api: " + packages);
+    }
+
     // ========== Java Project Configuration Tests ==========
 
     @Test

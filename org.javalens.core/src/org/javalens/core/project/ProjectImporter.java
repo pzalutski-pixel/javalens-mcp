@@ -19,7 +19,9 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -165,20 +167,11 @@ public class ProjectImporter {
     }
 
     /**
-     * Get all source directories, including from submodules if multi-module project.
+     * Get all source directories, recursing into nested aggregator modules.
      */
     private List<java.nio.file.Path> getAllSourcePaths(java.nio.file.Path projectPath) {
         List<java.nio.file.Path> sourcePaths = new ArrayList<>();
-
-        // First check the root project
-        addSourcePathsFromDirectory(projectPath, sourcePaths);
-
-        // If multi-module, also check each module
-        if (isMultiModuleProject(projectPath)) {
-            for (java.nio.file.Path modulePath : getModules(projectPath)) {
-                addSourcePathsFromDirectory(modulePath, sourcePaths);
-            }
-        }
+        collectSourcePaths(projectPath, sourcePaths, new HashSet<>());
 
         // For Bazel projects without standard source layout, scan for Java source directories
         if (sourcePaths.isEmpty() && detectBuildSystem(projectPath) == BuildSystem.BAZEL) {
@@ -186,6 +179,32 @@ public class ProjectImporter {
         }
 
         return sourcePaths;
+    }
+
+    /**
+     * Recursively collect source directories from a project or module directory.
+     * Handles arbitrarily nested aggregator POMs (modules with <modules> but no src/).
+     * The visited set guards against cycles caused by relative <module> paths like ../sibling.
+     */
+    private void collectSourcePaths(java.nio.file.Path projectPath,
+            List<java.nio.file.Path> sourcePaths, Set<java.nio.file.Path> visited) {
+        java.nio.file.Path canonical;
+        try {
+            canonical = projectPath.toRealPath();
+        } catch (IOException e) {
+            canonical = projectPath.toAbsolutePath().normalize();
+        }
+        if (!visited.add(canonical)) {
+            return;
+        }
+
+        addSourcePathsFromDirectory(projectPath, sourcePaths);
+
+        if (isMultiModuleProject(projectPath)) {
+            for (java.nio.file.Path modulePath : getModules(projectPath)) {
+                collectSourcePaths(modulePath, sourcePaths, visited);
+            }
+        }
     }
 
     /**
