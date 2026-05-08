@@ -81,9 +81,9 @@ Language Server Protocol was designed for IDE autocomplete and basic navigation�
 
 JavaLens wraps **Eclipse JDT Core** directly via OSGi, providing:
 
-- **16 fine-grained reference types**: Find specifically casts, annotations, throws clauses, catch blocks, instanceof checks, method references, type arguments
+- **Fine-grained reference types**: Find specifically casts, annotations, throws clauses, catch blocks, instanceof checks, method references, type arguments
 - **Read vs write access distinction**: Track where fields are mutated vs just read
-- **Indexed search**: 10x faster than AST walking for large codebases
+- **Indexed search**: JDT pre-builds an index at load time, so symbol/reference queries do not walk source files
 - **Full AST access**: Direct manipulation for complex refactorings
 
 ## Installation
@@ -110,7 +110,7 @@ JavaLens is an analytical server, not a compiler. It uses Eclipse JDT 2024-09 to
 }
 ```
 
-The distribution (~19 MB) is downloaded and cached on first run.
+The distribution (~23 MB) is downloaded and cached on first run.
 
 ### Download
 
@@ -429,7 +429,7 @@ Build-system coverage is structured as focused per-bug tests plus realistic end-
                             │ JSON-RPC over stdio
 ┌─────────────────────────────────────────────────────────┐
 │  org.javalens.mcp                                        │
-│    McpProtocolHandler → ToolRegistry → 56 Tools          │
+│    McpProtocolHandler → ToolRegistry → 63 Tools          │
 └─────────────────────────────────────────────────────────┘
                             │
 ┌─────────────────────────────────────────────────────────┐

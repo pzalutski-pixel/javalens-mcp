@@ -28,7 +28,7 @@ An MCP server providing **63 semantic analysis tools** for Java, built directly 
 
 ## What This Package Does
 
-This npm package bundles the full JavaLens distribution (~19 MB). No runtime downloads, no network dependency after install. It:
+This npm package bundles the full JavaLens distribution (~23 MB). No runtime downloads, no network dependency after install. It:
 
 1. Checks that Java 21+ is installed
 2. Reads JVM configuration from the bundled `eclipse.ini`
