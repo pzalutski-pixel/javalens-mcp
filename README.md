@@ -422,25 +422,16 @@ Build-system coverage is structured as focused per-bug tests plus realistic end-
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                      MCP Client                          │
-└─────────────────────────────────────────────────────────┘
-                            │ JSON-RPC over stdio
-┌─────────────────────────────────────────────────────────┐
-│  org.javalens.mcp                                        │
-│    McpProtocolHandler → ToolRegistry → 63 Tools          │
-└─────────────────────────────────────────────────────────┘
-                            │
-┌─────────────────────────────────────────────────────────┐
-│  org.javalens.core                                       │
-│    JdtServiceImpl → WorkspaceManager, SearchService      │
-└─────────────────────────────────────────────────────────┘
-                            │
-┌─────────────────────────────────────────────────────────┐
-│  Eclipse JDT Core (via OSGi/Equinox)                     │
-│    IWorkspace, IJavaProject, SearchEngine, ASTParser     │
-└─────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    Client["<b>MCP Client</b>"]
+    MCP["<b>org.javalens.mcp</b><br/>McpProtocolHandler → ToolRegistry → 63 Tools"]
+    Core["<b>org.javalens.core</b><br/>JdtServiceImpl → WorkspaceManager, SearchService"]
+    JDT["<b>Eclipse JDT Core</b> (via OSGi / Equinox)<br/>IWorkspace, IJavaProject, SearchEngine, ASTParser"]
+
+    Client -->|"JSON-RPC over stdio"| MCP
+    MCP --> Core
+    Core --> JDT
 ```
 
 ## License
