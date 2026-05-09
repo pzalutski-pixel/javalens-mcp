@@ -10,7 +10,18 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            jdk_distribution: temurin
+          - os: macos-latest
+            jdk_distribution: temurin
+          # Microsoft Build of OpenJDK on Windows ships a complete JDK structure
+          # (lib/jvm.cfg present and openable). Temurin 21 on the windows-latest
+          # hostedtoolcache fails the mvn.cmd launcher's java startup with
+          # "could not open lib/jvm.cfg" even though mvnw (which invokes java
+          # through a different launcher path) works on the same runner.
+          - os: windows-latest
+            jdk_distribution: microsoft
       fail-fast: false
 
     runs-on: ${{ matrix.os }}
@@ -23,7 +34,7 @@ jobs:
       uses: actions/setup-java@v4
       with:
         java-version: '21'
-        distribution: 'temurin'
+        distribution: ${{ matrix.jdk_distribution }}
 
     # Maven: setup-java installs the JDK only. We need mvn on PATH for fixture tests
     # that invoke it directly. apt/brew provide working binaries; on Windows, choco's
@@ -49,14 +60,26 @@ jobs:
         $bin = "$env:RUNNER_TEMP\maven\apache-maven-$version\bin"
         Add-Content $env:GITHUB_PATH $bin
 
-    # Gradle: vendor-supported action works on all three OSes. apt's package on
-    # ubuntu-latest is Gradle 4.x, too old to run our init script (uses tasks.register
-    # and other 6.0+ syntax); choco's gradle.bat on Windows didn't propagate reliably
-    # to the surefire JVM. setup-gradle handles all of these uniformly.
-    - name: Install Gradle
+    # Gradle: vendor-supported action on Linux/macOS adds the binary to PATH for
+    # subsequent steps; the same parameter on Windows did not propagate to the
+    # surefire JVM in practice (resolveGradleBinary saw no gradle.bat). Using the
+    # same direct-extract pattern as Maven on Windows for consistency.
+    - name: Install Gradle (Linux + macOS)
+      if: matrix.os != 'windows-latest'
       uses: gradle/actions/setup-gradle@v3
       with:
         gradle-version: '8.10.2'
+
+    - name: Install Gradle (Windows)
+      if: matrix.os == 'windows-latest'
+      shell: pwsh
+      run: |
+        $version = "8.10.2"
+        $url = "https://services.gradle.org/distributions/gradle-$version-bin.zip"
+        Invoke-WebRequest -Uri $url -OutFile $env:RUNNER_TEMP\gradle.zip
+        Expand-Archive -Path $env:RUNNER_TEMP\gradle.zip -DestinationPath $env:RUNNER_TEMP\gradle
+        $bin = "$env:RUNNER_TEMP\gradle\gradle-$version\bin"
+        Add-Content $env:GITHUB_PATH $bin
 
     # Bazel via bazelisk — installs the Bazel version pinned in fixtures via .bazelversion files.
     - name: Install bazelisk
