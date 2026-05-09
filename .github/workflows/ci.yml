@@ -107,6 +107,31 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-gradle-
 
+    - name: Diagnostic — runner toolchain state
+      shell: bash
+      run: |
+        echo "=== os.name / arch ==="
+        uname -a || echo "(uname not available)"
+        echo "=== JAVA_HOME ==="
+        echo "JAVA_HOME=$JAVA_HOME"
+        ls -la "$JAVA_HOME/lib/jvm.cfg" 2>&1 || echo "(jvm.cfg not at JAVA_HOME/lib/jvm.cfg)"
+        echo "=== PATH ==="
+        echo "$PATH" | tr : '\n' | tr ';' '\n'
+        echo "=== mvn ==="
+        which mvn || echo "(mvn not found)"
+        which mvn.cmd || echo "(mvn.cmd not found)"
+        mvn -v 2>&1 || echo "(mvn -v failed)"
+        echo "=== gradle ==="
+        which gradle || echo "(gradle not found)"
+        which gradle.bat || echo "(gradle.bat not found)"
+        gradle -v 2>&1 || echo "(gradle -v failed)"
+        echo "=== bazel ==="
+        which bazel || echo "(bazel not found)"
+        bazel --version 2>&1 || echo "(bazel --version failed)"
+        echo "=== java ==="
+        which java
+        java -version 2>&1
+
     - name: Build and Test
       env:
         # Tests gate optional steps via Assumptions so local dev doesn't fail on a clean
