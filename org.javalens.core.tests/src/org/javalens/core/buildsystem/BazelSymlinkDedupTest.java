@@ -67,6 +67,49 @@ class BazelSymlinkDedupTest {
             ". Libraries: " + snapshot.libraries());
     }
 
+    @Test
+    @DisplayName("real Bazel layout: bazel-out symlinks outside projectRoot, jars still found")
+    void realBazelLayoutWithBazelOutSymlinkOutsideProjectRoot() throws Exception {
+        // This test reproduces the actual layout `bazel build` produces on Linux/macOS:
+        // both bazel-bin and bazel-out are symbolic links, with bazel-out pointing at a
+        // directory tree that lives OUTSIDE projectRoot (Bazel uses ~/_bazel_<user>/...
+        // or the configured --output_user_root). The previous canonicalize-and-dedupe
+        // implementation kept the original symlink path; on Linux Files.walk(symlink-to-
+        // directory) without FOLLOW_LINKS treats the symlink as a non-directory single
+        // entry and emits zero results. This test would have failed on Linux/macOS
+        // (CI run 25585823533) before the canonical-path-return fix.
+
+        // Real output tree, deliberately outside projectRoot.
+        Path realOutputRoot = helper.getTempDirectory().resolve("real-bazel-output");
+        Path realBin = realOutputRoot.resolve("k8-fastbuild/bin");
+        Files.createDirectories(realBin);
+        Files.write(realBin.resolve("libapp.jar"), new byte[]{'P','K',3,4});
+
+        // The Bazel workspace itself.
+        Path projectRoot = helper.getTempDirectory().resolve("bazel-real-layout");
+        Files.createDirectories(projectRoot);
+        Files.writeString(projectRoot.resolve("MODULE.bazel"), "module(name = \"trap\")\n");
+
+        Path bazelOutLink = projectRoot.resolve("bazel-out");
+        TestEnvironment.requireOrSkip(createDirectoryLink(bazelOutLink, realOutputRoot),
+            "directory symlink / junction creation (bazel-out)");
+
+        Path bazelBinLink = projectRoot.resolve("bazel-bin");
+        TestEnvironment.requireOrSkip(createDirectoryLink(bazelBinLink, realBin),
+            "directory symlink / junction creation (bazel-bin)");
+
+        JdtServiceImpl service = new JdtServiceImpl();
+        service.loadProject(projectRoot);
+        ClasspathSnapshot snapshot = ClasspathSnapshot.capture(service.getJavaProject());
+
+        long libAppEntries = snapshot.libraryCountEndingWith("libapp.jar");
+        assertEquals(1L, libAppEntries,
+            "Expected libapp.jar exactly once when bazel-bin/bazel-out symlink to an " +
+            "external real directory. Without canonicalizeAndDedupe returning canonical " +
+            "paths, the scan would walk a symlink-to-directory and emit zero entries on " +
+            "Linux/macOS. Got " + libAppEntries + ". Libraries: " + snapshot.libraries());
+    }
+
     /**
      * Create a directory link at {@code link} pointing to {@code target}. Tries a symbolic
      * link first; on Windows where symlinks need admin/Developer Mode, falls back to a

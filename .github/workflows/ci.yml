@@ -39,21 +39,29 @@ jobs:
 
     - name: Install Maven (Windows)
       if: matrix.os == 'windows-latest'
-      run: choco install maven --no-progress
+      run: |
+        choco install maven --no-progress
+        # choco updates the system PATH but the current step's shell snapshotted it at
+        # job start; subsequent steps need an explicit append to GITHUB_PATH so the
+        # surefire JVM can find mvn.cmd.
+        Add-Content $env:GITHUB_PATH "C:\ProgramData\chocolatey\bin"
+      shell: pwsh
 
-    # Gradle: not pre-installed by setup-java. Without this the realistic Gradle E2E and
-    # GradleClasspathTest would silently skip via Assumptions, making CI green misleading.
-    - name: Install Gradle (Linux)
-      if: matrix.os == 'ubuntu-latest'
-      run: sudo apt-get install -y gradle
-
-    - name: Install Gradle (macOS)
-      if: matrix.os == 'macos-latest'
-      run: brew install gradle
+    # Gradle: apt's package on ubuntu-latest is Gradle 4.x, too old to run our init
+    # script (uses tasks.register and other 6.0+ syntax). Use the gradle-vendor-supported
+    # action which pins a current Gradle version and adds it to PATH for subsequent steps.
+    - name: Install Gradle (Linux + macOS)
+      if: matrix.os != 'windows-latest'
+      uses: gradle/actions/setup-gradle@v3
+      with:
+        gradle-version: '8.10.2'
 
     - name: Install Gradle (Windows)
       if: matrix.os == 'windows-latest'
-      run: choco install gradle --no-progress
+      run: |
+        choco install gradle --no-progress
+        Add-Content $env:GITHUB_PATH "C:\ProgramData\chocolatey\bin"
+      shell: pwsh
 
     # Bazel via bazelisk — installs the Bazel version pinned in fixtures via .bazelversion files.
     - name: Install bazelisk

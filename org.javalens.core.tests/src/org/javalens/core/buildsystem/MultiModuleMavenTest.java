@@ -126,16 +126,21 @@ class MultiModuleMavenTest {
             .directory(projectRoot.toFile())
             .redirectErrorStream(true)
             .start();
+        StringBuilder captured = new StringBuilder();
         try (var reader = new java.io.BufferedReader(new java.io.InputStreamReader(p.getInputStream()))) {
-            while (reader.readLine() != null) { /* drain */ }
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (captured.length() < 8192) captured.append(line).append('\n');
+            }
         }
         boolean done = p.waitFor(5, TimeUnit.MINUTES);
         if (!done) {
             p.destroyForcibly();
-            throw new RuntimeException("mvn " + String.join(" ", goals) + " timed out");
+            throw new RuntimeException("mvn " + String.join(" ", goals) + " timed out\n" + captured);
         }
         if (p.exitValue() != 0) {
-            throw new RuntimeException("mvn " + String.join(" ", goals) + " failed with exit code " + p.exitValue());
+            throw new RuntimeException("mvn " + String.join(" ", goals)
+                + " failed with exit code " + p.exitValue() + "\n" + captured);
         }
     }
 

@@ -108,15 +108,20 @@ class CrossModuleNavigationToolTest {
             .directory(projectRoot.toFile())
             .redirectErrorStream(true)
             .start();
+        StringBuilder captured = new StringBuilder();
         try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
-            while (r.readLine() != null) { /* drain */ }
+            String line;
+            while ((line = r.readLine()) != null) {
+                if (captured.length() < 8192) captured.append(line).append('\n');
+            }
         }
         if (!p.waitFor(5, TimeUnit.MINUTES)) {
             p.destroyForcibly();
-            throw new RuntimeException("mvn " + String.join(" ", goals) + " timed out");
+            throw new RuntimeException("mvn " + String.join(" ", goals) + " timed out\n" + captured);
         }
         if (p.exitValue() != 0) {
-            throw new RuntimeException("mvn " + String.join(" ", goals) + " failed");
+            throw new RuntimeException("mvn " + String.join(" ", goals)
+                + " failed with exit code " + p.exitValue() + "\n" + captured);
         }
     }
 

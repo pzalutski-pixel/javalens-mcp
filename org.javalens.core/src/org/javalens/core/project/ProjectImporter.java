@@ -463,6 +463,33 @@ public class ProjectImporter {
     /**
      * Get list of module directories for a multi-module project.
      */
+    /**
+     * Recursively visit a Maven module and every {@code <module>} entry it declares,
+     * collecting source paths into {@code sourcePaths}. Pure aggregators (modules with
+     * {@code <modules>} but no {@code src/main/java}) contribute no sources of their own
+     * but still hand off to their children. The {@code visited} set is keyed on canonical
+     * paths so a relative {@code <module>} like {@code ../sibling} that loops back to an
+     * already-visited directory exits cleanly.
+     */
+    private void collectMavenSourcePaths(java.nio.file.Path moduleRoot,
+            List<java.nio.file.Path> sourcePaths, java.util.Set<java.nio.file.Path> visited) {
+        java.nio.file.Path canonical;
+        try {
+            canonical = moduleRoot.toRealPath();
+        } catch (IOException e) {
+            canonical = moduleRoot.toAbsolutePath().normalize();
+        }
+        if (!visited.add(canonical)) return;
+
+        addSourcePathsFromDirectory(moduleRoot, sourcePaths);
+
+        if (isMultiModuleProject(moduleRoot)) {
+            for (java.nio.file.Path child : getModules(moduleRoot)) {
+                collectMavenSourcePaths(child, sourcePaths, visited);
+            }
+        }
+    }
+
     public List<java.nio.file.Path> getModules(java.nio.file.Path projectPath) {
         List<java.nio.file.Path> modules = new ArrayList<>();
         java.nio.file.Path pomPath = projectPath.resolve("pom.xml");
@@ -495,15 +522,13 @@ public class ProjectImporter {
     private List<java.nio.file.Path> getAllSourcePaths(java.nio.file.Path projectPath) {
         List<java.nio.file.Path> sourcePaths = new ArrayList<>();
 
-        // First check the root project
-        addSourcePathsFromDirectory(projectPath, sourcePaths);
-
-        // If multi-module Maven, also check each module
-        if (isMultiModuleProject(projectPath)) {
-            for (java.nio.file.Path modulePath : getModules(projectPath)) {
-                addSourcePathsFromDirectory(modulePath, sourcePaths);
-            }
-        }
+        // Walk the Maven module tree recursively. A module declared by the root pom can
+        // itself be an aggregator (<packaging>pom</packaging> with its own <modules> and
+        // no src/main/java); a flat depth-1 walk would visit it, find nothing, and never
+        // descend, leaving every nested leaf module's sources unindexed (issue #8).
+        // Cycle guard via canonical-path visited set protects against relative <module>
+        // paths like ../sibling that could otherwise loop.
+        collectMavenSourcePaths(projectPath, sourcePaths, new java.util.HashSet<>());
 
         // If multi-project Gradle, also check each subproject. Without this, subproject
         // src/main/java directories and their build/generated/sources/* are absent from
@@ -1319,17 +1344,15 @@ public class ProjectImporter {
      * Non-existent roots and roots whose canonicalization fails are skipped.
      */
     private java.util.List<java.nio.file.Path> canonicalizeAndDedupe(java.util.List<java.nio.file.Path> candidates) {
-        java.util.LinkedHashMap<java.nio.file.Path, java.nio.file.Path> realToOriginal = new java.util.LinkedHashMap<>();
+        java.util.LinkedHashSet<java.nio.file.Path> reals = new java.util.LinkedHashSet<>();
         for (java.nio.file.Path c : candidates) {
             if (!Files.exists(c)) continue;
             try {
-                java.nio.file.Path real = c.toRealPath();
-                realToOriginal.putIfAbsent(real, c);
+                reals.add(c.toRealPath());
             } catch (IOException e) {
                 log.warn("Failed to canonicalize {}: {}", c, e.getMessage());
             }
         }
-        java.util.List<java.nio.file.Path> reals = new ArrayList<>(realToOriginal.keySet());
         java.util.List<java.nio.file.Path> kept = new ArrayList<>();
         for (java.nio.file.Path candidate : reals) {
             boolean contained = false;
@@ -1337,7 +1360,11 @@ public class ProjectImporter {
                 if (candidate.equals(other)) continue;
                 if (candidate.startsWith(other)) { contained = true; break; }
             }
-            if (!contained) kept.add(realToOriginal.get(candidate));
+            // Return canonical paths so scanBazelDirForJars walks real directories. On
+            // Linux, bazel-bin/bazel-out are real symbolic links and Files.walk without
+            // FOLLOW_LINKS treats a symlink-to-directory as a non-directory single entry,
+            // descending nothing. Walking the resolved canonical target avoids that.
+            if (!contained) kept.add(candidate);
         }
         return kept;
     }
