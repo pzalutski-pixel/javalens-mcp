@@ -126,6 +126,13 @@ class MultiModuleMavenTest {
             .directory(projectRoot.toFile())
             .redirectErrorStream(true);
         propagateJavaHome(pb);
+        // CI diagnostic: dump the JAVA_HOME and Path the child will see, so we can
+        // verify env propagation actually reached the spawned process.
+        System.err.println("[runMaven] pb.environment().JAVA_HOME=" + pb.environment().get("JAVA_HOME"));
+        System.err.println("[runMaven] pb.environment().Path[0..200]=" +
+            (pb.environment().getOrDefault("Path", "").length() > 200
+                ? pb.environment().get("Path").substring(0, 200) + "..."
+                : pb.environment().get("Path")));
         Process p = pb.start();
         StringBuilder captured = new StringBuilder();
         try (var reader = new java.io.BufferedReader(new java.io.InputStreamReader(p.getInputStream()))) {
