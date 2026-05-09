@@ -164,6 +164,14 @@ public class ProjectImporter {
             case GRADLE -> detectGradleAnnotationProcessors(projectPath);
             case BAZEL, UNKNOWN -> List.of();
         });
+
+        // Note: an earlier draft also fired GENERATED_SOURCES_NOT_FOUND when processors
+        // were declared but no generated-source directory existed. That produced false
+        // positives for Lombok, which modifies AST in-place rather than emitting .java —
+        // a Lombok-only project always has the processor declared and never has
+        // target/generated-sources/. Without inspecting each processor's behavior we
+        // cannot reliably distinguish "build hasn't run" from "this processor doesn't
+        // emit", so the warning was removed.
         // Cross-cutting scan: pick up any jar with a processor SPI descriptor so Bazel +
         // any classpath that quietly carries a processor (compileOnly, transitive, etc.)
         // gets APT wired up.
@@ -334,10 +342,23 @@ public class ProjectImporter {
         // Final fallback for any build system that didn't surface a level: use the running
         // JVM's feature version. This keeps Plain Java projects (no build file) and
         // partially-declared Maven/Gradle/Bazel projects parsing modern syntax instead of
-        // silently inheriting an older JDT default.
+        // silently inheriting an older JDT default. When a real build system was detected
+        // but no level surfaced, emit COMPLIANCE_LEVEL_UNKNOWN so the agent knows we
+        // guessed (the build file likely declares a level we didn't find). Plain Java has
+        // no place to declare one, so the fallback is expected — no warning there.
         if (level == null) {
             level = String.valueOf(Runtime.version().feature());
-            log.info("No compiler level declared; defaulting to runtime JVM major version {}", level);
+            if (buildSystem != BuildSystem.UNKNOWN) {
+                warnings.add(new LoadWarning(
+                    LoadWarning.COMPLIANCE_LEVEL_UNKNOWN,
+                    "Could not determine declared Java source level for " + buildSystem +
+                        " project; defaulting to runtime JVM major version " + level,
+                    "Declare maven.compiler.source/release in pom.xml, sourceCompatibility " +
+                        "in build.gradle, or javacopts -source/--release in BUILD.bazel so " +
+                        "language-level features parse against the intended grammar."));
+            } else {
+                log.info("No compiler level declared; defaulting to runtime JVM major version {}", level);
+            }
         }
         javaProject.setOption(JavaCore.COMPILER_SOURCE, level);
         javaProject.setOption(JavaCore.COMPILER_COMPLIANCE, level);
@@ -346,19 +367,41 @@ public class ProjectImporter {
     }
 
     /**
-     * Extract Maven's declared compiler level from {@code <properties>} in pom.xml.
-     * Tries {@code maven.compiler.release} first (the most precise), then
-     * {@code maven.compiler.source}, then {@code maven.compiler.target}.
-     * Returns {@code null} if none are declared.
+     * Extract Maven's declared compiler level from pom.xml. Tries, in priority order:
+     * <ol>
+     *   <li>{@code <properties>}: {@code maven.compiler.release} > {@code source} > {@code target}.</li>
+     *   <li>{@code <plugin><artifactId>maven-compiler-plugin</artifactId><configuration>}:
+     *       {@code <release>} > {@code <source>} > {@code <target>}. This form is the more
+     *       common one in real projects that don't use the property shortcuts.</li>
+     * </ol>
+     * Returns {@code null} if neither location declares a level.
      */
     private String detectMavenCompilerLevel(java.nio.file.Path projectPath) {
         java.nio.file.Path pom = projectPath.resolve("pom.xml");
         if (!Files.exists(pom)) return null;
         try {
             String content = Files.readString(pom);
+
+            // 1. <properties> shortcuts.
             for (String key : new String[]{"maven.compiler.release", "maven.compiler.source", "maven.compiler.target"}) {
                 String value = extractXmlText(content, key);
-                if (value != null) return value;
+                if (value != null) return resolvePomProperty(content, value);
+            }
+
+            // 2. <plugin>maven-compiler-plugin</plugin>'s <configuration> block.
+            Matcher pluginBlock = Pattern.compile(
+                "<plugin>\\s*(?:<groupId>[^<]+</groupId>\\s*)?<artifactId>maven-compiler-plugin</artifactId>(.*?)</plugin>",
+                Pattern.DOTALL).matcher(content);
+            while (pluginBlock.find()) {
+                String inner = pluginBlock.group(1);
+                Matcher configBlock = Pattern.compile("<configuration>(.*?)</configuration>", Pattern.DOTALL).matcher(inner);
+                if (configBlock.find()) {
+                    String config = configBlock.group(1);
+                    for (String tag : new String[]{"release", "source", "target"}) {
+                        String value = extractXmlText(config, tag);
+                        if (value != null) return resolvePomProperty(content, value);
+                    }
+                }
             }
         } catch (IOException e) {
             log.debug("Failed to read pom.xml for compiler level: {}", e.getMessage());
@@ -755,8 +798,22 @@ public class ProjectImporter {
             }
 
             if (process.exitValue() == 0) {
-                aggregateClasspathFiles(projectPath, jars);
-                log.info("Got {} classpath entries from Maven", jars.size());
+                int filesFound = aggregateClasspathFiles(projectPath, jars);
+                log.info("Got {} classpath entries from Maven ({} per-module files)", jars.size(), filesFound);
+                // Narrow Bug X regression: mvn can exit 0 yet write zero classpath files
+                // — for example, a custom dependency-plugin version that doesn't honor our
+                // flag, a profile that disables the plugin, or a different mojo binding.
+                // Distinguish "mvn wrote nothing" (suspicious, soft fail) from "mvn wrote
+                // files but the project has no deps" (legitimate, no warning).
+                if (filesFound == 0) {
+                    String snippet = trimToLastLines(capturedOutput.toString(), 5);
+                    warnings.add(new LoadWarning(
+                        LoadWarning.MAVEN_SUBPROCESS_FAILED,
+                        "mvn dependency:build-classpath exited successfully but produced no " +
+                            "classpath files. Last output: " + (snippet.isEmpty() ? "(empty)" : snippet),
+                        "Run 'mvn dependency:build-classpath -Dmdep.outputFile=target/cp.txt' " +
+                            "manually in " + projectPath + " to confirm the plugin emits output."));
+                }
             } else {
                 int exitCode = process.exitValue();
                 log.warn("Maven classpath command failed with exit code: {}", exitCode);
@@ -789,8 +846,13 @@ public class ProjectImporter {
      * by {@code dependency:build-classpath} and union their contents into {@code jars}. The
      * caller passes a {@link java.util.LinkedHashSet} so duplicates across modules collapse
      * while preserving discovery order.
+     *
+     * @return number of classpath files actually found and read. Distinguishes "mvn ran but
+     *     produced no files" (suspicious, plugin disabled or wrong version) from "mvn ran,
+     *     produced files, files were empty" (legitimate — project has no dependencies).
      */
-    private void aggregateClasspathFiles(java.nio.file.Path projectPath, java.util.Set<String> jars) {
+    private int aggregateClasspathFiles(java.nio.file.Path projectPath, java.util.Set<String> jars) {
+        java.util.concurrent.atomic.AtomicInteger filesFound = new java.util.concurrent.atomic.AtomicInteger();
         try (Stream<java.nio.file.Path> stream = Files.walk(projectPath)) {
             stream.filter(p -> p.getFileName() != null
                         && MAVEN_CP_FILENAME.equals(p.getFileName().toString()))
@@ -798,6 +860,7 @@ public class ProjectImporter {
                         && p.getParent().getFileName() != null
                         && "target".equals(p.getParent().getFileName().toString()))
                   .forEach(cpFile -> {
+                      filesFound.incrementAndGet();
                       try {
                           String content = Files.readString(cpFile).trim();
                           if (!content.isEmpty()) {
@@ -812,6 +875,7 @@ public class ProjectImporter {
         } catch (IOException e) {
             log.warn("Failed to walk {} for classpath files: {}", projectPath, e.getMessage());
         }
+        return filesFound.get();
     }
 
     /**
@@ -1223,6 +1287,21 @@ public class ProjectImporter {
         List<String> jars = new ArrayList<>(canonicalJars.size());
         for (java.nio.file.Path p : canonicalJars) jars.add(p.toString());
         log.debug("Found {} JARs from Bazel output ({} candidate roots)", jars.size(), rootsToScan.size());
+        // Surface BAZEL_NOT_BUILT once per import when the project is detected as Bazel
+        // but neither bazel-bin nor bazel-out exists (or both are empty). The signal is
+        // "the user hasn't run bazel build yet", not a JavaLens bug — but the agent needs
+        // to know analysis is degraded. Suppressed if a previous code path already added
+        // it to keep warnings deduped.
+        if (rootsToScan.isEmpty()
+                && warnings.stream().noneMatch(w -> LoadWarning.BAZEL_NOT_BUILT.equals(w.code()))) {
+            warnings.add(new LoadWarning(
+                LoadWarning.BAZEL_NOT_BUILT,
+                "Neither bazel-bin nor bazel-out exists in " + projectPath +
+                    "; classpath will be empty",
+                "Run 'bazel build //...' (or the relevant target set) in the project root " +
+                    "before loading. JavaLens reads dependency jars from Bazel's build " +
+                    "output, not from the source tree."));
+        }
         return jars;
     }
 

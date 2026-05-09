@@ -106,13 +106,16 @@ public class TestProjectHelper implements BeforeEachCallback, AfterEachCallback 
 
     /**
      * Load a test project fixture and return a structured result containing the service,
-     * a {@link ClasspathSnapshot} captured immediately after load, and any warnings surfaced
-     * during the load (empty until PR-4 wires {@code LoadWarning} through {@code loadProject}).
+     * a {@link ClasspathSnapshot} captured immediately after load, and the {@code code}
+     * field of every {@code LoadWarning} the load surfaced.
      */
     public LoadedFixture loadFixture(String fixtureName) throws CoreException {
         JdtServiceImpl service = loadProject(fixtureName);
         ClasspathSnapshot snapshot = ClasspathSnapshot.capture(service.getJavaProject());
-        return new LoadedFixture(service, snapshot, java.util.List.of());
+        java.util.List<String> warningCodes = service.getWarnings().stream()
+            .map(w -> w.code())
+            .toList();
+        return new LoadedFixture(service, snapshot, warningCodes);
     }
 
     /**

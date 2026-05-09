@@ -9,8 +9,11 @@ import java.util.List;
  * Result of loading a test fixture project.
  *
  * <p>Bundles the live {@link JdtServiceImpl} together with a {@link ClasspathSnapshot} captured
- * immediately after load and a list of any warnings surfaced during the load. The warnings list
- * is empty until PR-4 wires {@code LoadWarning} through {@code JdtServiceImpl.loadProject}.
+ * immediately after load and the {@code code} field of every {@link
+ * org.javalens.core.project.model.LoadWarning} the load surfaced.
+ *
+ * @param warnings warning codes (e.g. {@code MAVEN_SUBPROCESS_FAILED}) emitted during load,
+ *                 ordered as they were appended; empty when the load was clean.
  */
 public record LoadedFixture(
     JdtServiceImpl service,

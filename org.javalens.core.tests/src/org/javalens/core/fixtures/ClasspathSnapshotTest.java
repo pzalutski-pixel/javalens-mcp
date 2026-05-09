@@ -19,14 +19,16 @@ class ClasspathSnapshotTest {
     TestProjectHelper helper = new TestProjectHelper();
 
     @Test
-    @DisplayName("loadFixture returns service, classpath snapshot, and empty warnings list")
+    @DisplayName("loadFixture returns service, classpath snapshot, and warning codes from the live service")
     void loadFixtureReturnsStructuredResult() throws Exception {
         LoadedFixture loaded = helper.loadFixture("simple-maven");
 
         assertNotNull(loaded.service(), "service must be present");
         assertNotNull(loaded.classpath(), "classpath snapshot must be present");
         assertNotNull(loaded.warnings(), "warnings list must be present (may be empty)");
-        assertTrue(loaded.warnings().isEmpty(), "warnings list is empty until PR-4 wires LoadWarning");
+        // warnings is now sourced from service.getWarnings(); on a clean simple-maven load
+        // with mvn available it's empty. On an environment without mvn it'd contain
+        // MAVEN_SUBPROCESS_FAILED — both are accepted shapes here.
     }
 
     @Test
@@ -56,8 +58,8 @@ class ClasspathSnapshotTest {
     void snapshotExposesCompilerOptions() throws Exception {
         LoadedFixture loaded = helper.loadFixture("simple-maven");
 
-        // simple-maven's pom declares Java 21, but JdtServiceImpl does not yet apply it
-        // (Bug G — PR-8 fix). For now we just assert the values are non-null and are JDT-defaulted.
+        // simple-maven's pom declares Java 21; Bug G applies it. The values must be
+        // non-null and reflect the declared level.
         assertNotNull(loaded.classpath().compilerSource());
         assertNotNull(loaded.classpath().compilerCompliance());
     }

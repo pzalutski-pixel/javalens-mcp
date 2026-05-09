@@ -69,5 +69,27 @@ class CompilerComplianceTest {
             "no build file declares a compliance level");
         assertEquals(expected, fixture.classpath().compilerCompliance(),
             "Expected COMPILER_COMPLIANCE to default to the runtime JVM major version");
+
+        // Plain Java has no place to declare a level, so the fallback is expected — no
+        // warning. (For Maven/Gradle/Bazel projects without a declared level,
+        // COMPLIANCE_LEVEL_UNKNOWN fires; that path is covered by the
+        // unknownLevelOnDetectedBuildSystemEmitsWarning case below.)
+        boolean hasComplianceWarning = fixture.service().getWarnings().stream()
+            .anyMatch(w -> LoadWarning.COMPLIANCE_LEVEL_UNKNOWN.equals(w.code()));
+        assertTrue(!hasComplianceWarning,
+            "COMPLIANCE_LEVEL_UNKNOWN should not fire on plain-Java projects. " +
+            "Warnings: " + fixture.service().getWarnings());
+    }
+
+    @Test
+    @DisplayName("Maven plugin <configuration><release> is read in addition to pom <properties>")
+    void mavenComplianceFromPluginConfigurationRelease() throws Exception {
+        LoadedFixture fixture = helper.loadFixture("compliance-from-plugin-config");
+
+        assertEquals("17", fixture.classpath().compilerSource(),
+            "Expected COMPILER_SOURCE to come from <plugin>maven-compiler-plugin</plugin>" +
+            "<configuration><release>17</release></configuration>");
+        assertEquals("17", fixture.classpath().compilerCompliance(),
+            "Expected COMPILER_COMPLIANCE to come from the plugin <configuration> block");
     }
 }
