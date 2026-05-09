@@ -170,6 +170,11 @@ class MultiModuleMavenTest {
                 sb.append("@echo off\r\n");
                 sb.append("set \"JAVA_HOME=").append(javaHome).append("\"\r\n");
                 sb.append("set \"Path=").append(javaHome).append("\\bin;%Path%\"\r\n");
+                sb.append("echo [diag] JAVA_HOME=%JAVA_HOME%\r\n");
+                sb.append("echo [diag] java.exe exists check:\r\n");
+                sb.append("if exist \"%JAVA_HOME%\\bin\\java.exe\" (echo [diag]   YES) else (echo [diag]   NO)\r\n");
+                sb.append("dir \"%JAVA_HOME%\\bin\\java.exe\" 2>&1\r\n");
+                sb.append("echo [diag] Path[0..200]=%Path:~0,200%\r\n");
                 sb.append("\"").append(binary).append("\"");
                 for (String g : goals) sb.append(' ').append(g);
                 sb.append("\r\n");
