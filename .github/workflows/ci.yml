@@ -69,6 +69,14 @@ jobs:
       if: matrix.os == 'windows-latest'
       shell: pwsh
       run: |
+        $cleanRoot = Join-Path $env:RUNNER_TEMP "childjdk"
+        # Tell Defender to leave the JDK alone before extraction. Without this, Defender
+        # silently removes child-jdk\bin\java.exe between extraction and test execution
+        # (newly-extracted .exe files from a downloaded zip carry Mark-of-the-Web; the
+        # runner's real-time protection then deletes them on access). Add-MpPreference
+        # is admin-only but the GitHub runner runs steps as admin.
+        Add-MpPreference -ExclusionPath $cleanRoot -ErrorAction SilentlyContinue
+
         $jdkUrl = "https://aka.ms/download-jdk/microsoft-jdk-21.0.5-windows-x64.zip"
         Invoke-WebRequest -Uri $jdkUrl -OutFile $env:RUNNER_TEMP\child-jdk.zip
         Expand-Archive -Path $env:RUNNER_TEMP\child-jdk.zip -DestinationPath $env:RUNNER_TEMP\child-jdk-extract
@@ -78,10 +86,10 @@ jobs:
                    Select-Object -First 1
         if (-not $javaExe) { throw "java.exe not found under extracted JDK!" }
         $jdkRoot = $javaExe.Directory.Parent.FullName
-        # Move to a path without '+' or version-suffix characters that some launcher
-        # batch scripts handle inconsistently.
-        $cleanRoot = Join-Path $env:RUNNER_TEMP "childjdk"
         Move-Item $jdkRoot $cleanRoot
+        # Strip Mark-of-the-Web from every file under the JDK so Defender doesn't
+        # quarantine them on first access from a child process.
+        Get-ChildItem -Recurse $cleanRoot | Unblock-File -ErrorAction SilentlyContinue
         echo "Child JDK at: $cleanRoot"
         if (-not (Test-Path "$cleanRoot\bin\java.exe")) { throw "java.exe missing under $cleanRoot\bin" }
         echo "JAVALENS_TESTS_CHILD_JAVA_HOME=$cleanRoot" >> $env:GITHUB_ENV
