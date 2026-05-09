@@ -69,13 +69,22 @@ jobs:
       if: matrix.os == 'windows-latest'
       shell: pwsh
       run: |
-        $version = "21.0.5+11.0.LTS"
         $jdkUrl = "https://aka.ms/download-jdk/microsoft-jdk-21.0.5-windows-x64.zip"
         Invoke-WebRequest -Uri $jdkUrl -OutFile $env:RUNNER_TEMP\child-jdk.zip
-        Expand-Archive -Path $env:RUNNER_TEMP\child-jdk.zip -DestinationPath $env:RUNNER_TEMP\child-jdk
-        $jdkRoot = (Get-ChildItem -Directory $env:RUNNER_TEMP\child-jdk | Select-Object -First 1).FullName
-        echo "JAVALENS_TESTS_CHILD_JAVA_HOME=$jdkRoot" >> $env:GITHUB_ENV
-        echo "Installed child-process JDK at $jdkRoot"
+        Expand-Archive -Path $env:RUNNER_TEMP\child-jdk.zip -DestinationPath $env:RUNNER_TEMP\child-jdk-extract
+        # Find java.exe empirically — extraction structure varies between vendors.
+        $javaExe = Get-ChildItem -Recurse -Filter "java.exe" $env:RUNNER_TEMP\child-jdk-extract |
+                   Where-Object { $_.Directory.Name -eq "bin" } |
+                   Select-Object -First 1
+        if (-not $javaExe) { throw "java.exe not found under extracted JDK!" }
+        $jdkRoot = $javaExe.Directory.Parent.FullName
+        # Move to a path without '+' or version-suffix characters that some launcher
+        # batch scripts handle inconsistently.
+        $cleanRoot = Join-Path $env:RUNNER_TEMP "childjdk"
+        Move-Item $jdkRoot $cleanRoot
+        echo "Child JDK at: $cleanRoot"
+        if (-not (Test-Path "$cleanRoot\bin\java.exe")) { throw "java.exe missing under $cleanRoot\bin" }
+        echo "JAVALENS_TESTS_CHILD_JAVA_HOME=$cleanRoot" >> $env:GITHUB_ENV
 
     # Gradle: vendor-supported action on Linux/macOS adds the binary to PATH for
     # subsequent steps; the same parameter on Windows did not propagate to the
