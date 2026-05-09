@@ -119,12 +119,13 @@ class MultiModuleMavenTest {
 
     private static void runMaven(String mvnBinary, Path projectRoot, String... goals)
             throws IOException, InterruptedException {
-        java.util.List<String> command = buildSubprocessCommand(mvnBinary, goals);
-        ProcessBuilder pb = new ProcessBuilder(command)
+        java.util.List<String> command = new java.util.ArrayList<>();
+        command.add(mvnBinary);
+        for (String g : goals) command.add(g);
+        Process p = new ProcessBuilder(command)
             .directory(projectRoot.toFile())
-            .redirectErrorStream(true);
-        propagateJavaHome(pb);
-        Process p = pb.start();
+            .redirectErrorStream(true)
+            .start();
         StringBuilder captured = new StringBuilder();
         try (var reader = new java.io.BufferedReader(new java.io.InputStreamReader(p.getInputStream()))) {
             String line;
@@ -141,69 +142,6 @@ class MultiModuleMavenTest {
             throw new RuntimeException("mvn " + String.join(" ", goals)
                 + " failed with exit code " + p.exitValue() + "\n" + captured);
         }
-    }
-
-    /**
-     * Locate a Maven binary the test can invoke. Prefers {@code mvn} on PATH; falls back to
-     * a Maven Wrapper distribution under {@code ~/.m2/wrapper/dists}, which is present in
-     * this repo because {@code ./mvnw} extracts mvn there on first build.
-     */
-    /**
-     * On Windows, write env-set commands and the actual mvn invocation to a temp
-     * {@code .cmd} script and execute that. Routing through ProcessBuilder's argv
-     * with {@code cmd /c "set X=Y && mvn ..."} is unreliable: Java's command-line
-     * quoting for embedded {@code "} interacts unpredictably with cmd.exe's parser
-     * for compound commands. Writing a script file sidesteps every layer of quoting.
-     */
-    private static java.util.List<String> buildSubprocessCommand(String binary, String[] goals) {
-        boolean isWindows = System.getProperty("os.name").toLowerCase().contains("win");
-        java.util.List<String> command = new java.util.ArrayList<>();
-        if (isWindows) {
-            String override = System.getenv("JAVALENS_TESTS_CHILD_JAVA_HOME");
-            if (override != null) override = override.trim();
-            String javaHome = (override != null && !override.isBlank())
-                ? override : System.getProperty("java.home");
-            javaHome = javaHome.trim();
-            try {
-                Path script = Files.createTempFile("javalens-cmd-", ".cmd");
-                StringBuilder sb = new StringBuilder();
-                sb.append("@echo off\r\n");
-                sb.append("set \"JAVA_HOME=").append(javaHome).append("\"\r\n");
-                sb.append("set \"Path=").append(javaHome).append("\\bin;%Path%\"\r\n");
-                sb.append("echo [diag] JAVA_HOME=%JAVA_HOME%\r\n");
-                sb.append("echo [diag] java.exe exists check:\r\n");
-                sb.append("if exist \"%JAVA_HOME%\\bin\\java.exe\" (echo [diag]   YES) else (echo [diag]   NO)\r\n");
-                sb.append("dir \"%JAVA_HOME%\\bin\\java.exe\" 2>&1\r\n");
-                sb.append("echo [diag] Path[0..200]=%Path:~0,200%\r\n");
-                sb.append("\"").append(binary).append("\"");
-                for (String g : goals) sb.append(' ').append(g);
-                sb.append("\r\n");
-                Files.writeString(script, sb.toString());
-                command.add(script.toString());
-            } catch (IOException e) {
-                throw new RuntimeException("Failed to write temp cmd script", e);
-            }
-        } else {
-            command.add(binary);
-            for (String g : goals) command.add(g);
-        }
-        return command;
-    }
-
-    private static void propagateJavaHome(ProcessBuilder pb) {
-        String override = System.getenv("JAVALENS_TESTS_CHILD_JAVA_HOME");
-        if (override != null) override = override.trim();
-        String javaHome = (override != null && !override.isBlank())
-            ? override : System.getProperty("java.home");
-        if (javaHome == null || javaHome.isBlank()) return;
-        javaHome = javaHome.trim();
-        java.util.Map<String, String> env = pb.environment();
-        env.put("JAVA_HOME", javaHome);
-        boolean isWindows = System.getProperty("os.name").toLowerCase().contains("win");
-        String pathKey = isWindows ? "Path" : "PATH";
-        String javaBin = javaHome + java.io.File.separator + "bin";
-        String existing = env.getOrDefault(pathKey, "");
-        env.put(pathKey, existing.isEmpty() ? javaBin : javaBin + java.io.File.pathSeparator + existing);
     }
 
     private static String resolveMavenBinary() {

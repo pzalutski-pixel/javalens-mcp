@@ -785,7 +785,6 @@ public class ProjectImporter {
             );
             pb.directory(projectPath.toFile());
             pb.redirectErrorStream(true);
-            propagateJavaHome(pb);
 
             log.info("Running Maven to get classpath...");
             Process process;
@@ -1036,7 +1035,6 @@ public class ProjectImporter {
             );
             pb.directory(projectPath.toFile());
             pb.redirectErrorStream(true);
-            propagateJavaHome(pb);
 
             log.info("Running Gradle to get classpath...");
             Process process;
@@ -1393,49 +1391,6 @@ public class ProjectImporter {
 
     private boolean isWindows() {
         return System.getProperty("os.name").toLowerCase().contains("win");
-    }
-
-    /**
-     * Force the spawned process to inherit a known-good {@code JAVA_HOME} and a
-     * {@code PATH} that puts the running JVM's {@code bin} first.
-     *
-     * <p>Required because the OpenJDK launcher derives its JDK root from
-     * {@code GetModuleFileName(NULL)} — the path of the {@code java.exe} that ends up
-     * executing — and uses that root to read {@code lib/jvm.cfg}. If a host's
-     * {@code mvn.cmd} or {@code gradle.bat} script falls through to a PATH lookup
-     * because the parent process didn't propagate {@code JAVA_HOME}, the wrong
-     * {@code java.exe} runs and the launcher can fail to open {@code lib/jvm.cfg}
-     * even though the right JDK is installed.
-     */
-    /**
-     * Propagate a known-good {@code JAVA_HOME} to the spawned child. Honors the
-     * {@code JAVALENS_TESTS_CHILD_JAVA_HOME} env var first — this lets CI point
-     * subprocesses at a different JDK from the one the test JVM is running, which
-     * sidesteps a Windows-specific issue where the parent JVM's open handle on
-     * {@code lib/jvm.cfg} prevents a child {@code java.exe} from reading the same
-     * file. When the override is unset, fall back to the running JVM's
-     * {@code java.home}, which is correct for production and local development.
-     *
-     * <p>Package-private for {@code ProjectImporterEnvTest}.
-     */
-    void propagateJavaHome(ProcessBuilder pb) {
-        String override = System.getenv("JAVALENS_TESTS_CHILD_JAVA_HOME");
-        // Defensive trim: $GITHUB_ENV writes from PowerShell on Windows runners can
-        // leak a trailing \r into the env value. Without trimming, the resulting
-        // JAVA_HOME path picks up the CR and any subsequent path concatenation
-        // (e.g. %JAVA_HOME%\bin\java.exe) becomes invalid.
-        if (override != null) override = override.trim();
-        String javaHome = (override != null && !override.isBlank())
-            ? override
-            : System.getProperty("java.home");
-        if (javaHome == null || javaHome.isBlank()) return;
-        javaHome = javaHome.trim();
-        java.util.Map<String, String> env = pb.environment();
-        env.put("JAVA_HOME", javaHome);
-        String pathKey = isWindows() ? "Path" : "PATH";
-        String javaBin = javaHome + File.separator + "bin";
-        String existing = env.getOrDefault(pathKey, "");
-        env.put(pathKey, existing.isEmpty() ? javaBin : javaBin + File.pathSeparator + existing);
     }
 
     /**

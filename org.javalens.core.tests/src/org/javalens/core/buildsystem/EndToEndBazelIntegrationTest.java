@@ -143,11 +143,10 @@ class EndToEndBazelIntegrationTest {
         java.util.List<String> command = new java.util.ArrayList<>();
         command.add(bazelBinary);
         for (String a : args) command.add(a);
-        ProcessBuilder pb = new ProcessBuilder(command)
+        Process p = new ProcessBuilder(command)
             .directory(projectRoot.toFile())
-            .redirectErrorStream(true);
-        propagateJavaHome(pb);
-        Process p = pb.start();
+            .redirectErrorStream(true)
+            .start();
         StringBuilder out = new StringBuilder();
         try (var reader = new java.io.BufferedReader(new java.io.InputStreamReader(p.getInputStream()))) {
             String line;
@@ -165,22 +164,6 @@ class EndToEndBazelIntegrationTest {
             throw new RuntimeException("bazel " + String.join(" ", args)
                 + " failed with exit code " + p.exitValue() + "\n" + out);
         }
-    }
-
-    private static void propagateJavaHome(ProcessBuilder pb) {
-        String override = System.getenv("JAVALENS_TESTS_CHILD_JAVA_HOME");
-        if (override != null) override = override.trim();
-        String javaHome = (override != null && !override.isBlank())
-            ? override : System.getProperty("java.home");
-        if (javaHome == null || javaHome.isBlank()) return;
-        javaHome = javaHome.trim();
-        java.util.Map<String, String> env = pb.environment();
-        env.put("JAVA_HOME", javaHome);
-        boolean isWindows = System.getProperty("os.name").toLowerCase().contains("win");
-        String pathKey = isWindows ? "Path" : "PATH";
-        String javaBin = javaHome + java.io.File.separator + "bin";
-        String existing = env.getOrDefault(pathKey, "");
-        env.put(pathKey, existing.isEmpty() ? javaBin : javaBin + java.io.File.pathSeparator + existing);
     }
 
     private static String resolveBazelBinary() {

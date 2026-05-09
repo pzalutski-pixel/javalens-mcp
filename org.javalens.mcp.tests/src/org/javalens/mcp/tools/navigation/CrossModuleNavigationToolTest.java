@@ -104,11 +104,10 @@ class CrossModuleNavigationToolTest {
         java.util.List<String> command = new java.util.ArrayList<>();
         command.add(mvn);
         for (String g : goals) command.add(g);
-        ProcessBuilder pb = new ProcessBuilder(command)
+        Process p = new ProcessBuilder(command)
             .directory(projectRoot.toFile())
-            .redirectErrorStream(true);
-        propagateJavaHome(pb);
-        Process p = pb.start();
+            .redirectErrorStream(true)
+            .start();
         StringBuilder captured = new StringBuilder();
         try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
             String line;
@@ -124,22 +123,6 @@ class CrossModuleNavigationToolTest {
             throw new RuntimeException("mvn " + String.join(" ", goals)
                 + " failed with exit code " + p.exitValue() + "\n" + captured);
         }
-    }
-
-    private static void propagateJavaHome(ProcessBuilder pb) {
-        String override = System.getenv("JAVALENS_TESTS_CHILD_JAVA_HOME");
-        if (override != null) override = override.trim();
-        String javaHome = (override != null && !override.isBlank())
-            ? override : System.getProperty("java.home");
-        if (javaHome == null || javaHome.isBlank()) return;
-        javaHome = javaHome.trim();
-        java.util.Map<String, String> env = pb.environment();
-        env.put("JAVA_HOME", javaHome);
-        boolean isWindows = System.getProperty("os.name").toLowerCase().contains("win");
-        String pathKey = isWindows ? "Path" : "PATH";
-        String javaBin = javaHome + java.io.File.separator + "bin";
-        String existing = env.getOrDefault(pathKey, "");
-        env.put(pathKey, existing.isEmpty() ? javaBin : javaBin + java.io.File.pathSeparator + existing);
     }
 
     private static String resolveMavenBinary() {
