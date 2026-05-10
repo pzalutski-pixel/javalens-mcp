@@ -11,6 +11,7 @@ import org.eclipse.jdt.core.ISourceRange;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.ITypeParameter;
 import org.eclipse.jdt.core.JavaModelException;
+import org.eclipse.jdt.core.search.SearchMatch;
 import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTParser;
 import org.eclipse.jdt.core.dom.ASTVisitor;
@@ -141,54 +142,56 @@ public class RenameSymbolTool extends AbstractTool {
                 return ToolResponse.invalidParameter("newName", "Same as current name");
             }
 
-            // Get the binding key by parsing the AST at the element's location
-            ICompilationUnit cu = (ICompilationUnit) element.getAncestor(IJavaElement.COMPILATION_UNIT);
-            if (cu == null) {
-                return ToolResponse.symbolNotFound("Cannot find compilation unit for element");
-            }
-
-            // Parse AST to get binding key
-            ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
-            parser.setSource(cu);
-            parser.setResolveBindings(true);
-            parser.setBindingsRecovery(true);
-            CompilationUnit ast = (CompilationUnit) parser.createAST(null);
-
-            // Find the binding key using the element's source range
-            String targetKey = findBindingKey(element, ast, oldName);
-            if (targetKey == null) {
-                // Fallback to handle identifier matching
-                targetKey = element.getHandleIdentifier();
-                log.debug("Using handle identifier as fallback: {}", targetKey);
-            }
-
-            // Find all references across project
             Map<String, List<Map<String, Object>>> editsByFile = new LinkedHashMap<>();
-            int totalEdits = 0;
 
-            for (Path sourceFile : service.getAllJavaFiles()) {
-                try {
-                    ICompilationUnit sourceCu = service.getCompilationUnit(sourceFile);
-                    if (sourceCu == null) continue;
-
-                    ASTParser sourceParser = ASTParser.newParser(AST.getJLSLatest());
-                    sourceParser.setSource(sourceCu);
-                    sourceParser.setResolveBindings(true);
-                    sourceParser.setBindingsRecovery(true);
-                    CompilationUnit sourceAst = (CompilationUnit) sourceParser.createAST(null);
-
-                    List<Map<String, Object>> fileEdits = findRenameEdits(
-                        sourceAst, targetKey, oldName, newName
-                    );
-
-                    if (!fileEdits.isEmpty()) {
-                        String relativePath = service.getPathUtils().formatPath(sourceFile);
-                        editsByFile.put(relativePath, fileEdits);
-                        totalEdits += fileEdits.size();
-                    }
-                } catch (Exception e) {
-                    log.debug("Error finding rename edits in file: {}", e.getMessage());
+            if (element instanceof IMember member) {
+                // Use SearchEngine: indexed, reliable regardless of ASTParser binding resolution
+                collectMemberEdits(service, member, oldName, newName, editsByFile);
+            } else {
+                // ILocalVariable, ITypeParameter: use AST binding-key approach
+                ICompilationUnit cu = (ICompilationUnit) element.getAncestor(IJavaElement.COMPILATION_UNIT);
+                if (cu == null) {
+                    return ToolResponse.symbolNotFound("Cannot find compilation unit for element");
                 }
+
+                ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
+                parser.setSource(cu);
+                parser.setResolveBindings(true);
+                parser.setBindingsRecovery(true);
+                CompilationUnit ast = (CompilationUnit) parser.createAST(null);
+
+                String targetKey = findBindingKey(element, ast, oldName);
+                if (targetKey == null) {
+                    targetKey = element.getHandleIdentifier();
+                    log.debug("Using handle identifier as fallback: {}", targetKey);
+                }
+                final String key = targetKey;
+
+                for (Path sourceFile : service.getAllJavaFiles()) {
+                    try {
+                        ICompilationUnit sourceCu = service.getCompilationUnit(sourceFile);
+                        if (sourceCu == null) continue;
+
+                        ASTParser sourceParser = ASTParser.newParser(AST.getJLSLatest());
+                        sourceParser.setSource(sourceCu);
+                        sourceParser.setResolveBindings(true);
+                        sourceParser.setBindingsRecovery(true);
+                        CompilationUnit sourceAst = (CompilationUnit) sourceParser.createAST(null);
+
+                        List<Map<String, Object>> fileEdits = findRenameEdits(sourceAst, key, oldName, newName);
+                        if (!fileEdits.isEmpty()) {
+                            String relativePath = service.getPathUtils().formatPath(sourceFile);
+                            editsByFile.put(relativePath, fileEdits);
+                        }
+                    } catch (Exception e) {
+                        log.debug("Error finding rename edits in file: {}", e.getMessage());
+                    }
+                }
+            }
+
+            int totalEdits = 0;
+            for (List<Map<String, Object>> edits : editsByFile.values()) {
+                totalEdits += edits.size();
             }
 
             Map<String, Object> data = new LinkedHashMap<>();
@@ -216,6 +219,44 @@ public class RenameSymbolTool extends AbstractTool {
             log.error("Error renaming symbol: {}", e.getMessage(), e);
             return ToolResponse.internalError(e);
         }
+    }
+
+    private void collectMemberEdits(IJdtService service, IMember member, String oldName, String newName,
+            Map<String, List<Map<String, Object>>> editsByFile) throws Exception {
+        ICompilationUnit declCu = (ICompilationUnit) member.getAncestor(IJavaElement.COMPILATION_UNIT);
+        if (declCu != null) {
+            ISourceRange nameRange = member.getNameRange();
+            if (nameRange != null && nameRange.getOffset() >= 0) {
+                String declPath = service.getPathUtils().formatPath(
+                    declCu.getResource().getLocation().toOSString());
+                editsByFile.computeIfAbsent(declPath, k -> new ArrayList<>())
+                    .add(buildRenameEdit(service, declCu, nameRange.getOffset(), oldName, newName));
+            }
+        }
+
+        List<SearchMatch> refs = service.getSearchService().findAllReferences(member, 10000);
+        for (SearchMatch match : refs) {
+            if (!(match.getElement() instanceof IJavaElement matchElement)) continue;
+            ICompilationUnit cu = (ICompilationUnit) matchElement.getAncestor(IJavaElement.COMPILATION_UNIT);
+            if (cu == null || match.getResource() == null) continue;
+            String refPath = service.getPathUtils().formatPath(
+                match.getResource().getLocation().toOSString());
+            editsByFile.computeIfAbsent(refPath, k -> new ArrayList<>())
+                .add(buildRenameEdit(service, cu, match.getOffset(), oldName, newName));
+        }
+    }
+
+    private Map<String, Object> buildRenameEdit(IJdtService service, ICompilationUnit cu,
+            int offset, String oldName, String newName) {
+        Map<String, Object> edit = new LinkedHashMap<>();
+        edit.put("line", service.getLineNumber(cu, offset));
+        edit.put("column", service.getColumnNumber(cu, offset));
+        edit.put("endColumn", service.getColumnNumber(cu, offset) + oldName.length());
+        edit.put("oldText", oldName);
+        edit.put("newText", newName);
+        edit.put("startOffset", offset);
+        edit.put("endOffset", offset + oldName.length());
+        return edit;
     }
 
     private List<Map<String, Object>> findRenameEdits(CompilationUnit ast, String targetKey,

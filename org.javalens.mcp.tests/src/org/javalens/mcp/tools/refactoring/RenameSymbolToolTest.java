@@ -31,6 +31,7 @@ class RenameSymbolToolTest {
     private Path projectPath;
     private String refactoringTargetPath;
     private String calculatorPath;
+    private String fieldHolderPath;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -40,6 +41,7 @@ class RenameSymbolToolTest {
         projectPath = helper.getFixturePath("simple-maven");
         refactoringTargetPath = projectPath.resolve("src/main/java/com/example/RefactoringTarget.java").toString();
         calculatorPath = projectPath.resolve("src/main/java/com/example/Calculator.java").toString();
+        fieldHolderPath = projectPath.resolve("src/main/java/com/example/FieldHolder.java").toString();
     }
 
     @SuppressWarnings("unchecked")
@@ -88,6 +90,33 @@ class RenameSymbolToolTest {
         assertNotNull(edit.get("endColumn"));
         assertEquals("oldName", edit.get("oldText"));
         assertEquals("newName", edit.get("newText"));
+    }
+
+    @Test
+    @DisplayName("rename field propagates to cross-file reference sites")
+    void renameField_propagatesToCrossFileReferences() {
+        // FieldHolder.pet is a package-private field of custom type Animal.
+        // WidgetHelper accesses holder.pet from a separate file.
+        // Without SearchEngine the binding-key fallback silently produces 0 edits.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", fieldHolderPath);
+        args.put("line", 4);   // Animal pet;
+        args.put("column", 11);
+        args.put("newName", "companion");
+
+        ToolResponse response = tool.execute(args);
+
+        assertTrue(response.isSuccess());
+        Map<String, Object> data = getData(response);
+        assertEquals("pet", data.get("oldName"));
+        assertEquals("companion", data.get("newName"));
+        assertEquals("Field", data.get("symbolKind"));
+
+        // Must find the declaration AND the cross-file usages in WidgetHelper
+        assertTrue((int) data.get("totalEdits") >= 2,
+            "Expected declaration + cross-file refs but got totalEdits=" + data.get("totalEdits"));
+        assertTrue((int) data.get("filesAffected") >= 2,
+            "Expected FieldHolder + WidgetHelper but got filesAffected=" + data.get("filesAffected"));
     }
 
     @Test
