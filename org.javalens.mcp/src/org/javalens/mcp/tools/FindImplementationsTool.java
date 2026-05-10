@@ -5,6 +5,7 @@ import org.eclipse.core.runtime.IPath;
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IMethod;
+import org.eclipse.jdt.core.ISourceRange;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.search.SearchMatch;
@@ -126,16 +127,27 @@ public class FindImplementationsTool extends AbstractTool {
                 }
             }
 
-            // Use SearchService for indexed implementor search
-            List<SearchMatch> matches = service.getSearchService()
-                .findImplementations(targetMethod != null ? targetMethod : targetType, maxResults);
-
-            // Convert matches to implementation info
             List<Map<String, Object>> implementations = new ArrayList<>();
-            for (SearchMatch match : matches) {
-                Map<String, Object> implInfo = createImplementationInfo(match, service);
-                if (implInfo != null) {
-                    implementations.add(implInfo);
+
+            if (targetMethod == null) {
+                // Use type hierarchy for transitive subtype discovery (IMPLEMENTORS only finds direct)
+                IType[] subtypes = service.getSearchService().getAllSubtypes(targetType);
+                int count = Math.min(subtypes.length, maxResults);
+                for (int i = 0; i < count; i++) {
+                    Map<String, Object> implInfo = createImplementationInfoFromType(subtypes[i], service);
+                    if (implInfo != null) {
+                        implementations.add(implInfo);
+                    }
+                }
+            } else {
+                // Method override queries: use indexed IMPLEMENTORS search
+                List<SearchMatch> matches = service.getSearchService()
+                    .findImplementations(targetMethod, maxResults);
+                for (SearchMatch match : matches) {
+                    Map<String, Object> implInfo = createImplementationInfo(match, service);
+                    if (implInfo != null) {
+                        implementations.add(implInfo);
+                    }
                 }
             }
 
@@ -169,6 +181,49 @@ public class FindImplementationsTool extends AbstractTool {
         } catch (Exception e) {
             log.error("Error finding implementations: {}", e.getMessage(), e);
             return ToolResponse.internalError(e);
+        }
+    }
+
+    private Map<String, Object> createImplementationInfoFromType(IType type, IJdtService service) {
+        try {
+            Map<String, Object> info = new LinkedHashMap<>();
+            info.put("name", type.getElementName());
+            info.put("qualifiedName", type.getFullyQualifiedName());
+
+            try {
+                if (type.isInterface()) {
+                    info.put("kind", "Interface");
+                } else if (type.isEnum()) {
+                    info.put("kind", "Enum");
+                } else {
+                    info.put("kind", "Class");
+                }
+            } catch (JavaModelException e) {
+                info.put("kind", "Class");
+            }
+
+            ICompilationUnit cu = type.getCompilationUnit();
+            if (cu != null && cu.getResource() != null) {
+                IPath location = cu.getResource().getLocation();
+                if (location != null) {
+                    info.put("filePath", service.getPathUtils().formatPath(location.toOSString()));
+                }
+
+                try {
+                    ISourceRange nameRange = type.getNameRange();
+                    if (nameRange != null && nameRange.getOffset() >= 0) {
+                        info.put("line", service.getLineNumber(cu, nameRange.getOffset()));
+                        info.put("column", service.getColumnNumber(cu, nameRange.getOffset()));
+                    }
+                } catch (JavaModelException e) {
+                    log.debug("Error getting name range for type {}: {}", type.getElementName(), e.getMessage());
+                }
+            }
+
+            return info;
+        } catch (Exception e) {
+            log.debug("Error creating implementation info from type: {}", e.getMessage());
+            return null;
         }
     }
 
