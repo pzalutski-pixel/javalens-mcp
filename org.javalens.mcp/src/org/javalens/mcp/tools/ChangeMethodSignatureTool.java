@@ -10,6 +10,7 @@ import org.eclipse.jdt.core.Signature;
 import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTParser;
 import org.eclipse.jdt.core.dom.ASTVisitor;
+import org.eclipse.jdt.core.dom.ClassInstanceCreation;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.Expression;
 import org.eclipse.jdt.core.dom.IMethodBinding;
@@ -232,7 +233,7 @@ public class ChangeMethodSignatureTool extends AbstractTool {
             }
 
             // Build new method signature
-            String newSignature = buildMethodSignature(newName, newReturnType, newParameters);
+            String newSignature = buildMethodSignature(newName, newReturnType, newParameters, method.isConstructor());
             int sigStart = getSignatureStart(methodDecl, ast);
             int sigEnd = getSignatureEnd(methodDecl);
 
@@ -297,6 +298,28 @@ public class ChangeMethodSignatureTool extends AbstractTool {
         }
     }
 
+    private List<String> buildNewArgs(List<Expression> oldArgs, List<ParameterInfo> newParams, int[] paramMapping) {
+        List<String> newArgs = new ArrayList<>();
+        for (int newIdx = 0; newIdx < newParams.size(); newIdx++) {
+            ParameterInfo newParam = newParams.get(newIdx);
+            int oldIdx = -1;
+            for (int i = 0; i < paramMapping.length; i++) {
+                if (paramMapping[i] == newIdx) {
+                    oldIdx = i;
+                    break;
+                }
+            }
+            if (oldIdx >= 0 && oldIdx < oldArgs.size()) {
+                newArgs.add(oldArgs.get(oldIdx).toString());
+            } else if (newParam.defaultValue != null) {
+                newArgs.add(newParam.defaultValue);
+            } else {
+                newArgs.add("/* TODO: " + newParam.name + " */");
+            }
+        }
+        return newArgs;
+    }
+
     private int[] buildParameterMapping(String[] oldNames, List<ParameterInfo> newParams) {
         int[] mapping = new int[oldNames.length];
 
@@ -345,9 +368,12 @@ public class ChangeMethodSignatureTool extends AbstractTool {
         return result[0];
     }
 
-    private String buildMethodSignature(String name, String returnType, List<ParameterInfo> params) {
+    private String buildMethodSignature(String name, String returnType, List<ParameterInfo> params, boolean isConstructor) {
         StringBuilder sig = new StringBuilder();
-        sig.append(returnType).append(" ").append(name).append("(");
+        if (!isConstructor) {
+            sig.append(returnType).append(" ");
+        }
+        sig.append(name).append("(");
 
         for (int i = 0; i < params.size(); i++) {
             if (i > 0) sig.append(", ");
@@ -413,8 +439,9 @@ public class ChangeMethodSignatureTool extends AbstractTool {
         parser.setResolveBindings(true);
         CompilationUnit ast = (CompilationUnit) parser.createAST(null);
 
-        // Find the MethodInvocation at this offset
+        // Find the MethodInvocation or ClassInstanceCreation at this offset
         final MethodInvocation[] invocation = {null};
+        final ClassInstanceCreation[] constructorCall = {null};
         final int matchOffset = match.getOffset();
 
         ast.accept(new ASTVisitor() {
@@ -430,52 +457,56 @@ public class ChangeMethodSignatureTool extends AbstractTool {
                 }
                 return true;
             }
+
+            @Override
+            public boolean visit(ClassInstanceCreation node) {
+                if (node.getStartPosition() <= matchOffset &&
+                    matchOffset < node.getStartPosition() + node.getLength()) {
+                    constructorCall[0] = node;
+                    return false;
+                }
+                return true;
+            }
         });
 
-        if (invocation[0] == null) {
+        if (invocation[0] == null && constructorCall[0] == null) {
             return;
         }
 
-        MethodInvocation mi = invocation[0];
+        int callStart;
+        int callEnd;
+        String oldCallText;
+        String newCallText;
 
-        // Build new arguments list
-        @SuppressWarnings("unchecked")
-        List<Expression> oldArgs = mi.arguments();
-        List<String> newArgs = new ArrayList<>();
+        if (invocation[0] != null) {
+            MethodInvocation mi = invocation[0];
+            @SuppressWarnings("unchecked")
+            List<Expression> oldArgs = mi.arguments();
+            List<String> newArgs = buildNewArgs(oldArgs, newParams, paramMapping);
 
-        // For each new parameter, find the old argument or use default
-        for (int newIdx = 0; newIdx < newParams.size(); newIdx++) {
-            ParameterInfo newParam = newParams.get(newIdx);
-            int oldIdx = -1;
-
-            // Find which old param maps to this new param
-            for (int i = 0; i < paramMapping.length; i++) {
-                if (paramMapping[i] == newIdx) {
-                    oldIdx = i;
-                    break;
-                }
+            StringBuilder newCall = new StringBuilder();
+            if (mi.getExpression() != null) {
+                newCall.append(mi.getExpression().toString()).append(".");
             }
+            newCall.append(newName).append("(").append(String.join(", ", newArgs)).append(")");
 
-            if (oldIdx >= 0 && oldIdx < oldArgs.size()) {
-                // Use existing argument
-                newArgs.add(oldArgs.get(oldIdx).toString());
-            } else if (newParam.defaultValue != null) {
-                // New parameter - use default value
-                newArgs.add(newParam.defaultValue);
-            } else {
-                // No default - use placeholder
-                newArgs.add("/* TODO: " + newParam.name + " */");
-            }
-        }
+            callStart = mi.getStartPosition();
+            callEnd = mi.getStartPosition() + mi.getLength();
+            oldCallText = mi.toString();
+            newCallText = newCall.toString();
+        } else {
+            ClassInstanceCreation cic = constructorCall[0];
+            @SuppressWarnings("unchecked")
+            List<Expression> oldArgs = cic.arguments();
+            List<String> newArgs = buildNewArgs(oldArgs, newParams, paramMapping);
 
-        // Build new call text
-        StringBuilder newCall = new StringBuilder();
-        if (mi.getExpression() != null) {
-            newCall.append(mi.getExpression().toString()).append(".");
+            String typeName = cic.getType().toString();
+            newCallText = "new " + typeName + "(" + String.join(", ", newArgs) + ")";
+
+            callStart = cic.getStartPosition();
+            callEnd = cic.getStartPosition() + cic.getLength();
+            oldCallText = cic.toString();
         }
-        newCall.append(newName).append("(");
-        newCall.append(String.join(", ", newArgs));
-        newCall.append(")");
 
         // Create edit
         String callFilePath = service.getPathUtils().formatPath(
@@ -483,14 +514,14 @@ public class ChangeMethodSignatureTool extends AbstractTool {
 
         Map<String, Object> callEdit = new LinkedHashMap<>();
         callEdit.put("type", "replace");
-        callEdit.put("startLine", ast.getLineNumber(mi.getStartPosition()) - 1);
-        callEdit.put("startColumn", ast.getColumnNumber(mi.getStartPosition()));
-        callEdit.put("endLine", ast.getLineNumber(mi.getStartPosition() + mi.getLength()) - 1);
-        callEdit.put("endColumn", ast.getColumnNumber(mi.getStartPosition() + mi.getLength()));
-        callEdit.put("startOffset", mi.getStartPosition());
-        callEdit.put("endOffset", mi.getStartPosition() + mi.getLength());
-        callEdit.put("oldText", mi.toString());
-        callEdit.put("newText", newCall.toString());
+        callEdit.put("startLine", ast.getLineNumber(callStart) - 1);
+        callEdit.put("startColumn", ast.getColumnNumber(callStart));
+        callEdit.put("endLine", ast.getLineNumber(callEnd) - 1);
+        callEdit.put("endColumn", ast.getColumnNumber(callEnd));
+        callEdit.put("startOffset", callStart);
+        callEdit.put("endOffset", callEnd);
+        callEdit.put("oldText", oldCallText);
+        callEdit.put("newText", newCallText);
         callEdit.put("isDeclaration", false);
 
         editsByFile.computeIfAbsent(callFilePath, k -> new ArrayList<>()).add(callEdit);

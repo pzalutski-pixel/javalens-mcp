@@ -227,4 +227,75 @@ class ChangeMethodSignatureToolTest {
 
         assertFalse(response.isSuccess());
     }
+
+    // ========== Constructor Call-Site Propagation (BUG-3 regression) ==========
+
+    @Test
+    @SuppressWarnings("unchecked")
+    @DisplayName("adds parameter to constructor and propagates to new-expression call sites")
+    void addsParameterToConstructorWithCallSitePropagation() {
+        // ConstructorTarget(String value) is at line 8 (0-based), column 11
+        // ConstructorCallers has two `new ConstructorTarget(...)` call sites in a separate file
+        String constructorTargetPath = projectPath
+            .resolve("src/main/java/com/example/ConstructorTarget.java").toString();
+
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", constructorTargetPath);
+        args.put("line", 8);
+        args.put("column", 11);
+
+        ArrayNode params = objectMapper.createArrayNode();
+        ObjectNode existing = objectMapper.createObjectNode();
+        existing.put("name", "value");
+        existing.put("type", "String");
+        params.add(existing);
+
+        ObjectNode newParam = objectMapper.createObjectNode();
+        newParam.put("name", "extra");
+        newParam.put("type", "String");
+        newParam.put("defaultValue", "null");
+        params.add(newParam);
+
+        args.set("newParameters", params);
+
+        ToolResponse response = tool.execute(args);
+
+        assertTrue(response.isSuccess(), "Expected success but got: " + response.getError());
+        Map<String, Object> data = getData(response);
+
+        // Declaration + both call sites in ConstructorCallers.java
+        int totalEdits = (int) data.get("totalEdits");
+        assertTrue(totalEdits >= 3,
+            "Expected declaration + 2 call sites, got totalEdits=" + totalEdits);
+
+        Map<String, List<Map<String, Object>>> editsByFile =
+            (Map<String, List<Map<String, Object>>>) data.get("editsByFile");
+
+        // Cross-file propagation: ConstructorCallers.java must appear in edits
+        assertTrue(editsByFile.keySet().stream().anyMatch(k -> k.endsWith("ConstructorCallers.java")),
+            "Expected edits in ConstructorCallers.java, but only found: " + editsByFile.keySet());
+
+        // Declaration edit must NOT start with "void " (constructor signature bug)
+        String declarationKey = editsByFile.keySet().stream()
+            .filter(k -> k.endsWith("ConstructorTarget.java"))
+            .findFirst().orElse(null);
+        assertNotNull(declarationKey, "ConstructorTarget.java not in edits");
+        Map<String, Object> declEdit = editsByFile.get(declarationKey).stream()
+            .filter(e -> Boolean.TRUE.equals(e.get("isDeclaration")))
+            .findFirst().orElse(null);
+        assertNotNull(declEdit, "No declaration edit found in ConstructorTarget.java");
+        String newSignature = (String) declEdit.get("newSignature");
+        assertFalse(newSignature.startsWith("void "),
+            "Constructor newSignature must not start with 'void': " + newSignature);
+
+        // Call-site edits must include the default value "null" for the new parameter
+        String callersKey = editsByFile.keySet().stream()
+            .filter(k -> k.endsWith("ConstructorCallers.java"))
+            .findFirst().orElse(null);
+        List<Map<String, Object>> callerEdits = editsByFile.get(callersKey);
+        assertTrue(callerEdits.stream().anyMatch(e -> {
+            String newText = (String) e.get("newText");
+            return newText != null && newText.contains("null");
+        }), "Expected caller edits to contain 'null' default value, got: " + callerEdits);
+    }
 }
