@@ -227,4 +227,61 @@ class ChangeMethodSignatureToolTest {
 
         assertFalse(response.isSuccess());
     }
+
+    // ========== Semantic-grade tests (constructor call sites) ==========
+
+    @Test
+    @DisplayName("adding a parameter to ConstructorTarget(String, int) updates all 4 `new` call sites + this() delegation")
+    void addParam_updatesConstructorCallSitesAcrossFiles() {
+        String constructorTargetPath = projectPath
+            .resolve("src/main/java/com/example/ConstructorTarget.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", constructorTargetPath);
+        // 2-arg constructor declared on 0-based line 11: `public ConstructorTarget(String name, int count) {`
+        // Position on "ConstructorTarget" identifier (constructor name).
+        args.put("line", 11);
+        args.put("column", 11);
+
+        ArrayNode params = objectMapper.createArrayNode();
+        ObjectNode p1 = objectMapper.createObjectNode();
+        p1.put("name", "name");
+        p1.put("type", "String");
+        params.add(p1);
+        ObjectNode p2 = objectMapper.createObjectNode();
+        p2.put("name", "count");
+        p2.put("type", "int");
+        params.add(p2);
+        ObjectNode p3 = objectMapper.createObjectNode();
+        p3.put("name", "tag");
+        p3.put("type", "String");
+        p3.put("defaultValue", "\"\"");
+        params.add(p3);
+        args.set("newParameters", params);
+
+        ToolResponse response = tool.execute(args);
+        assertTrue(response.isSuccess(),
+            "Constructor signature change must succeed; got error: " +
+                (response.getError() != null ? response.getError().getMessage() : "n/a"));
+
+        Map<String, Object> data = getData(response);
+        @SuppressWarnings("unchecked")
+        Map<String, List<?>> editsByFile =
+            (Map<String, List<?>>) data.get("editsByFile");
+
+        // ConstructorCaller.java has 4 `new ConstructorTarget(String, int)` call sites
+        // (makeOne + 3 in makeMany). All must be present in editsByFile.
+        boolean hasCaller = editsByFile.keySet().stream()
+            .anyMatch(k -> k.replace('\\', '/').endsWith("ConstructorCaller.java"));
+        assertTrue(hasCaller,
+            "ConstructorCaller.java must appear in edits — its 4 `new ConstructorTarget(...)` " +
+                "sites need updating; got files: " + editsByFile.keySet());
+
+        List<?> callerEdits = editsByFile.entrySet().stream()
+            .filter(e -> e.getKey().replace('\\', '/').endsWith("ConstructorCaller.java"))
+            .map(Map.Entry::getValue)
+            .findFirst().orElseThrow();
+        assertTrue(callerEdits.size() >= 4,
+            "Expected at least 4 edits in ConstructorCaller.java (one per call site); got: "
+                + callerEdits.size() + " edits: " + callerEdits);
+    }
 }

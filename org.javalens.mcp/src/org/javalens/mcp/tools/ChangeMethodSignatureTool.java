@@ -8,14 +8,18 @@ import org.eclipse.jdt.core.ISourceRange;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.Signature;
 import org.eclipse.jdt.core.dom.AST;
+import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTParser;
 import org.eclipse.jdt.core.dom.ASTVisitor;
+import org.eclipse.jdt.core.dom.ClassInstanceCreation;
 import org.eclipse.jdt.core.dom.CompilationUnit;
+import org.eclipse.jdt.core.dom.ConstructorInvocation;
 import org.eclipse.jdt.core.dom.Expression;
 import org.eclipse.jdt.core.dom.IMethodBinding;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.MethodInvocation;
 import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
+import org.eclipse.jdt.core.dom.SuperConstructorInvocation;
 import org.eclipse.jdt.core.search.IJavaSearchConstants;
 import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.IJdtService;
@@ -254,10 +258,11 @@ public class ChangeMethodSignatureTool extends AbstractTool {
             editsByFile.computeIfAbsent(methodFilePath, k -> new ArrayList<>()).add(declEdit);
 
             // Edit 2: Update all call sites
+            boolean isConstructor = method.isConstructor();
             for (SearchMatch match : references) {
                 try {
                     updateCallSite(match, oldName, newName, oldParamNames, newParameters,
-                        paramMapping, service, editsByFile);
+                        paramMapping, service, editsByFile, isConstructor);
                 } catch (Exception e) {
                     log.debug("Error updating call site: {}", e.getMessage());
                 }
@@ -394,7 +399,8 @@ public class ChangeMethodSignatureTool extends AbstractTool {
     private void updateCallSite(SearchMatch match, String oldName, String newName,
                                 String[] oldParamNames, List<ParameterInfo> newParams,
                                 int[] paramMapping, IJdtService service,
-                                Map<String, List<Map<String, Object>>> editsByFile)
+                                Map<String, List<Map<String, Object>>> editsByFile,
+                                boolean isConstructor)
             throws JavaModelException {
 
         Object element = match.getElement();
@@ -413,42 +419,68 @@ public class ChangeMethodSignatureTool extends AbstractTool {
         parser.setResolveBindings(true);
         CompilationUnit ast = (CompilationUnit) parser.createAST(null);
 
-        // Find the MethodInvocation at this offset
-        final MethodInvocation[] invocation = {null};
         final int matchOffset = match.getOffset();
+        final ASTNode[] callNode = {null};
 
-        ast.accept(new ASTVisitor() {
-            @Override
-            public boolean visit(MethodInvocation node) {
-                if (node.getName().getStartPosition() == matchOffset ||
-                    (node.getStartPosition() <= matchOffset &&
-                     matchOffset < node.getStartPosition() + node.getLength())) {
-                    if (oldName.equals(node.getName().getIdentifier())) {
-                        invocation[0] = node;
+        if (isConstructor) {
+            // For constructors, the call site can be a `new Foo(...)` ClassInstanceCreation,
+            // a `this(...)` ConstructorInvocation, or a `super(...)` SuperConstructorInvocation.
+            ast.accept(new ASTVisitor() {
+                @Override
+                public boolean visit(ClassInstanceCreation node) {
+                    if (offsetWithin(node, matchOffset)) {
+                        callNode[0] = node;
                         return false;
                     }
+                    return true;
                 }
-                return true;
-            }
-        });
+                @Override
+                public boolean visit(ConstructorInvocation node) {
+                    if (offsetWithin(node, matchOffset)) {
+                        callNode[0] = node;
+                        return false;
+                    }
+                    return true;
+                }
+                @Override
+                public boolean visit(SuperConstructorInvocation node) {
+                    if (offsetWithin(node, matchOffset)) {
+                        callNode[0] = node;
+                        return false;
+                    }
+                    return true;
+                }
+            });
+        } else {
+            ast.accept(new ASTVisitor() {
+                @Override
+                public boolean visit(MethodInvocation node) {
+                    if (node.getName().getStartPosition() == matchOffset ||
+                        offsetWithin(node, matchOffset)) {
+                        if (oldName.equals(node.getName().getIdentifier())) {
+                            callNode[0] = node;
+                            return false;
+                        }
+                    }
+                    return true;
+                }
+            });
+        }
 
-        if (invocation[0] == null) {
+        if (callNode[0] == null) {
             return;
         }
 
-        MethodInvocation mi = invocation[0];
+        ASTNode mi = callNode[0];
 
-        // Build new arguments list
+        // Extract arguments based on node type.
         @SuppressWarnings("unchecked")
-        List<Expression> oldArgs = mi.arguments();
+        List<Expression> oldArgs = (List<Expression>) callArguments(mi);
         List<String> newArgs = new ArrayList<>();
 
-        // For each new parameter, find the old argument or use default
         for (int newIdx = 0; newIdx < newParams.size(); newIdx++) {
             ParameterInfo newParam = newParams.get(newIdx);
             int oldIdx = -1;
-
-            // Find which old param maps to this new param
             for (int i = 0; i < paramMapping.length; i++) {
                 if (paramMapping[i] == newIdx) {
                     oldIdx = i;
@@ -457,25 +489,44 @@ public class ChangeMethodSignatureTool extends AbstractTool {
             }
 
             if (oldIdx >= 0 && oldIdx < oldArgs.size()) {
-                // Use existing argument
                 newArgs.add(oldArgs.get(oldIdx).toString());
             } else if (newParam.defaultValue != null) {
-                // New parameter - use default value
                 newArgs.add(newParam.defaultValue);
             } else {
-                // No default - use placeholder
                 newArgs.add("/* TODO: " + newParam.name + " */");
             }
         }
 
-        // Build new call text
+        // Build the replacement call text. The header differs by node type:
+        //   MethodInvocation: optional qualifier + "." + methodName + "(args)"
+        //   ClassInstanceCreation: "new " + typeName + "(args)"
+        //   ConstructorInvocation: "this(args)"
+        //   SuperConstructorInvocation: optional qualifier + "super(args)"
         StringBuilder newCall = new StringBuilder();
-        if (mi.getExpression() != null) {
-            newCall.append(mi.getExpression().toString()).append(".");
+        if (mi instanceof MethodInvocation methodInv) {
+            if (methodInv.getExpression() != null) {
+                newCall.append(methodInv.getExpression().toString()).append(".");
+            }
+            newCall.append(newName);
+        } else if (mi instanceof ClassInstanceCreation cic) {
+            if (cic.getExpression() != null) {
+                newCall.append(cic.getExpression().toString()).append(".");
+            }
+            newCall.append("new ").append(cic.getType().toString());
+        } else if (mi instanceof ConstructorInvocation) {
+            newCall.append("this");
+        } else if (mi instanceof SuperConstructorInvocation sci) {
+            if (sci.getExpression() != null) {
+                newCall.append(sci.getExpression().toString()).append(".");
+            }
+            newCall.append("super");
+        } else {
+            return;
         }
-        newCall.append(newName).append("(");
-        newCall.append(String.join(", ", newArgs));
-        newCall.append(")");
+        newCall.append("(").append(String.join(", ", newArgs)).append(")");
+        if (mi instanceof ConstructorInvocation || mi instanceof SuperConstructorInvocation) {
+            newCall.append(";");
+        }
 
         // Create edit
         String callFilePath = service.getPathUtils().formatPath(
@@ -494,6 +545,19 @@ public class ChangeMethodSignatureTool extends AbstractTool {
         callEdit.put("isDeclaration", false);
 
         editsByFile.computeIfAbsent(callFilePath, k -> new ArrayList<>()).add(callEdit);
+    }
+
+    private static boolean offsetWithin(ASTNode node, int offset) {
+        return node.getStartPosition() <= offset &&
+               offset < node.getStartPosition() + node.getLength();
+    }
+
+    private static List<?> callArguments(ASTNode node) {
+        if (node instanceof MethodInvocation mi) return mi.arguments();
+        if (node instanceof ClassInstanceCreation cic) return cic.arguments();
+        if (node instanceof ConstructorInvocation ci) return ci.arguments();
+        if (node instanceof SuperConstructorInvocation sci) return sci.arguments();
+        return List.of();
     }
 
     private boolean isValidJavaIdentifier(String name) {
