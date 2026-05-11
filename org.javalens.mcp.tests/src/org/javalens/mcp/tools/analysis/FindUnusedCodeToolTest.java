@@ -71,4 +71,42 @@ class FindUnusedCodeToolTest {
         assertTrue(r.isSuccess());
         assertNotNull(getData(r).get("totalUnused"));
     }
+
+    // ========== Semantic-grade tests (exact-content assertions) ==========
+
+    @Test
+    @DisplayName("UnusedCode.java: detects unusedField, unusedStringField, unusedPrivateMethod, unusedPrivateMethodWithReturn")
+    void unusedCode_detectsExactUnusedMembers() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", "src/main/java/com/example/UnusedCode.java");
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> items = (List<Map<String, Object>>) getData(r).get("unusedItems");
+
+        java.util.Set<String> names = items.stream()
+            .map(i -> (String) i.get("name"))
+            .collect(java.util.stream.Collectors.toSet());
+
+        // Positive: the four declared-unused private members must appear
+        assertTrue(names.contains("unusedField"),
+            "unusedField (private, never read) must be reported; got: " + names);
+        assertTrue(names.contains("unusedStringField"),
+            "unusedStringField (private, never read) must be reported; got: " + names);
+        assertTrue(names.contains("unusedPrivateMethod"),
+            "unusedPrivateMethod (private, never called) must be reported; got: " + names);
+        assertTrue(names.contains("unusedPrivateMethodWithReturn"),
+            "unusedPrivateMethodWithReturn (private, never called) must be reported; got: " + names);
+
+        // Negative (isolation): used members must NOT appear
+        assertFalse(names.contains("usedField"),
+            "usedField is read by usedPrivateMethod — must not be reported as unused");
+        assertFalse(names.contains("usedPrivateMethod"),
+            "usedPrivateMethod is called by publicMethod — must not be reported as unused");
+        assertFalse(names.contains("publicMethod"),
+            "publicMethod is public — must not be flagged as unused (public visibility)");
+        assertFalse(names.contains("publicField"),
+            "publicField is public — must not be flagged as unused");
+    }
 }
