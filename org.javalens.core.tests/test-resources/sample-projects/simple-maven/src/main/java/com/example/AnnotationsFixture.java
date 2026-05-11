@@ -14,11 +14,6 @@ public @interface AnnotationsFixture {
     String value() default "";
 
     @Retention(RetentionPolicy.RUNTIME)
-    @Target({ElementType.TYPE, ElementType.METHOD, ElementType.FIELD, ElementType.TYPE_USE})
-    @interface Marker {
-    }
-
-    @Retention(RetentionPolicy.RUNTIME)
     @Target(ElementType.METHOD)
     @Repeatable(Tags.class)
     @interface Tag {

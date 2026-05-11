@@ -23,6 +23,7 @@ class FindFieldWritesToolTest {
     TestProjectHelper helper = new TestProjectHelper();
     private FindFieldWritesTool tool;
     private ObjectMapper objectMapper;
+    private Path projectPath;
     private String refactoringTargetPath;
 
     @BeforeEach
@@ -30,7 +31,7 @@ class FindFieldWritesToolTest {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new FindFieldWritesTool(() -> service);
         objectMapper = new ObjectMapper();
-        Path projectPath = helper.getFixturePath("simple-maven");
+        projectPath = helper.getFixturePath("simple-maven");
         refactoringTargetPath = projectPath.resolve("src/main/java/com/example/RefactoringTarget.java").toString();
     }
 
@@ -100,5 +101,36 @@ class FindFieldWritesToolTest {
 
         ToolResponse r = tool.execute(args);
         assertFalse(r.isSuccess());
+    }
+
+    // ========== Semantic-grade tests ==========
+
+    @Test
+    @DisplayName("FieldHolder.pet writes: 2 in own constructors + swap() + extract()")
+    void fieldHolderPet_writesExactCountAcrossFiles() {
+        String fieldHolderPath = projectPath.resolve("src/main/java/com/example/FieldHolder.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", fieldHolderPath);
+        args.put("line", 4);  // 0-based: `    Animal pet;`
+        args.put("column", 11);
+        args.put("maxResults", 100);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertEquals("pet", data.get("field"));
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> writes = (List<Map<String, Object>>) data.get("writeLocations");
+        assertNotNull(writes);
+        // 4 explicit writes: FieldHolder() default ctor `this.pet = new Animal()`, FieldHolder(Animal)
+        // ctor `this.pet = pet`, WidgetHelper.swap `holder.pet = newPet`, WidgetHelper.extract
+        // `holder.pet = null`. Some implementations may also count the declaration as a write;
+        // assert at least the 4 explicit assignment writes are present.
+        assertTrue(writes.size() >= 4,
+            "Expected at least 4 writes to FieldHolder.pet; got " + writes.size() + " writes: " + writes);
+        for (Map<String, Object> w : writes) {
+            assertEquals("WRITE", w.get("accessType"));
+        }
     }
 }

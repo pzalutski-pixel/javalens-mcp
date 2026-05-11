@@ -1,6 +1,5 @@
 package com.example;
 
-import com.example.AnnotationsFixture.Marker;
 import com.example.AnnotationsFixture.Tag;
 
 import java.util.List;

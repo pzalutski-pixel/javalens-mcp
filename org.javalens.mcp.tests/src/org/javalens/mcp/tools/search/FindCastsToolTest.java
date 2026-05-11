@@ -65,4 +65,22 @@ class FindCastsToolTest {
         args.put("typeName", "com.nonexistent.X");
         assertFalse(tool.execute(args).isSuccess());
     }
+
+    // ========== Semantic-grade tests ==========
+
+    @Test
+    @DisplayName("casts to Calculator: exactly 1 cast in SearchPatterns.performCasts")
+    void calculator_findsExactCastCount() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("typeName", "com.example.Calculator");
+        args.put("maxResults", 100);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        // SearchPatterns.performCasts has `(Calculator) obj` exactly once. No other casts to
+        // Calculator anywhere in the fixture.
+        assertEquals(1, ((Number) getData(r).get("totalCasts")).intValue(),
+            "Expected exactly 1 (Calculator) cast in fixtures; got: "
+                + getData(r).get("totalCasts") + " (" + getCasts(getData(r)) + ")");
+    }
 }

@@ -65,4 +65,25 @@ class FindTypeInstantiationsToolTest {
         args.put("typeName", "com.nonexistent.X");
         assertFalse(tool.execute(args).isSuccess());
     }
+
+    // ========== Semantic-grade tests ==========
+
+    @Test
+    @DisplayName("ConstructorTarget instantiations from ConstructorCaller: 5 explicit `new` sites")
+    void constructorTarget_findsAllNewSites() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("typeName", "com.example.ConstructorTarget");
+        args.put("maxResults", 100);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        // ConstructorCaller has: makeOne -> new ConstructorTarget("alpha", 1) (1),
+        // makeOneArg -> new ConstructorTarget("beta") (1),
+        // makeMany -> 3 new ConstructorTarget calls. Total = 5.
+        // Plus ConstructorTarget itself does `this(name, 0)` which is a constructor
+        // delegation, NOT an instantiation; should NOT be counted.
+        assertEquals(5, ((Number) getData(r).get("totalInstantiations")).intValue(),
+            "Expected exactly 5 `new ConstructorTarget(...)` instantiations; got: "
+                + getData(r).get("totalInstantiations") + " (" + getInstantiations(getData(r)) + ")");
+    }
 }

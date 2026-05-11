@@ -65,4 +65,25 @@ class FindAnnotationUsagesToolTest {
         args.put("annotation", "com.nonexistent.X");
         assertFalse(tool.execute(args).isSuccess());
     }
+
+    // ========== Semantic-grade tests ==========
+
+    @Test
+    @DisplayName("@Marker usages from AnnotationUsages span all 6 documented targets")
+    void marker_findsAllDocumentedTargets() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("annotation", "com.example.Marker");
+        args.put("maxResults", 100);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        // AnnotationUsages places @Marker on: class, field markedField, constructor,
+        // method markedMethod, parameter p in markedParameter, local 'local' inside
+        // markedParameter, and the type-use 'List<@Marker String>' return in typeUseUsage.
+        // Expect at least 6 usages found (depending on JDT's type-use representation).
+        assertTrue(((Number) data.get("totalUsages")).intValue() >= 6,
+            "Expected at least 6 @Marker usages across all documented targets; got: "
+                + data.get("totalUsages") + " (" + getUsages(data) + ")");
+    }
 }

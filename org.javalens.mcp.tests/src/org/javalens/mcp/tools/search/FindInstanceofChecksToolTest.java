@@ -65,4 +65,22 @@ class FindInstanceofChecksToolTest {
         args.put("typeName", "com.nonexistent.X");
         assertFalse(tool.execute(args).isSuccess());
     }
+
+    // ========== Semantic-grade tests ==========
+
+    @Test
+    @DisplayName("instanceof checks for Calculator: 2 in fixtures (performCasts + checkTypes)")
+    void calculator_findsExactInstanceofCount() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("typeName", "com.example.Calculator");
+        args.put("maxResults", 100);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        // SearchPatterns has TWO `instanceof Calculator` checks: one in performCasts (line 79)
+        // and one in checkTypes (line 100). No other instanceof Calculator anywhere.
+        assertEquals(2, ((Number) getData(r).get("totalChecks")).intValue(),
+            "Expected exactly 2 instanceof Calculator checks; got: "
+                + getData(r).get("totalChecks") + " (" + getChecks(getData(r)) + ")");
+    }
 }
