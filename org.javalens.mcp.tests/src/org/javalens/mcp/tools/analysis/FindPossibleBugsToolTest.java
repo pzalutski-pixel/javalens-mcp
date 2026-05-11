@@ -85,4 +85,43 @@ class FindPossibleBugsToolTest {
         assertTrue(r.isSuccess());
         assertNotNull(getData(r).get("totalIssues"));
     }
+
+    // ========== Semantic-grade tests (exact bug patterns in BugPatterns.java) ==========
+
+    @Test
+    @DisplayName("BugPatterns.java: detects empty catch, ==-on-string, sync-on-string, unclosed resource")
+    void bugPatterns_detectsAllDocumentedIssueCategories() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", "src/main/java/com/example/BugPatterns.java");
+        args.put("maxResults", 100);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> issues = (List<Map<String, Object>>) getData(r).get("issues");
+
+        // Collect rule/category labels (the tool reports each issue with some kind of
+        // category identifier). We don't pin the exact key name; collect across the most
+        // common label fields.
+        java.util.Set<String> labels = new java.util.HashSet<>();
+        for (Map<String, Object> issue : issues) {
+            for (String field : List.of("rule", "category", "type", "name", "message", "description")) {
+                Object v = issue.get(field);
+                if (v != null) labels.add(v.toString().toLowerCase());
+            }
+        }
+
+        // The fixture has: emptyExceptionHandler (empty catch), stringCompareWithOperator
+        // (== on String), syncOnStringVariable (sync on String field), unclosedResource
+        // (FileInputStream not closed), multipleBugs (combination). At minimum the tool
+        // must surface each category.
+        assertTrue(labels.stream().anyMatch(l -> l.contains("empty") && l.contains("catch")),
+            "Expected an issue mentioning empty catch; got labels: " + labels);
+        assertTrue(labels.stream().anyMatch(l -> l.contains("string") && (l.contains("==") || l.contains("equals") || l.contains("compar"))),
+            "Expected an issue mentioning String == comparison; got labels: " + labels);
+        assertTrue(labels.stream().anyMatch(l -> l.contains("sync") && l.contains("string")),
+            "Expected an issue mentioning synchronization on String; got labels: " + labels);
+        assertTrue(labels.stream().anyMatch(l -> l.contains("resource") || l.contains("close")),
+            "Expected an issue mentioning resource leak / unclosed resource; got labels: " + labels);
+    }
 }
