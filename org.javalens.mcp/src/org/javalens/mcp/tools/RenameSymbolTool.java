@@ -279,6 +279,7 @@ public class RenameSymbolTool extends AbstractTool {
                 if (type.isInterface()) return "Interface";
                 if (type.isEnum()) return "Enum";
                 if (type.isAnnotation()) return "Annotation";
+                if (type.isRecord()) return "Record";
             } catch (JavaModelException e) {
                 log.debug("Error checking type kind: {}", e.getMessage());
             }

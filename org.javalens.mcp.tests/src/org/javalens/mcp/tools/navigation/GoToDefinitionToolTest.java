@@ -178,4 +178,55 @@ class GoToDefinitionToolTest {
 
         assertNotNull(response);
     }
+
+    // ========== Semantic-grade tests (kind reported for interface/sealed/record) ==========
+
+    @Test
+    @DisplayName("IShape interface definition reports kind=Interface")
+    void iShape_kindIsInterface() {
+        String path = projectPath.resolve("src/main/java/com/example/IShape.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", path);
+        args.put("line", 2);  // public interface IShape
+        args.put("column", 17);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertEquals("IShape", data.get("symbol"));
+        assertEquals("Interface", data.get("kind"));
+        assertEquals("com.example", data.get("package"));
+    }
+
+    @Test
+    @DisplayName("Vehicle sealed-interface definition reports kind=Interface")
+    void vehicle_kindIsInterface() {
+        String path = projectPath.resolve("src/main/java/com/example/Vehicle.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", path);
+        args.put("line", 2);  // public sealed interface Vehicle permits Car, Truck
+        args.put("column", 24);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertEquals("Vehicle", data.get("symbol"));
+        assertEquals("Interface", data.get("kind"));
+    }
+
+    @Test
+    @DisplayName("Point record definition reports kind=Record")
+    void point_kindIsRecord() {
+        String path = projectPath.resolve("src/main/java/com/example/Point.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", path);
+        args.put("line", 2);  // public record Point(...)
+        args.put("column", 14);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertEquals("Point", data.get("symbol"));
+        assertEquals("Record", data.get("kind"));
+    }
 }

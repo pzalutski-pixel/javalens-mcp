@@ -221,6 +221,7 @@ public class FindReferencesTool extends AbstractTool {
                         if (type.isInterface()) yield "Interface";
                         if (type.isEnum()) yield "Enum";
                         if (type.isAnnotation()) yield "Annotation";
+                        if (type.isRecord()) yield "Record";
                     } catch (JavaModelException e) {
                         // Fall through
                     }
