@@ -3,6 +3,7 @@ package org.javalens.mcp.tools.refactoring;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.SemanticAssertions;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.ExtractInterfaceTool;
@@ -14,6 +15,7 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -184,5 +186,85 @@ class ExtractInterfaceToolTest {
         ToolResponse response = tool.execute(args);
 
         assertFalse(response.isSuccess());
+    }
+
+    // ========== Semantic-grade tests (exact-content assertions) ==========
+
+    @Test
+    @DisplayName("default extraction returns exact set of non-private non-static public method names")
+    void defaultExtraction_returnsExactPublicMethodSet() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", interfaceTargetPath);
+        args.put("line", 8);
+        args.put("column", 13);
+        args.put("interfaceName", "IExtractTarget");
+
+        Map<String, Object> data = SemanticAssertions.assertSuccessData(tool.execute(args));
+        List<Map<String, Object>> methods = getExtractedMethods(data);
+
+        Set<String> names = SemanticAssertions.fieldSet(methods, "name");
+        assertEquals(
+            Set.of("getName", "setName", "getValue", "process", "validate", "getItems", "compareTo"),
+            names,
+            "Default extraction yields exactly the seven non-private non-static public methods " +
+            "(constructor, helper(), create(), protectedMethod(), toString() excluded)");
+    }
+
+    @Test
+    @DisplayName("interface content includes throws clause for validate()")
+    void interfaceContent_includesThrowsClause() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", interfaceTargetPath);
+        args.put("line", 8);
+        args.put("column", 13);
+        args.put("interfaceName", "IExtractTarget");
+        args.set("methodNames", objectMapper.createArrayNode().add("validate"));
+
+        Map<String, Object> data = SemanticAssertions.assertSuccessData(tool.execute(args));
+        String content = (String) data.get("interfaceContent");
+        assertTrue(content.contains("void validate()"),
+            "validate() declaration must appear; got: " + content);
+        assertTrue(content.contains("throws IllegalArgumentException"),
+            "validate() must declare 'throws IllegalArgumentException'; got: " + content);
+    }
+
+    @Test
+    @DisplayName("interface content preserves parameter types and names for process(String, int)")
+    void interfaceContent_preservesParameters() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", interfaceTargetPath);
+        args.put("line", 8);
+        args.put("column", 13);
+        args.put("interfaceName", "IExtractTarget");
+        args.set("methodNames", objectMapper.createArrayNode().add("process"));
+
+        Map<String, Object> data = SemanticAssertions.assertSuccessData(tool.execute(args));
+        String content = (String) data.get("interfaceContent");
+        assertTrue(content.contains("void process(String input, int count)"),
+            "process method signature must preserve parameter types and names; got: " + content);
+    }
+
+    @Test
+    @DisplayName("class edits add 'implements IExtractTarget' to existing implements list")
+    void classEdits_extendExistingImplementsList() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", interfaceTargetPath);
+        args.put("line", 8);
+        args.put("column", 13);
+        args.put("interfaceName", "IExtractTarget");
+
+        Map<String, Object> data = SemanticAssertions.assertSuccessData(tool.execute(args));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> edits = (List<Map<String, Object>>) data.get("classEdits");
+        assertNotNull(edits);
+        assertFalse(edits.isEmpty(),
+            "Class must receive an edit to add the new interface to its implements clause");
+
+        boolean mentionsIExtractTarget = edits.stream().anyMatch(e -> {
+            Object newText = e.get("newText");
+            return newText != null && newText.toString().contains("IExtractTarget");
+        });
+        assertTrue(mentionsIExtractTarget,
+            "At least one edit must reference IExtractTarget; got: " + edits);
     }
 }

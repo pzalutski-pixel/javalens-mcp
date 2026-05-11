@@ -166,6 +166,11 @@ public class ExtractInterfaceTool extends AbstractTool {
                     if (!methodNamesToInclude.contains(method.getElementName())) {
                         continue;
                     }
+                } else if (isObjectMethod(method)) {
+                    // Default extraction: skip overrides of java.lang.Object methods
+                    // (toString, equals, hashCode). Caller can still include them
+                    // explicitly via methodNames.
+                    continue;
                 }
 
                 methodsToExtract.add(method);
@@ -286,6 +291,18 @@ public class ExtractInterfaceTool extends AbstractTool {
             log.error("Error extracting interface: {}", e.getMessage(), e);
             return ToolResponse.internalError(e);
         }
+    }
+
+    private boolean isObjectMethod(IMethod method) throws JavaModelException {
+        String name = method.getElementName();
+        String[] paramTypes = method.getParameterTypes();
+        if (name.equals("toString") && paramTypes.length == 0) return true;
+        if (name.equals("hashCode") && paramTypes.length == 0) return true;
+        if (name.equals("equals") && paramTypes.length == 1) {
+            String paramSimple = Signature.getSimpleName(Signature.toString(paramTypes[0]));
+            return paramSimple.equals("Object");
+        }
+        return false;
     }
 
     private String buildMethodSignature(IMethod method) throws JavaModelException {
