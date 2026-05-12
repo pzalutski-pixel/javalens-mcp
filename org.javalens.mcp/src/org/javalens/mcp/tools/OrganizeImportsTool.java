@@ -223,6 +223,13 @@ public class OrganizeImportsTool extends AbstractTool {
 
         ast.accept(new ASTVisitor() {
             @Override
+            public boolean visit(ImportDeclaration node) {
+                // Skip the import declarations themselves; otherwise their fully-qualified
+                // names show up as "referenced types" and every import is marked used.
+                return false;
+            }
+
+            @Override
             public boolean visit(SimpleType node) {
                 types.add(node.getName().getFullyQualifiedName());
                 if (node.getName() instanceof SimpleName sn) {

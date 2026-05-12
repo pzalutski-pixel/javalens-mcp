@@ -133,6 +133,34 @@ class OrganizeImportsToolTest {
         assertEquals(0, data.get("totalImports"));
     }
 
+    // ========== Semantic-grade tests ==========
+
+    @Test
+    @DisplayName("RefactoringTarget unused imports: exactly ArrayList, Map, HashMap, IOException")
+    void refactoringTarget_unusedImportsExactSet() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", refactoringTargetPath);
+
+        ToolResponse response = tool.execute(args);
+        assertTrue(response.isSuccess());
+        Map<String, Object> data = getData(response);
+
+        // RefactoringTarget imports java.util.{List,ArrayList,Map,HashMap} and java.io.IOException.
+        // Only List is used (calculateTotal parameter); the rest are unused.
+        List<String> unused = getUnusedImports(data);
+        java.util.Set<String> unusedSet = new java.util.HashSet<>(unused);
+        assertTrue(unusedSet.contains("java.util.ArrayList"),
+            "java.util.ArrayList must be flagged unused; got: " + unused);
+        assertTrue(unusedSet.contains("java.util.Map"),
+            "java.util.Map must be flagged unused; got: " + unused);
+        assertTrue(unusedSet.contains("java.util.HashMap"),
+            "java.util.HashMap must be flagged unused; got: " + unused);
+        assertTrue(unusedSet.contains("java.io.IOException"),
+            "java.io.IOException must be flagged unused; got: " + unused);
+        assertFalse(unusedSet.contains("java.util.List"),
+            "java.util.List is used by calculateTotal — must NOT appear in unused; got: " + unused);
+    }
+
     // ========== Required Parameter Tests ==========
 
     @Test
