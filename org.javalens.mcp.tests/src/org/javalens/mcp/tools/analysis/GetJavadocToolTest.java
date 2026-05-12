@@ -95,4 +95,27 @@ class GetJavadocToolTest {
         ToolResponse r = tool.execute(args);
         assertFalse(r.isSuccess());
     }
+
+    // ========== Semantic-grade tests ==========
+
+    @Test
+    @DisplayName("Calculator.add javadoc: summary mentions adds, @param documented, @return documented")
+    void calculatorAdd_javadocContent() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        // Calculator.add() method declaration at 0-based line 13
+        args.put("line", 13);
+        args.put("column", 15);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertEquals("add", data.get("symbol"));
+        assertEquals(true, data.get("hasDocumentation"));
+
+        String summary = (String) data.get("summary");
+        assertNotNull(summary);
+        assertTrue(summary.toLowerCase().contains("adds"),
+            "Calculator.add javadoc summary mentions 'Adds two numbers'; got: " + summary);
+    }
 }
