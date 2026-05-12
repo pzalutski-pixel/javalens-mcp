@@ -52,75 +52,155 @@ class ApplyQuickFixToolTest {
     }
 
     @Test
-    @DisplayName("generates complete edit structure for add_import fix")
-    void generatesCompleteEditStructure() {
+    @DisplayName("add_import: Calculator (no existing imports) emits one insert edit with `import java.util.Date;`")
+    void addImport_calculatorNoImports_emitsImportInsert() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", calculatorPath);
         args.put("fixId", "add_import:java.util.Date");
 
         ToolResponse response = tool.execute(args);
-
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
-
-        // Verify response structure
-        assertNotNull(data.get("filePath"));
         assertEquals("add_import:java.util.Date", data.get("fixId"));
+        assertEquals("add_import", data.get("fixType"));
 
-        // Verify edits list
+        // Calculator declares a package but no imports; the tool must produce exactly one
+        // insert edit after the package declaration that introduces the import.
         List<Map<String, Object>> edits = getEdits(data);
-        assertNotNull(edits);
+        assertEquals(1, edits.size(),
+            "add_import on a file with no existing imports must produce exactly 1 edit; got: " + edits);
 
-        // Verify edit structure if present
-        if (!edits.isEmpty()) {
-            Map<String, Object> edit = edits.get(0);
-            assertNotNull(edit.get("type"));
-            String newText = (String) edit.get("newText");
-            if (newText != null) {
-                assertTrue(newText.contains("import") || newText.contains("java.util.Date"));
-            }
-        }
+        Map<String, Object> edit = edits.get(0);
+        assertEquals("insert", edit.get("type"),
+            "Adding an import is an insertion; got: " + edit);
+        assertNotNull(edit.get("offset"));
+        assertNotNull(edit.get("line"));
+
+        String newText = (String) edit.get("newText");
+        assertNotNull(newText, "Insert edit must carry the text to insert");
+        assertTrue(newText.contains("import java.util.Date;"),
+            "Insert text must contain the full import statement; got: " + newText);
     }
 
     @Test
-    @DisplayName("handles remove_import fix")
-    void handlesRemoveImport() {
+    @DisplayName("remove_import: SearchPatterns index 0 (java.io.IOException at 0-based line 2) emits one delete edit")
+    void removeImport_searchPatternsIndexZero_emitsDeleteAtImportLine() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", searchPatternsPath);
         args.put("fixId", "remove_import:0");
 
         ToolResponse response = tool.execute(args);
+        assertTrue(response.isSuccess(),
+            "remove_import:0 must succeed for a file with at least one import");
+        Map<String, Object> data = getData(response);
+        assertEquals("remove_import", data.get("fixType"));
 
-        // Should succeed or fail gracefully
-        assertNotNull(response);
+        // SearchPatterns.java imports java.io.IOException at index 0 (0-based line 2).
+        List<Map<String, Object>> edits = getEdits(data);
+        assertEquals(1, edits.size(),
+            "remove_import must produce exactly 1 edit; got: " + edits);
+
+        Map<String, Object> edit = edits.get(0);
+        assertEquals("delete", edit.get("type"),
+            "Removing an import is a deletion; got: " + edit);
+        assertEquals(2, ((Number) edit.get("startLine")).intValue(),
+            "java.io.IOException is at 0-based line 2 in SearchPatterns.java; got: " + edit);
+        assertNotNull(edit.get("startOffset"));
+        assertNotNull(edit.get("endOffset"));
+        assertTrue(
+            ((Number) edit.get("endOffset")).intValue() > ((Number) edit.get("startOffset")).intValue(),
+            "delete edit must have endOffset > startOffset; got: " + edit);
     }
 
     @Test
-    @DisplayName("handles add_throws fix with line parameter")
-    void handlesAddThrowsWithLine() {
+    @DisplayName("add_throws: Calculator.add (no existing throws) inserts ` throws java.io.IOException`")
+    void addThrows_calculatorAdd_insertsThrowsClause() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", calculatorPath);
         args.put("fixId", "add_throws:java.io.IOException");
-        args.put("line", 5);
+        // Calculator.add() declaration is at 0-based line 14 (1-based line 15).
+        args.put("line", 14);
 
         ToolResponse response = tool.execute(args);
+        assertTrue(response.isSuccess(),
+            "add_throws at a real method position must succeed");
+        Map<String, Object> data = getData(response);
+        assertEquals("add_throws", data.get("fixType"));
 
-        // May or may not succeed depending on method at line 5
-        assertNotNull(response);
+        // Calculator.add has no existing throws clause. The tool must insert ` throws X`
+        // right after the closing paren of the parameter list.
+        List<Map<String, Object>> edits = getEdits(data);
+        assertEquals(1, edits.size(),
+            "add_throws must produce exactly 1 edit; got: " + edits);
+
+        Map<String, Object> edit = edits.get(0);
+        assertEquals("insert", edit.get("type"),
+            "Adding a throws clause is an insertion; got: " + edit);
+        assertEquals(" throws java.io.IOException", edit.get("newText"),
+            "First-throws insertion must produce ` throws X` (with leading space); got: " + edit);
     }
 
     @Test
-    @DisplayName("handles surround_try_catch fix with line parameter")
-    void handlesSurroundTryCatchWithLine() {
+    @DisplayName("add_throws: line not on a method returns invalid_parameter error")
+    void addThrows_noMethodAtLine_rejected() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        args.put("fixId", "add_throws:java.io.IOException");
+        // 0-based line 0 is the `package com.example;` line — not a method.
+        args.put("line", 0);
+
+        ToolResponse response = tool.execute(args);
+        assertFalse(response.isSuccess(),
+            "add_throws on a non-method position must fail with an error response");
+        assertNotNull(response.getError());
+    }
+
+    @Test
+    @DisplayName("surround_try_catch: wraps `lastResult = a + b;` in Calculator.add body with try-catch")
+    void surroundTryCatch_wrapsStatementInTryCatch() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", calculatorPath);
         args.put("fixId", "surround_try_catch:java.io.IOException");
-        args.put("line", 5);
+        // `lastResult = a + b;` is at 0-based line 15 (1-based line 16) inside Calculator.add.
+        args.put("line", 15);
 
         ToolResponse response = tool.execute(args);
+        assertTrue(response.isSuccess(),
+            "surround_try_catch on a real statement line must succeed");
+        Map<String, Object> data = getData(response);
+        assertEquals("surround_try_catch", data.get("fixType"));
 
-        // May or may not succeed depending on statement at line 5
-        assertNotNull(response);
+        List<Map<String, Object>> edits = getEdits(data);
+        assertEquals(1, edits.size(),
+            "surround_try_catch must produce exactly 1 edit; got: " + edits);
+
+        Map<String, Object> edit = edits.get(0);
+        assertEquals("replace", edit.get("type"),
+            "Wrapping is a replacement of the original statement; got: " + edit);
+
+        String newText = (String) edit.get("newText");
+        assertNotNull(newText);
+        assertTrue(newText.startsWith("try {"),
+            "Wrapped block must start with `try {`; got: " + newText);
+        assertTrue(newText.contains("lastResult = a + b;"),
+            "Wrapped block must preserve the original statement; got: " + newText);
+        assertTrue(newText.contains("catch (java.io.IOException e)"),
+            "Wrapped block must catch the requested exception type; got: " + newText);
+    }
+
+    @Test
+    @DisplayName("surround_try_catch: line with no statement returns invalid_parameter error")
+    void surroundTryCatch_noStatementAtLine_rejected() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        args.put("fixId", "surround_try_catch:java.io.IOException");
+        // 0-based line 0 is the package declaration — not a Statement.
+        args.put("line", 0);
+
+        ToolResponse response = tool.execute(args);
+        assertFalse(response.isSuccess(),
+            "surround_try_catch on a non-statement line must fail with an error response");
+        assertNotNull(response.getError());
     }
 
     @Test
