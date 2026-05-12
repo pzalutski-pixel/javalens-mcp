@@ -37,45 +37,68 @@ class GetSignatureHelpToolTest {
     @SuppressWarnings("unchecked")
     private Map<String, Object> getData(ToolResponse r) { return (Map<String, Object>) r.getData(); }
 
-    @Test @DisplayName("returns signature help with complete response")
-    void returnsSignatureHelpComprehensively() {
+    @Test
+    @DisplayName("Calculator.add: signature label, parameter labels, activeSignature/activeParameter, and Javadoc first sentence")
+    @SuppressWarnings("unchecked")
+    void calculatorAdd_returnsExactSignatureInfo() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", calculatorPath);
-        args.put("line", 14);  // add method
+        args.put("line", 14);  // Calculator.add method declaration (0-based)
         args.put("column", 15);
 
         ToolResponse r = tool.execute(args);
-
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
 
-        // Verify LSP-style response
-        assertNotNull(data.get("signatures"));
-        assertNotNull(data.get("activeSignature"));
-        assertNotNull(data.get("activeParameter"));
+        // LSP indices: the tool always seeds activeSignature/activeParameter at 0.
+        assertEquals(0, ((Number) data.get("activeSignature")).intValue());
+        assertEquals(0, ((Number) data.get("activeParameter")).intValue());
 
-        @SuppressWarnings("unchecked")
         List<Map<String, Object>> signatures = (List<Map<String, Object>>) data.get("signatures");
-        assertFalse(signatures.isEmpty());
+        // Calculator.add has no overloads — exactly one signature must be returned.
+        assertEquals(1, signatures.size(),
+            "Calculator declares one method named `add`; signature list must have exactly 1 entry; got: "
+                + signatures);
 
         Map<String, Object> sig = signatures.get(0);
-        assertNotNull(sig.get("label"));
-        assertNotNull(sig.get("parameters"));
+        // The tool builds the label as `name(type name, type name): returnType`. This
+        // exact form is the user-visible LSP label; regressions (e.g., dropping the
+        // parameter names) must fail this test.
+        assertEquals("add(int a, int b): int", sig.get("label"),
+            "Signature label must match `name(type name, type name): returnType`; got: " + sig);
+
+        List<Map<String, Object>> parameters = (List<Map<String, Object>>) sig.get("parameters");
+        assertEquals(2, parameters.size(),
+            "add takes exactly 2 parameters; got: " + parameters);
+        assertEquals("int a", parameters.get(0).get("label"));
+        assertEquals("int b", parameters.get(1).get("label"));
+
+        // Calculator.add carries a Javadoc beginning "Adds two numbers." — the tool
+        // extracts the first sentence as `documentation`.
+        assertEquals("Adds two numbers.", sig.get("documentation"),
+            "First sentence of Javadoc must be surfaced as documentation; got: " + sig);
     }
 
-    @Test @DisplayName("includes all overloaded signatures")
-    void includesOverloadedSignatures() {
+    @Test
+    @DisplayName("non-overloaded method returns exactly one signature (overload detection coverage gap)")
+    void nonOverloadedMethod_exactlyOneSignature() {
+        // The tool's intent: when a method has overloads, return ALL of them. simple-maven
+        // currently has no overloaded methods, so we can only verify the negative case
+        // (no overload => exactly one signature). True overload coverage is a deferred
+        // fixture gap.
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", calculatorPath);
-        args.put("line", 14);  // add method (may have overloads)
+        args.put("line", 14);
         args.put("column", 15);
 
         ToolResponse r = tool.execute(args);
-
         assertTrue(r.isSuccess());
+
         @SuppressWarnings("unchecked")
         List<?> signatures = (List<?>) getData(r).get("signatures");
-        assertTrue(signatures.size() >= 1);
+        assertEquals(1, signatures.size(),
+            "Calculator.add has no overloads; tool must return exactly 1 signature; got: "
+                + signatures);
     }
 
     @Test @DisplayName("requires filePath, line, column parameters")
