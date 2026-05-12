@@ -97,4 +97,28 @@ class GetDependencyGraphToolTest {
         unknownType.put("name", "com.nonexistent.Type");
         assertFalse(tool.execute(unknownType).isSuccess());
     }
+
+    // ========== Semantic-grade tests ==========
+
+    @Test
+    @DisplayName("UserService dependency graph: nodes include Calculator (field/parameter type used)")
+    void userService_dependencyOnCalculator() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("scope", "type");
+        args.put("name", "com.example.service.UserService");
+        args.put("depth", 2);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+
+        @SuppressWarnings("unchecked")
+        java.util.List<Object> nodes = (java.util.List<Object>) data.get("nodes");
+        boolean hasCalculator = nodes.stream()
+            .map(Object::toString)
+            .anyMatch(s -> s.contains("Calculator"));
+        assertTrue(hasCalculator,
+            "UserService uses Calculator (as field type and method parameter); must appear in graph nodes; got: "
+                + nodes);
+    }
 }
