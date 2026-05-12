@@ -92,4 +92,34 @@ class GetCallHierarchyIncomingToolTest {
 
         assertFalse(tool.execute(args).isSuccess());
     }
+
+    // ========== Semantic-grade tests ==========
+
+    @Test
+    @DisplayName("Calculator.add: callers include UserService.calculateTotal and SearchPatterns.createObjects")
+    void calculatorAdd_callersIncludeKnownInvokers() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        // Calculator.add() at 0-based line 13; "add" name column 15.
+        args.put("line", 13);
+        args.put("column", 15);
+        args.put("maxResults", 100);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> callers = (List<Map<String, Object>>) getData(r).get("callers");
+
+        java.util.Set<String> callerFiles = callers.stream()
+            .map(c -> (String) c.get("filePath"))
+            .filter(java.util.Objects::nonNull)
+            .map(s -> s.replace('\\', '/'))
+            .map(s -> s.substring(s.lastIndexOf('/') + 1))
+            .collect(java.util.stream.Collectors.toSet());
+
+        assertTrue(callerFiles.contains("UserService.java"),
+            "UserService.calculateTotal calls Calculator.add — must appear; got: " + callerFiles);
+        assertTrue(callerFiles.contains("SearchPatterns.java"),
+            "SearchPatterns.createObjects calls Calculator.add — must appear; got: " + callerFiles);
+    }
 }
