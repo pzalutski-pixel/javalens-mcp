@@ -102,7 +102,7 @@ class SearchSymbolsToolTest {
     }
 
     @Test
-    @DisplayName("Method kind filter returns only methods")
+    @DisplayName("Method kind filter returns only methods (every result must have kind=Method)")
     void methodKindFilter_returnsOnlyMethods() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("query", "add*");
@@ -114,8 +114,19 @@ class SearchSymbolsToolTest {
         Map<String, Object> data = getData(response);
         List<Map<String, Object>> results = getResults(data);
         assertNotNull(results);
-        assertTrue(results.stream().anyMatch(r ->
-            "add".equals(r.get("name")) || r.get("name").toString().startsWith("add")));
+        assertFalse(results.isEmpty(),
+            "`add*` must match at least Calculator.add; got empty results");
+
+        // Calculator.add must be among the results (positive case).
+        assertTrue(results.stream().anyMatch(r -> "add".equals(r.get("name"))),
+            "Calculator.add must appear when searching `add*` with kind=Method; got: " + results);
+
+        // Critical: every result's kind must equal "Method". A regression where the kind
+        // filter is silently ignored would otherwise pass.
+        for (Map<String, Object> result : results) {
+            assertEquals("Method", result.get("kind"),
+                "kind=Method filter must apply to every result; offending entry: " + result);
+        }
     }
 
     // ========== Pagination Tests ==========
