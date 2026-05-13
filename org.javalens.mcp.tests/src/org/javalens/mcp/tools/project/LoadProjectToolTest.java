@@ -164,4 +164,132 @@ class LoadProjectToolTest {
         List<String> packages = (List<String>) data.get("packages");
         assertNotNull(packages, "packages field must be present");
     }
+
+    // ========== Behavior-matrix coverage ==========
+
+    @Test
+    @DisplayName("multi-module-maven loads with 3 modules: api, impl, web each contributing one package")
+    @SuppressWarnings("unchecked")
+    void multiModuleMaven_loadsThreeModulesWithExpectedPackages() {
+        Path multiModule = helper.getFixturePath("multi-module-maven");
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("projectPath", multiModule.toString());
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess(),
+            "multi-module-maven must load successfully; got error: " +
+                (r.getError() != null ? r.getError().getMessage() : "n/a"));
+
+        Map<String, Object> data = getData(r);
+        assertEquals(true, data.get("loaded"));
+        assertEquals("maven", data.get("buildSystem"));
+
+        // Three modules each declare one package: com.example.api, com.example.impl,
+        // com.example.web. The packages list must include all three.
+        List<String> packages = (List<String>) data.get("packages");
+        java.util.Set<String> pkgSet = new java.util.HashSet<>(packages);
+        assertTrue(pkgSet.contains("com.example.api"),
+            "api module's package must appear; got: " + packages);
+        assertTrue(pkgSet.contains("com.example.impl"),
+            "impl module's package must appear; got: " + packages);
+        assertTrue(pkgSet.contains("com.example.web"),
+            "web module's package must appear; got: " + packages);
+
+        // Three modules × one Java file each = at least 3 source files.
+        assertTrue(((Number) data.get("sourceFileCount")).intValue() >= 3,
+            "multi-module-maven has 3 source files (Greeter, GreeterImpl, GreeterController); got: "
+                + data.get("sourceFileCount"));
+    }
+
+    @Test
+    @DisplayName("plain-java project (no pom.xml, no build.gradle) loads via src/ detection")
+    void plainJavaProject_loadsWithoutBuildFile() {
+        Path plain = helper.getFixturePath("plain-java");
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("projectPath", plain.toString());
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess(),
+            "plain-java project must load — the tool's description claims support for plain " +
+                "Java projects with src/ directory. Got error: " +
+                (r.getError() != null ? r.getError().getMessage() : "n/a"));
+
+        Map<String, Object> data = getData(r);
+        assertEquals(true, data.get("loaded"));
+        // No pom.xml or build.gradle — buildSystem should NOT report maven or gradle.
+        String buildSystem = (String) data.get("buildSystem");
+        assertNotNull(buildSystem);
+        assertFalse("maven".equals(buildSystem),
+            "plain-java has no pom.xml; buildSystem must not be 'maven'; got: " + buildSystem);
+        assertFalse("gradle".equals(buildSystem),
+            "plain-java has no build.gradle; buildSystem must not be 'gradle'; got: " + buildSystem);
+
+        assertTrue(((Number) data.get("sourceFileCount")).intValue() >= 1,
+            "plain-java has Hello.java; sourceFileCount must be >= 1");
+    }
+
+    @Test
+    @DisplayName("relative projectPath is normalized to absolute before resolution")
+    void relativePath_normalizedToAbsolute() {
+        // Build a relative path that resolves to the same simple-maven directory.
+        Path absolute = projectPath.toAbsolutePath().normalize();
+        Path cwd = Path.of("").toAbsolutePath();
+        Path relative = cwd.relativize(absolute);
+
+        // Skip if the relative form would require traversing many `..` segments —
+        // that's not the contract we want to test (just normalization, not arbitrary
+        // path arithmetic). The fixture and the cwd should share a common ancestor.
+        if (relative.toString().startsWith("..") &&
+            relative.getNameCount() > 5) {
+            return;
+        }
+
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("projectPath", relative.toString());
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess(),
+            "Relative path must be resolved via toAbsolutePath().normalize(); got error: " +
+                (r.getError() != null ? r.getError().getMessage() : "n/a"));
+
+        Map<String, Object> data = getData(r);
+        assertEquals(true, data.get("loaded"));
+    }
+
+    @Test
+    @DisplayName("loading a second project replaces the service registered by the first")
+    void reload_replacesServiceWithNewProject() {
+        // Load simple-maven first.
+        ObjectNode firstArgs = objectMapper.createObjectNode();
+        firstArgs.put("projectPath", projectPath.toString());
+        ToolResponse r1 = tool.execute(firstArgs);
+        assertTrue(r1.isSuccess());
+        IJdtService firstService = serviceRef.get();
+        assertNotNull(firstService);
+
+        // Now load multi-module-maven via the same tool instance.
+        Path multiModule = helper.getFixturePath("multi-module-maven");
+        ObjectNode secondArgs = objectMapper.createObjectNode();
+        secondArgs.put("projectPath", multiModule.toString());
+        ToolResponse r2 = tool.execute(secondArgs);
+        assertTrue(r2.isSuccess(),
+            "Second load_project call must succeed; got error: " +
+                (r2.getError() != null ? r2.getError().getMessage() : "n/a"));
+
+        IJdtService secondService = serviceRef.get();
+        assertNotNull(secondService);
+        assertNotSame(firstService, secondService,
+            "Each load_project invocation must produce a fresh JdtService — otherwise " +
+                "subsequent tool calls would route through the previously-loaded project's index.");
+    }
+
+    // ========== Documented deferred gaps ==========
+    //
+    // Gradle project load: requires a build.gradle fixture and a working Gradle binary
+    //   in the test environment (similar to CrossModuleNavigationToolTest's Maven
+    //   probe). Deferred until a Gradle fixture is added.
+    //
+    // Packages list cap at 20: requires a fixture with > 20 packages, which would
+    //   require synthesizing many empty package directories. The cap logic is a one-
+    //   line subList call in the tool source — low regression risk. Deferred.
 }
