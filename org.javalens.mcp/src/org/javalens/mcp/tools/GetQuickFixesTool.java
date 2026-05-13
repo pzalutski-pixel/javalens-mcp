@@ -119,13 +119,28 @@ public class GetQuickFixesTool extends AbstractTool {
                 return ToolResponse.fileNotFound(filePath);
             }
 
-            // Reconcile to get problems
-            CompilationUnit ast = cu.reconcile(
-                AST.getJLSLatest(),
-                ICompilationUnit.FORCE_PROBLEM_DETECTION,
-                null,
-                null
-            );
+            // cu.reconcile(... FORCE_PROBLEM_DETECTION ...) only works on a working-copy
+            // ICompilationUnit. Without working-copy mode, reconcile returns null and
+            // every problem (warnings, errors) is silently invisible to this tool. So we
+            // put the CU into working-copy mode for the duration of the reconcile.
+            boolean wasWorkingCopy = cu.isWorkingCopy();
+            if (!wasWorkingCopy) {
+                cu.becomeWorkingCopy(null);
+            }
+
+            CompilationUnit ast;
+            try {
+                ast = cu.reconcile(
+                    AST.getJLSLatest(),
+                    ICompilationUnit.FORCE_PROBLEM_DETECTION,
+                    null,
+                    null
+                );
+            } finally {
+                if (!wasWorkingCopy) {
+                    cu.discardWorkingCopy();
+                }
+            }
 
             if (ast == null) {
                 Map<String, Object> empty = new LinkedHashMap<>();
