@@ -114,18 +114,23 @@ public class FindReflectionUsageTool extends AbstractTool {
 
                     int forThisLabel = 0;
                     // Iterate all overloads of methodName on this type. Searching references
-                    // for each IMethod handle gives us the union across overloads.
+                    // for each IMethod handle gives us the union across overloads, but the
+                    // documented maxResults is PER REFLECTION METHOD (per label), not per
+                    // overload — so we cap the running per-label total here.
                     for (IMethod method : type.getMethods()) {
+                        if (forThisLabel >= maxResults) break;
                         if (!methodName.equals(method.getElementName())) continue;
                         if (!method.exists()) continue;
 
-                        List<SearchMatch> matches = service.getSearchService().findAllReferences(method, maxResults);
+                        int remaining = maxResults - forThisLabel;
+                        List<SearchMatch> matches = service.getSearchService().findAllReferences(method, remaining);
                         List<Map<String, Object>> formatted = formatMatches(matches, service);
                         for (Map<String, Object> match : formatted) {
+                            if (forThisLabel >= maxResults) break;
                             match.put("reflectionMethod", label);
                             allCalls.add(match);
+                            forThisLabel++;
                         }
-                        forThisLabel += formatted.size();
                     }
 
                     if (forThisLabel > 0) {

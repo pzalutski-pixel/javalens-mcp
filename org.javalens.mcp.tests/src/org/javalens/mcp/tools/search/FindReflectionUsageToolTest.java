@@ -82,21 +82,27 @@ class FindReflectionUsageToolTest {
     }
 
     @Test
-    @DisplayName("should respect maxResults parameter (size cap applied)")
+    @DisplayName("should respect maxResults parameter (per-reflection-method cap, per the tool's description)")
     void respectsMaxResults() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("maxResults", 1);
 
         ToolResponse response = tool.execute(args);
         assertTrue(response.isSuccess());
+        Map<String, Object> data = getData(response);
 
-        // The cap must actually be applied — assert reflectionCalls size obeys it.
+        // The tool documents `maxResults` as "Maximum results per reflection method". The
+        // summary maps each detected reflection label to its count; every value must obey
+        // the cap.
         @SuppressWarnings("unchecked")
-        List<Map<String, Object>> calls =
-            (List<Map<String, Object>>) getData(response).get("reflectionCalls");
-        assertNotNull(calls);
-        assertTrue(calls.size() <= 1,
-            "maxResults=1 must cap reflectionCalls to 1 entry; got: " + calls.size());
+        Map<String, Object> summary = (Map<String, Object>) data.get("summary");
+        assertNotNull(summary);
+        for (Map.Entry<String, Object> entry : summary.entrySet()) {
+            int count = ((Number) entry.getValue()).intValue();
+            assertTrue(count <= 1,
+                "maxResults=1 caps each reflection label's count to 1; "
+                    + entry.getKey() + " has " + count + " entries; full summary: " + summary);
+        }
     }
 
     // ========== Semantic-grade tests ==========
