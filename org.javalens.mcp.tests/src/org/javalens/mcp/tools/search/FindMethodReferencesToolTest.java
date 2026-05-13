@@ -95,6 +95,40 @@ class FindMethodReferencesToolTest {
     // ========== Semantic-grade tests ==========
 
     @Test
+    @DisplayName("MethodRefTarget.formatId: exactly one method reference at MethodRefUser line 11")
+    void methodRefTarget_formatId_hasOneReference() {
+        String targetPath = helper.getFixturePath("simple-maven")
+            .resolve("src/main/java/com/example/MethodRefTarget.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", targetPath);
+        // 1-based line 8 `public static String formatId(int id) {` -> 0-based 7;
+        // identifier "formatId" begins at column 25.
+        args.put("line", 7);
+        args.put("column", 25);
+        args.put("maxResults", 100);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertEquals("formatId", data.get("methodName"));
+        assertEquals("com.example.MethodRefTarget", data.get("declaringType"));
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> refs = (List<Map<String, Object>>) data.get("methodReferences");
+        assertEquals(1, ((Number) data.get("totalMethodReferences")).intValue(),
+            "MethodRefUser uses `MethodRefTarget::formatId` exactly once; got: "
+                + data.get("totalMethodReferences") + " (" + refs + ")");
+
+        // The single match must come from MethodRefUser.java.
+        Map<String, Object> ref = refs.get(0);
+        String filePath = (String) ref.get("filePath");
+        assertNotNull(filePath);
+        String normalized = filePath.replace('\\', '/');
+        assertTrue(normalized.endsWith("MethodRefUser.java"),
+            "Method reference must be located in MethodRefUser.java; got: " + filePath);
+    }
+
+    @Test
     @DisplayName("Calculator.add has no method-reference usages in fixtures (isolation)")
     void calculatorAdd_hasNoMethodReferences() {
         String calcPath = helper.getFixturePath("simple-maven")
