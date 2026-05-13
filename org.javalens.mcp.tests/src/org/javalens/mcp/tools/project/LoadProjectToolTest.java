@@ -283,13 +283,53 @@ class LoadProjectToolTest {
                 "subsequent tool calls would route through the previously-loaded project's index.");
     }
 
-    // ========== Documented deferred gaps ==========
-    //
-    // Gradle project load: requires a build.gradle fixture and a working Gradle binary
-    //   in the test environment (similar to CrossModuleNavigationToolTest's Maven
-    //   probe). Deferred until a Gradle fixture is added.
-    //
-    // Packages list cap at 20: requires a fixture with > 20 packages, which would
-    //   require synthesizing many empty package directories. The cap logic is a one-
-    //   line subList call in the tool source — low regression risk. Deferred.
+    @Test
+    @DisplayName("simple-gradle loads with buildSystem='gradle' and Hello.java visible")
+    @SuppressWarnings("unchecked")
+    void simpleGradle_loadsAsGradleProject() {
+        Path gradleProject = helper.getFixturePath("simple-gradle");
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("projectPath", gradleProject.toString());
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess(),
+            "simple-gradle must load — the tool's description claims support for " +
+                "Gradle projects (build.gradle). Got error: " +
+                (r.getError() != null ? r.getError().getMessage() : "n/a"));
+
+        Map<String, Object> data = getData(r);
+        assertEquals(true, data.get("loaded"));
+        assertEquals("gradle", data.get("buildSystem"),
+            "buildSystem must be lowercase 'gradle' for a build.gradle project; got: "
+                + data.get("buildSystem"));
+
+        List<String> packages = (List<String>) data.get("packages");
+        assertTrue(packages.contains("com.example"),
+            "Hello.java in com.example must contribute its package; got: " + packages);
+        assertTrue(((Number) data.get("sourceFileCount")).intValue() >= 1);
+    }
+
+    @Test
+    @DisplayName("many-packages fixture (21 packages) is capped at 20 in the response")
+    @SuppressWarnings("unchecked")
+    void manyPackages_listIsCappedAtTwenty() {
+        Path many = helper.getFixturePath("many-packages");
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("projectPath", many.toString());
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+
+        // Project has exactly 21 packages (pkg00..pkg20). packageCount must reflect
+        // the true total, but the `packages` list in the response is capped at 20.
+        assertEquals(21, ((Number) data.get("packageCount")).intValue(),
+            "Fixture declares 21 packages; packageCount must report the true total " +
+                "regardless of the truncation cap. Got: " + data.get("packageCount"));
+
+        List<String> packages = (List<String>) data.get("packages");
+        assertEquals(20, packages.size(),
+            "packages list must be capped at 20 entries even when packageCount > 20; got: "
+                + packages.size() + " entries: " + packages);
+    }
 }
