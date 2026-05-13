@@ -194,8 +194,13 @@ public class GetDiagnosticsTool extends AbstractTool {
 
             IProblem[] problems = ast.getProblems();
 
+            int addedHere = 0;
             for (IProblem problem : problems) {
-                if (diagnostics.size() >= diagnostics.size() + remaining) break;
+                // Break when this file has contributed `remaining` diagnostics. The
+                // previous check `diagnostics.size() >= diagnostics.size() + remaining`
+                // was a no-op (always false unless remaining <= 0), so the cap was never
+                // enforced.
+                if (addedHere >= remaining) break;
 
                 boolean isError = problem.isError();
                 boolean isWarning = problem.isWarning();
@@ -218,6 +223,7 @@ public class GetDiagnosticsTool extends AbstractTool {
                 diag.put("category", categorizeProblem(problem));
 
                 diagnostics.add(diag);
+                addedHere++;
             }
         } catch (JavaModelException e) {
             log.debug("Error reconciling {}: {}", path, e.getMessage());
