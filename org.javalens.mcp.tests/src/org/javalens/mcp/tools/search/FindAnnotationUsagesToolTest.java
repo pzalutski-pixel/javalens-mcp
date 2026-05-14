@@ -86,4 +86,113 @@ class FindAnnotationUsagesToolTest {
             "Expected at least 6 @Marker usages across all documented targets; got: "
                 + data.get("totalUsages") + " (" + getUsages(data) + ")");
     }
+
+    // ========== Behavior-matrix coverage ==========
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> usagesOf(ToolResponse r) {
+        return (List<Map<String, Object>>) getData(r).get("usages");
+    }
+
+    @Test
+    @DisplayName("Usage entries expose filePath, line, column, offset, length")
+    void marker_usageEntriesIncludeLocation() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("annotation", "com.example.Marker");
+        args.put("maxResults", 100);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        List<Map<String, Object>> usages = usagesOf(r);
+        assertFalse(usages.isEmpty(), "@Marker has documented usages; list must be non-empty");
+        for (Map<String, Object> u : usages) {
+            assertNotNull(u.get("filePath"), "filePath must be present: " + u);
+            assertNotNull(u.get("line"), "line must be present: " + u);
+            assertNotNull(u.get("column"), "column must be present: " + u);
+            assertNotNull(u.get("offset"), "offset must be present: " + u);
+            assertNotNull(u.get("length"), "length must be present: " + u);
+        }
+    }
+
+    @Test
+    @DisplayName("Marker.java itself has no @Marker usages — all usages are in AnnotationUsages.java")
+    void marker_isolation_allUsagesInAnnotationUsagesJava() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("annotation", "com.example.Marker");
+        args.put("maxResults", 100);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        for (Map<String, Object> u : usagesOf(r)) {
+            String filePath = ((String) u.get("filePath")).replace('\\', '/');
+            assertTrue(filePath.endsWith("AnnotationUsages.java"),
+                "@Marker usages must come from AnnotationUsages.java only (not Marker.java declaration); got: " + filePath);
+        }
+    }
+
+    @Test
+    @DisplayName("Top-level @Repeatable @Label is found at both occurrences on repeatedLabels()")
+    void label_repeatableAnnotation_findsBothOccurrences() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("annotation", "com.example.Label");
+        args.put("maxResults", 100);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess(),
+            "Top-level @Label annotation must resolve; got: " +
+                (r.getError() != null ? r.getError().getMessage() : "n/a"));
+        List<Map<String, Object>> usages = usagesOf(r);
+        // @Label("one") + @Label("two") on repeatedLabels() — exactly 2 annotation references.
+        assertEquals(2, usages.size(),
+            "Repeatable @Label has exactly 2 occurrences on repeatedLabels(); got: " + usages);
+    }
+
+    @Test
+    @DisplayName("maxResults caps usages list and sets meta.truncated=true")
+    void maxResults_capsAndSetsTruncatedTrue() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("annotation", "com.example.Marker");
+        args.put("maxResults", 2);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        List<Map<String, Object>> usages = usagesOf(r);
+        assertEquals(2, usages.size(),
+            "maxResults=2 must cap usages list to exactly 2; got: " + usages.size());
+        org.javalens.mcp.models.ResponseMeta meta = r.getMeta();
+        assertNotNull(meta);
+        assertEquals(Boolean.TRUE, meta.getTruncated(),
+            "meta.truncated must be true when usages are capped below total");
+    }
+
+    @Test
+    @DisplayName("Large maxResults returns all usages and meta.truncated=false")
+    void maxResults_large_noTruncation() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("annotation", "com.example.AnnotationsFixture.Tag");
+        args.put("maxResults", 1000);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        // Tag has 2 usages; well under cap.
+        org.javalens.mcp.models.ResponseMeta meta = r.getMeta();
+        assertNotNull(meta);
+        assertEquals(Boolean.FALSE, meta.getTruncated(),
+            "meta.truncated must be false when usages fit under maxResults");
+    }
+
+    @Test
+    @DisplayName("totalUsages == usages.size()")
+    void totalUsagesEqualsUsagesSize() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("annotation", "com.example.Marker");
+        args.put("maxResults", 100);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        int total = ((Number) data.get("totalUsages")).intValue();
+        assertEquals(total, usagesOf(r).size(),
+            "totalUsages must equal usages list size in this response");
+    }
 }
