@@ -363,8 +363,26 @@ public class JdtServiceImpl implements IJdtService {
         try {
             // First try as fully qualified name
             IType type = javaProject.findType(typeName);
+            // JDT can return the OUTER type when asked for a nested type via dotted form
+            // (e.g. findType("p.Outer.Inner") may return Outer). Validate that the simple
+            // name matches the last segment; if not, force the nested-resolution path.
             if (type != null) {
-                return type;
+                String lastSeg = typeName.substring(typeName.lastIndexOf('.') + 1);
+                if (type.getElementName().equals(lastSeg)) {
+                    return type;
+                }
+            }
+
+            // Nested-type fallback: replace dots between segments with $ from the right.
+            // "a.b.Outer.Inner.Inner2" → try "a.b.Outer.Inner$Inner2", "a.b.Outer$Inner$Inner2".
+            int lastDot = typeName.lastIndexOf('.');
+            while (lastDot > 0) {
+                String candidate = typeName.substring(0, lastDot) + "$" + typeName.substring(lastDot + 1);
+                IType nested = javaProject.findType(candidate);
+                if (nested != null) {
+                    return nested;
+                }
+                lastDot = typeName.lastIndexOf('.', lastDot - 1);
             }
 
             // Try searching for simple name in all packages
