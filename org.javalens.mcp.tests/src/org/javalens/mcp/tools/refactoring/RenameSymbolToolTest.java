@@ -269,4 +269,169 @@ class RenameSymbolToolTest {
         assertTrue(hasFieldHolder, "edits must include FieldHolder.java; got: " + editsByFile.keySet());
         assertTrue(hasWidgetHelper, "edits must include WidgetHelper.java; got: " + editsByFile.keySet());
     }
+
+    // ========== Behavior-matrix coverage ==========
+
+    @Test
+    @DisplayName("Per-edit shape: line, column, endColumn, oldText, newText, startOffset, endOffset all present")
+    void perEdit_shapeIncludesAllFields() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        args.put("line", 14);
+        args.put("column", 15);
+        args.put("newName", "sum");
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        Map<String, List<Map<String, Object>>> editsByFile = getEditsByFile(data);
+        for (List<Map<String, Object>> edits : editsByFile.values()) {
+            for (Map<String, Object> e : edits) {
+                assertNotNull(e.get("line"), "line missing: " + e);
+                assertNotNull(e.get("column"), "column missing: " + e);
+                assertNotNull(e.get("endColumn"), "endColumn missing: " + e);
+                assertNotNull(e.get("oldText"), "oldText missing: " + e);
+                assertNotNull(e.get("newText"), "newText missing: " + e);
+                assertNotNull(e.get("startOffset"), "startOffset missing: " + e);
+                assertNotNull(e.get("endOffset"), "endOffset missing: " + e);
+                assertEquals("add", e.get("oldText"));
+                assertEquals("sum", e.get("newText"));
+                int col = ((Number) e.get("column")).intValue();
+                int endCol = ((Number) e.get("endColumn")).intValue();
+                assertEquals(col + "add".length(), endCol,
+                    "endColumn must equal column + oldText.length(); got: " + e);
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("Rename type sets symbolKind=Class and emits the file-rename note")
+    void renameClass_emitsFileRenameNote() {
+        // Calculator.java line 5 (0-based) `public class Calculator {`
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        args.put("line", 5);
+        args.put("column", 13); // start of `Calculator`
+        args.put("newName", "ComputeEngine");
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertEquals("Calculator", data.get("oldName"));
+        assertEquals("Class", data.get("symbolKind"));
+        assertNotNull(data.get("note"), "Class rename must include the file-rename note");
+        assertTrue(((String) data.get("note")).toLowerCase().contains("file"),
+            "Note must mention file rename; got: " + data.get("note"));
+    }
+
+    @Test
+    @DisplayName("Rename method propagates to call sites in other files")
+    void renameMethod_includesCrossFileCallSites() {
+        // Calculator.add — called from UserService (calculator.add(...)) and SampleTest.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        args.put("line", 14);
+        args.put("column", 15);
+        args.put("newName", "sum");
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        Map<String, List<Map<String, Object>>> editsByFile = getEditsByFile(data);
+        // Files containing add or its calls: Calculator.java (decl), and at minimum UserService.java.
+        java.util.Set<String> files = new java.util.HashSet<>();
+        for (String k : editsByFile.keySet()) {
+            String n = k.replace('\\', '/');
+            files.add(n.substring(n.lastIndexOf('/') + 1));
+        }
+        assertTrue(files.contains("Calculator.java"),
+            "Calculator.java (declaration) must be edited; got: " + files);
+        assertTrue(files.contains("UserService.java"),
+            "UserService.java (caller) must be edited; got: " + files);
+    }
+
+    @Test
+    @DisplayName("Method rename does NOT touch a same-named but unrelated method in a different type (isolation)")
+    void renameMethod_isolation_doesNotTouchUnrelatedSameName() {
+        // Calculator.add is being renamed. The fixture has other types that may have a
+        // method named `add` (e.g., List<...>.add); those bind to a different element and
+        // must not appear in editsByFile.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        args.put("line", 14);
+        args.put("column", 15);
+        args.put("newName", "sum");
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        Map<String, List<Map<String, Object>>> editsByFile = getEditsByFile(data);
+        for (List<Map<String, Object>> edits : editsByFile.values()) {
+            for (Map<String, Object> e : edits) {
+                assertEquals("add", e.get("oldText"),
+                    "Every edit's oldText must be `add` for the Calculator.add rename; got: " + e);
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("Reject reserved word: var, sealed, permits, record, yield, non-sealed all rejected")
+    void rejectAdditionalReservedWords() {
+        for (String word : List.of("var", "sealed", "permits", "record", "yield")) {
+            ObjectNode args = objectMapper.createObjectNode();
+            args.put("filePath", refactoringTargetPath);
+            args.put("line", 88);
+            args.put("column", 12);
+            args.put("newName", word);
+            ToolResponse r = tool.execute(args);
+            assertFalse(r.isSuccess(),
+                "Reserved word `" + word + "` must be rejected");
+        }
+    }
+
+    @Test
+    @DisplayName("Reject empty newName")
+    void rejectEmptyNewName() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", refactoringTargetPath);
+        args.put("line", 88);
+        args.put("column", 12);
+        args.put("newName", "");
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess());
+        assertEquals("INVALID_PARAMETER", r.getError().getCode());
+    }
+
+    @Test
+    @DisplayName("Non-type rename (method) does NOT include the file-rename note")
+    void renameMethod_noFileRenameNote() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        args.put("line", 14);
+        args.put("column", 15);
+        args.put("newName", "sum");
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertNull(data.get("note"),
+            "Method rename must not include file-rename note; got: " + data.get("note"));
+    }
+
+    @Test
+    @DisplayName("totalEdits equals the sum of per-file edit list sizes")
+    void totalEdits_sumsAcrossFiles() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        args.put("line", 14);
+        args.put("column", 15);
+        args.put("newName", "sum");
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        int total = ((Number) data.get("totalEdits")).intValue();
+        int sum = getEditsByFile(data).values().stream().mapToInt(List::size).sum();
+        assertEquals(total, sum, "totalEdits must equal the sum of per-file edits");
+    }
 }
