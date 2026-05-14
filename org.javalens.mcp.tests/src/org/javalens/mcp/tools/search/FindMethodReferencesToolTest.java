@@ -152,4 +152,95 @@ class FindMethodReferencesToolTest {
         assertEquals(0, refs.size(),
             "Calculator.add is never used as a method reference; got: " + refs);
     }
+
+    // ========== Behavior-matrix coverage ==========
+
+    private ObjectNode argsAtIdentifier(String filePath, String identifier) throws Exception {
+        String source = java.nio.file.Files.readString(java.nio.file.Path.of(filePath));
+        int idx = source.indexOf(identifier);
+        if (idx < 0) throw new AssertionError("`" + identifier + "` not in " + filePath);
+        int line = (int) source.substring(0, idx).chars().filter(c -> c == '\n').count();
+        int lineStart = source.lastIndexOf('\n', idx) + 1;
+        int column = idx - lineStart;
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", filePath);
+        args.put("line", line);
+        args.put("column", column);
+        return args;
+    }
+
+    @Test
+    @DisplayName("Bound instance method ref: MethodRefTarget.greet used via `instance::greet`")
+    @SuppressWarnings("unchecked")
+    void boundInstanceMethodRef_isFound() throws Exception {
+        String tgt = helper.getFixturePath("simple-maven")
+            .resolve("src/main/java/com/example/MethodRefTarget.java").toString();
+        String source = java.nio.file.Files.readString(java.nio.file.Path.of(tgt));
+        int idx = source.indexOf("public String greet");
+        idx = source.indexOf("greet", idx);
+        int line = (int) source.substring(0, idx).chars().filter(c -> c == '\n').count();
+        int lineStart = source.lastIndexOf('\n', idx) + 1;
+        int column = idx - lineStart;
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", tgt);
+        args.put("line", line);
+        args.put("column", column);
+        args.put("maxResults", 100);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertEquals("greet", data.get("methodName"));
+        List<Map<String, Object>> refs = (List<Map<String, Object>>) data.get("methodReferences");
+        // MethodRefUser uses `instance::greet` once.
+        assertEquals(1, refs.size(),
+            "greet should have exactly one bound method-reference usage; got: " + refs);
+    }
+
+    @Test
+    @DisplayName("Constructor reference: MethodRefTarget::new is found when positioning on the constructor")
+    @SuppressWarnings("unchecked")
+    void constructorRef_isFound() throws Exception {
+        String tgt = helper.getFixturePath("simple-maven")
+            .resolve("src/main/java/com/example/MethodRefTarget.java").toString();
+        String source = java.nio.file.Files.readString(java.nio.file.Path.of(tgt));
+        int idx = source.indexOf("public MethodRefTarget()");
+        idx = source.indexOf("MethodRefTarget(", idx);
+        int line = (int) source.substring(0, idx).chars().filter(c -> c == '\n').count();
+        int lineStart = source.lastIndexOf('\n', idx) + 1;
+        int column = idx - lineStart;
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", tgt);
+        args.put("line", line);
+        args.put("column", column);
+        args.put("maxResults", 100);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess(),
+            "Position on constructor must resolve; got: " +
+                (r.getError() != null ? r.getError().getMessage() : "n/a"));
+        List<Map<String, Object>> refs = (List<Map<String, Object>>) getData(r).get("methodReferences");
+        assertNotNull(refs);
+        // MethodRefUser uses `MethodRefTarget::new` once. The tool's method-reference
+        // search may or may not match constructors depending on JDT semantics — if
+        // implemented correctly, at least one match should appear.
+        assertTrue(refs.size() >= 1,
+            "MethodRefTarget::new must surface as a method reference; got: " + refs);
+    }
+
+    @Test
+    @DisplayName("Reference info includes filePath, line, column")
+    @SuppressWarnings("unchecked")
+    void referenceInfo_includesLocation() throws Exception {
+        String tgt = helper.getFixturePath("simple-maven")
+            .resolve("src/main/java/com/example/MethodRefTarget.java").toString();
+        ToolResponse r = tool.execute(argsAtIdentifier(tgt, "formatId"));
+        assertTrue(r.isSuccess());
+        List<Map<String, Object>> refs = (List<Map<String, Object>>) getData(r).get("methodReferences");
+        assertFalse(refs.isEmpty());
+        Map<String, Object> ref = refs.get(0);
+        assertNotNull(ref.get("filePath"));
+        assertNotNull(ref.get("line"));
+        assertNotNull(ref.get("column"));
+    }
 }
