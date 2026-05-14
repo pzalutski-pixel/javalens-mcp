@@ -39,11 +39,16 @@ public class SearchService {
     private final IJavaProject project;
     private final SearchEngine engine;
     private final IJavaSearchScope scope;
+    private final IJavaSearchScope sourceScope;
 
     public SearchService(IJavaProject project) {
         this.project = project;
         this.engine = new SearchEngine();
         this.scope = SearchEngine.createJavaSearchScope(new IJavaElement[]{ project });
+        // Sources-only scope: used by fine-grain searches so common JDK types
+        // (e.g. java.lang.String) don't pull every JDK match through the engine.
+        this.sourceScope = SearchEngine.createJavaSearchScope(
+            new IJavaElement[]{ project }, IJavaSearchScope.SOURCES);
         log.info("SearchService initialized for project: {}", project.getElementName());
     }
 
@@ -303,10 +308,10 @@ public class SearchService {
      * Uses string-based pattern for better match info in fine-grain searches.
      */
     private List<SearchMatch> findFineGrainReferences(IType type, int referenceType, int maxResults) throws CoreException {
-        // Use fully qualified name for string-based pattern
-        String typeName = type.getFullyQualifiedName();
+        // Use $-qualified name for nested types so JDT's string-based pattern matcher
+        // resolves the correct IType. Top-level types are unaffected (no $).
+        String typeName = type.getFullyQualifiedName('$');
 
-        // Create pattern using string approach with TYPE + fine-grain flag
         SearchPattern pattern = SearchPattern.createPattern(
             typeName,
             IJavaSearchConstants.TYPE,
@@ -319,19 +324,34 @@ public class SearchService {
             return List.of();
         }
 
-        CollectingSearchRequestor requestor = new CollectingSearchRequestor(maxResults);
-
+        // Inline filtering requestor: drop matches whose resource isn't a .java IFile
+        // (linked-folder roots, binary entries, JDK jars) and stop once we have maxResults
+        // useful matches. The previous post-collect filter approach could fill the buffer
+        // with JDK matches before project ones arrived.
+        // Use sourceScope (project sources only) — for fine-grain searches against common
+        // JDK types like java.lang.String, the broad scope would scan the entire JDK
+        // index and stall.
+        List<SearchMatch> filtered = new ArrayList<>();
         engine.search(
             pattern,
             new SearchParticipant[] { SearchEngine.getDefaultSearchParticipant() },
-            scope,
-            requestor,
+            sourceScope,
+            new SearchRequestor() {
+                @Override
+                public void acceptSearchMatch(SearchMatch match) {
+                    if (filtered.size() >= maxResults) return;
+                    if (match.getResource() instanceof org.eclipse.core.resources.IFile f
+                        && "java".equalsIgnoreCase(f.getFileExtension())) {
+                        filtered.add(match);
+                    }
+                }
+            },
             new NullProgressMonitor()
         );
 
-        log.debug("Fine-grain search for {} (type={}) found {} results",
-            typeName, referenceType, requestor.getMatches().size());
-        return requestor.getMatches();
+        log.debug("Fine-grain search for {} (type={}) found {} after .java filter",
+            type.getFullyQualifiedName(), referenceType, filtered.size());
+        return filtered;
     }
 
     /**
