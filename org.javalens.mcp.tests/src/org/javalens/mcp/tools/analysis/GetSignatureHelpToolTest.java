@@ -149,7 +149,19 @@ class GetSignatureHelpToolTest {
     void overloadedMethod_returnsAllOverloadSignatures() throws Exception {
         java.nio.file.Path projectPath = helper.getFixturePath("simple-maven");
         String tkf = projectPath.resolve("src/main/java/com/example/TypeKindsFixture.java").toString();
-        ToolResponse r = tool.execute(argsAtIdentifier(tkf, "greet"));
+        // DefaultMethodHolder also has a greet() — we need the outer TypeKindsFixture
+        // overloads. Find `public String greet` then advance to the `greet` name within it.
+        String source = java.nio.file.Files.readString(java.nio.file.Path.of(tkf));
+        int prefix = source.indexOf("public String greet");
+        int greetIdx = source.indexOf("greet", prefix);
+        int line = (int) source.substring(0, greetIdx).chars().filter(c -> c == '\n').count();
+        int lineStart = source.lastIndexOf('\n', greetIdx) + 1;
+        int column = greetIdx - lineStart;
+        ObjectNode pos = objectMapper.createObjectNode();
+        pos.put("filePath", tkf);
+        pos.put("line", line);
+        pos.put("column", column);
+        ToolResponse r = tool.execute(pos);
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
 
@@ -174,7 +186,19 @@ class GetSignatureHelpToolTest {
     void methodWithoutJavadoc_omitsDocumentation() throws Exception {
         java.nio.file.Path projectPath = helper.getFixturePath("simple-maven");
         String tkf = projectPath.resolve("src/main/java/com/example/TypeKindsFixture.java").toString();
-        ToolResponse r = tool.execute(argsAtIdentifier(tkf, "greet"));
+        // Same caveat: DefaultMethodHolder also has a greet(). Target the outer
+        // TypeKindsFixture overloads via `public String greet` prefix.
+        String source = java.nio.file.Files.readString(java.nio.file.Path.of(tkf));
+        int prefix = source.indexOf("public String greet");
+        int greetIdx = source.indexOf("greet", prefix);
+        int line = (int) source.substring(0, greetIdx).chars().filter(c -> c == '\n').count();
+        int lineStart = source.lastIndexOf('\n', greetIdx) + 1;
+        int column = greetIdx - lineStart;
+        ObjectNode pos = objectMapper.createObjectNode();
+        pos.put("filePath", tkf);
+        pos.put("line", line);
+        pos.put("column", column);
+        ToolResponse r = tool.execute(pos);
         assertTrue(r.isSuccess());
         List<Map<String, Object>> signatures = (List<Map<String, Object>>) getData(r).get("signatures");
         // None of the greet overloads have a /** */ Javadoc — none should carry a
