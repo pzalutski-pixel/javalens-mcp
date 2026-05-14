@@ -229,4 +229,119 @@ class GoToDefinitionToolTest {
         assertEquals("Point", data.get("symbol"));
         assertEquals("Record", data.get("kind"));
     }
+
+    // ========== Behavior-matrix coverage ==========
+
+    private ObjectNode argsAtIdentifier(String filePath, String identifier) throws Exception {
+        String source = java.nio.file.Files.readString(java.nio.file.Path.of(filePath));
+        int idx = source.indexOf(identifier);
+        if (idx < 0) throw new AssertionError("`" + identifier + "` not in " + filePath);
+        int line = (int) source.substring(0, idx).chars().filter(c -> c == '\n').count();
+        int lineStart = source.lastIndexOf('\n', idx) + 1;
+        int column = idx - lineStart;
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", filePath);
+        args.put("line", line);
+        args.put("column", column);
+        return args;
+    }
+
+    @Test
+    @DisplayName("Annotation type (Marker) definition reports kind=Annotation")
+    void annotation_kindIsAnnotation() throws Exception {
+        String marker = projectPath.resolve("src/main/java/com/example/Marker.java").toString();
+        String source = java.nio.file.Files.readString(java.nio.file.Path.of(marker));
+        int idx = source.indexOf("@interface Marker");
+        idx = source.indexOf("Marker", idx);
+        int line = (int) source.substring(0, idx).chars().filter(c -> c == '\n').count();
+        int lineStart = source.lastIndexOf('\n', idx) + 1;
+        int column = idx - lineStart;
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", marker);
+        args.put("line", line);
+        args.put("column", column);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertEquals("Marker", data.get("symbol"));
+        assertEquals("Annotation", data.get("kind"),
+            "Annotation type must report kind='Annotation' (not 'Interface'); got: " + data);
+    }
+
+    @Test
+    @DisplayName("Enum type (Color) definition reports kind=Enum")
+    void enumType_kindIsEnum() throws Exception {
+        String tkf = projectPath.resolve("src/main/java/com/example/TypeKindsFixture.java").toString();
+        String source = java.nio.file.Files.readString(java.nio.file.Path.of(tkf));
+        int idx = source.indexOf("enum Color");
+        idx = source.indexOf("Color", idx);
+        int line = (int) source.substring(0, idx).chars().filter(c -> c == '\n').count();
+        int lineStart = source.lastIndexOf('\n', idx) + 1;
+        int column = idx - lineStart;
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", tkf);
+        args.put("line", line);
+        args.put("column", column);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        assertEquals("Color", getData(r).get("symbol"));
+        assertEquals("Enum", getData(r).get("kind"));
+    }
+
+    @Test
+    @DisplayName("Local variable position resolves to kind=Variable")
+    void localVariable_kindIsVariable() throws Exception {
+        String rt = projectPath.resolve("src/main/java/com/example/RefactoringTarget.java").toString();
+        ToolResponse r = tool.execute(argsAtIdentifier(rt, "trimmed"));
+        assertTrue(r.isSuccess(),
+            "Position on local variable must succeed; got: " +
+                (r.getError() != null ? r.getError().getMessage() : "n/a"));
+        Map<String, Object> data = getData(r);
+        assertEquals("trimmed", data.get("symbol"));
+        assertEquals("Variable", data.get("kind"));
+    }
+
+    @Test
+    @DisplayName("Type parameter (T in GenericContainer<T>) reports kind=TypeParameter")
+    @SuppressWarnings("unchecked")
+    void typeParameter_kindIsTypeParameter() throws Exception {
+        String tkf = projectPath.resolve("src/main/java/com/example/TypeKindsFixture.java").toString();
+        String source = java.nio.file.Files.readString(java.nio.file.Path.of(tkf));
+        int idx = source.indexOf("GenericContainer<T>");
+        // Position on the `T` after `<`.
+        int tIdx = source.indexOf("T>", idx);
+        int line = (int) source.substring(0, tIdx).chars().filter(c -> c == '\n').count();
+        int lineStart = source.lastIndexOf('\n', tIdx) + 1;
+        int column = tIdx - lineStart;
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", tkf);
+        args.put("line", line);
+        args.put("column", column);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess(),
+            "Position on type parameter T must succeed; got: " +
+                (r.getError() != null ? r.getError().getMessage() : "n/a"));
+        Map<String, Object> data = getData(r);
+        assertEquals("T", data.get("symbol"));
+        assertEquals("TypeParameter", data.get("kind"));
+    }
+
+    @Test
+    @DisplayName("Method on a class with same name across files: containingType is exact FQN")
+    @SuppressWarnings("unchecked")
+    void methodDefinition_containingTypeIsExactFqn() {
+        // Calculator.add. Its containingType must be "com.example.Calculator", not
+        // just "Calculator", to disambiguate from any other class named Calculator.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        args.put("line", 14);
+        args.put("column", 15);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        assertEquals("com.example.Calculator", getData(r).get("containingType"),
+            "containingType must be the fully-qualified type name; got: " + getData(r));
+    }
 }
