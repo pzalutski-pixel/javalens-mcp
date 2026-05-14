@@ -267,4 +267,112 @@ class ExtractInterfaceToolTest {
         assertTrue(mentionsIExtractTarget,
             "At least one edit must reference IExtractTarget; got: " + edits);
     }
+
+    // ========== Behavior-matrix coverage ==========
+
+    private ObjectNode targetArgs(String iface) {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", interfaceTargetPath);
+        args.put("line", 8);
+        args.put("column", 13);
+        args.put("interfaceName", iface);
+        return args;
+    }
+
+    @Test
+    @DisplayName("packageName, className, sourceFilePath, interfaceFilePath all reported")
+    void responseShape_includesIdentityFields() {
+        Map<String, Object> data = SemanticAssertions.assertSuccessData(
+            tool.execute(targetArgs("IExtractTarget")));
+        assertEquals("InterfaceExtractTarget", data.get("className"));
+        assertEquals("IExtractTarget", data.get("interfaceName"));
+        assertEquals("com.example", data.get("packageName"));
+        String iPath = ((String) data.get("interfaceFilePath")).replace('\\', '/');
+        String sPath = ((String) data.get("sourceFilePath")).replace('\\', '/');
+        assertTrue(iPath.endsWith("/com/example/IExtractTarget.java"),
+            "interfaceFilePath must be sibling .java path; got: " + iPath);
+        assertTrue(sPath.endsWith("/com/example/InterfaceExtractTarget.java"),
+            "sourceFilePath must be the original class file; got: " + sPath);
+    }
+
+    @Test
+    @DisplayName("interfaceContent begins with package declaration and public interface block")
+    void interfaceContent_structure() {
+        Map<String, Object> data = SemanticAssertions.assertSuccessData(
+            tool.execute(targetArgs("IExtractTarget")));
+        String content = (String) data.get("interfaceContent");
+        assertTrue(content.startsWith("package com.example;\n"),
+            "Interface content must open with the package declaration; got: " + content);
+        assertTrue(content.contains("public interface IExtractTarget {"),
+            "Interface content must declare `public interface IExtractTarget {`; got: " + content);
+        assertTrue(content.trim().endsWith("}"),
+            "Interface content must close with `}`; got: " + content);
+    }
+
+    @Test
+    @DisplayName("Each extractedMethods entry carries name + signature, with signature matching `<retType> <name>(...)`")
+    void extractedMethods_haveSignatureShape() {
+        Map<String, Object> data = SemanticAssertions.assertSuccessData(
+            tool.execute(targetArgs("IExtractTarget")));
+        List<Map<String, Object>> methods = getExtractedMethods(data);
+        for (Map<String, Object> m : methods) {
+            assertNotNull(m.get("name"), "name missing: " + m);
+            assertNotNull(m.get("signature"), "signature missing: " + m);
+            String sig = (String) m.get("signature");
+            String name = (String) m.get("name");
+            assertTrue(sig.contains(name + "("),
+                "signature must include `<name>(`; got: " + sig);
+        }
+    }
+
+    @Test
+    @DisplayName("classEdits[0] carries offset, line, column, newText")
+    void classEdit_shape() {
+        Map<String, Object> data = SemanticAssertions.assertSuccessData(
+            tool.execute(targetArgs("IExtractTarget")));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> edits = (List<Map<String, Object>>) data.get("classEdits");
+        assertFalse(edits.isEmpty());
+        Map<String, Object> e = edits.get(0);
+        for (String key : List.of("type", "offset", "line", "column", "newText")) {
+            assertNotNull(e.get(key), key + " missing on classEdit: " + e);
+        }
+        assertEquals("insert", e.get("type"));
+    }
+
+    @Test
+    @DisplayName("Position on an interface declaration is rejected (cannot extract from interface)")
+    void positionOnInterface_isRejected() {
+        // IShape.java line 4 (0-based) is `public interface IShape {`
+        String iShapePath = projectPath.resolve("src/main/java/com/example/IShape.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", iShapePath);
+        args.put("line", 4);
+        args.put("column", 17);
+        args.put("interfaceName", "IShapeExt");
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess());
+        String msg = r.getError() != null ? r.getError().getMessage() : "";
+        assertTrue(msg.toLowerCase().contains("interface"),
+            "Error message must mention interface; got: " + msg);
+    }
+
+    @Test
+    @DisplayName("Empty methodName parameter rejected")
+    void rejectsEmptyInterfaceName() {
+        ObjectNode args = targetArgs("");
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess());
+        assertEquals("INVALID_PARAMETER", r.getError().getCode());
+    }
+
+    @Test
+    @DisplayName("methodNames filter with no matching methods → invalidParameter (no eligible methods)")
+    void noEligibleMethods_isRejected() {
+        ObjectNode args = targetArgs("IExtractTarget");
+        args.set("methodNames", objectMapper.createArrayNode().add("nonExistentMethod"));
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess(),
+            "Filtering to a non-existent method yields zero eligible methods and must error");
+    }
 }
