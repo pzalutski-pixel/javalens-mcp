@@ -305,4 +305,57 @@ class FindImplementationsToolTest {
         assertTrue(names.contains("com.example.FilledCircle"),
             "FilledCircle.draw() overrides IShape.draw() via IFillable extends IShape");
     }
+
+    // ========== Behavior-matrix coverage ==========
+
+    @Test
+    @DisplayName("isInterface=true when target is an interface (IShape)")
+    void interfaceTarget_isInterfaceFlagTrue() {
+        ToolResponse r = tool.execute(argsAt(
+            fixturePath("src/main/java/com/example/IShape.java"), 2, 17));
+        Map<String, Object> data = SemanticAssertions.assertSuccessData(r);
+        assertEquals(Boolean.TRUE, data.get("isInterface"),
+            "Target IShape is an interface; isInterface must be true; got: " + data);
+    }
+
+    @Test
+    @DisplayName("Each implementation entry has a kind ('Class'/'Interface'/'Record'/'Enum'/'Annotation')")
+    @SuppressWarnings("unchecked")
+    void implementationEntries_carryKindField() {
+        ToolResponse r = tool.execute(argsAt(
+            fixturePath("src/main/java/com/example/IShape.java"), 2, 17));
+        Map<String, Object> data = SemanticAssertions.assertSuccessData(r);
+        java.util.List<Map<String, Object>> impls = SemanticAssertions.getList(data, "implementations");
+
+        // Find specific implementors and verify kind.
+        Map<String, Object> rectangle = impls.stream()
+            .filter(i -> "com.example.Rectangle".equals(i.get("qualifiedName")))
+            .findFirst().orElseThrow();
+        assertEquals("Class", rectangle.get("kind"),
+            "Rectangle is a class — kind must be 'Class'; got: " + rectangle);
+
+        Map<String, Object> iFillable = impls.stream()
+            .filter(i -> "com.example.IFillable".equals(i.get("qualifiedName")))
+            .findFirst().orElseThrow();
+        assertEquals("Interface", iFillable.get("kind"),
+            "IFillable is an interface — kind must be 'Interface'; got: " + iFillable);
+    }
+
+    @Test
+    @DisplayName("Method-level target: each entry carries `method` field with overrider's method name")
+    @SuppressWarnings("unchecked")
+    void methodLevelTarget_entriesCarryMethodField() {
+        ToolResponse r = tool.execute(argsAt(
+            fixturePath("src/main/java/com/example/IShape.java"), 4, 9));
+        Map<String, Object> data = SemanticAssertions.assertSuccessData(r);
+        java.util.List<Map<String, Object>> impls = SemanticAssertions.getList(data, "implementations");
+        // Tool also reports the target's method name on the response.
+        assertEquals("draw", data.get("method"),
+            "Response must surface the targeted method name at the top level; got: " + data);
+        // Each implementation entry must include the overriding method name too.
+        for (Map<String, Object> impl : impls) {
+            assertEquals("draw", impl.get("method"),
+                "Each method-level impl entry must report the overriding method name; got: " + impl);
+        }
+    }
 }
