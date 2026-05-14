@@ -225,7 +225,18 @@ public abstract class AbstractTool implements Tool {
                 }
             }
 
-            // Get file path - prefer from ICompilationUnit for accurate path
+            // Last-resort fallback: resolve CU from the match's IFile resource.
+            if (cu == null && match.getResource() instanceof org.eclipse.core.resources.IFile file
+                && "java".equalsIgnoreCase(file.getFileExtension())) {
+                IJavaElement je = org.eclipse.jdt.core.JavaCore.create(file);
+                if (je instanceof ICompilationUnit fileCu) {
+                    cu = fileCu;
+                }
+            }
+
+            // Get file path - prefer from ICompilationUnit for accurate path. When CU
+            // can't be resolved (binary JDK matches, JDT edge cases), fall back to the
+            // raw resource location; callers that need line/column will see them absent.
             if (cu != null && cu.getResource() != null) {
                 IPath location = cu.getResource().getLocation();
                 if (location != null) {
