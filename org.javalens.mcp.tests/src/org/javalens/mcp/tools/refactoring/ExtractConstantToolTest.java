@@ -176,4 +176,119 @@ class ExtractConstantToolTest {
 
         assertFalse(response.isSuccess());
     }
+
+    // ========== Behavior-matrix coverage ==========
+
+    private ObjectNode prefixArgs(String name) {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", refactoringTargetPath);
+        args.put("startLine", 35);
+        args.put("startColumn", 24);
+        args.put("endLine", 35);
+        args.put("endColumn", 33);
+        if (name != null) args.put("constantName", name);
+        return args;
+    }
+
+    @Test
+    @DisplayName("constantType is `String` for the \"PREFIX_\" literal")
+    void constantType_isString() {
+        ToolResponse r = tool.execute(prefixArgs("DEFAULT_PREFIX"));
+        assertTrue(r.isSuccess());
+        assertEquals("String", getData(r).get("constantType"));
+    }
+
+    @Test
+    @DisplayName("expressionText is the selected literal text")
+    void expressionText_matchesSelection() {
+        ToolResponse r = tool.execute(prefixArgs("DEFAULT_PREFIX"));
+        assertTrue(r.isSuccess());
+        String expr = (String) getData(r).get("expressionText");
+        assertTrue(expr.contains("PREFIX_"),
+            "expressionText must contain PREFIX_; got: " + expr);
+    }
+
+    @Test
+    @DisplayName("declaration string is `private static final String DEFAULT_PREFIX = \"PREFIX_\";`")
+    void declaration_shape() {
+        ToolResponse r = tool.execute(prefixArgs("DEFAULT_PREFIX"));
+        assertTrue(r.isSuccess());
+        String decl = (String) getData(r).get("declaration");
+        assertNotNull(decl);
+        assertTrue(decl.startsWith("private static final String DEFAULT_PREFIX = "),
+            "declaration must start with `private static final String DEFAULT_PREFIX = `; got: " + decl);
+        assertTrue(decl.endsWith(";"), "declaration must end with `;`; got: " + decl);
+    }
+
+    @Test
+    @DisplayName("containingType reports RefactoringTarget")
+    void containingType_reported() {
+        ToolResponse r = tool.execute(prefixArgs("DEFAULT_PREFIX"));
+        assertTrue(r.isSuccess());
+        assertEquals("RefactoringTarget", getData(r).get("containingType"));
+    }
+
+    @Test
+    @DisplayName("Exactly two edits emitted: one insert (declaration) + one replace (expression)")
+    void edits_haveInsertAndReplace() {
+        ToolResponse r = tool.execute(prefixArgs("DEFAULT_PREFIX"));
+        assertTrue(r.isSuccess());
+        List<Map<String, Object>> edits = getEdits(getData(r));
+        assertEquals(2, edits.size(),
+            "extract_constant must emit exactly 2 edits: insert + replace; got: " + edits);
+        java.util.Set<String> types = new java.util.HashSet<>();
+        for (Map<String, Object> e : edits) types.add((String) e.get("type"));
+        assertEquals(java.util.Set.of("insert", "replace"), types);
+    }
+
+    @Test
+    @DisplayName("Replace edit substitutes the constant name for the expression")
+    void replaceEdit_substitutesConstantName() {
+        ToolResponse r = tool.execute(prefixArgs("DEFAULT_PREFIX"));
+        assertTrue(r.isSuccess());
+        Map<String, Object> replace = getEdits(getData(r)).stream()
+            .filter(e -> "replace".equals(e.get("type"))).findFirst().orElseThrow();
+        assertEquals("DEFAULT_PREFIX", replace.get("newText"));
+        for (String key : List.of("startLine", "startColumn", "endLine", "endColumn",
+                "startOffset", "endOffset", "oldText", "newText")) {
+            assertNotNull(replace.get(key), key + " missing on replace edit: " + replace);
+        }
+    }
+
+    @Test
+    @DisplayName("Insert edit's newText includes the static final declaration")
+    void insertEdit_containsStaticFinalDeclaration() {
+        ToolResponse r = tool.execute(prefixArgs("DEFAULT_PREFIX"));
+        assertTrue(r.isSuccess());
+        Map<String, Object> insert = getEdits(getData(r)).stream()
+            .filter(e -> "insert".equals(e.get("type"))).findFirst().orElseThrow();
+        String text = (String) insert.get("newText");
+        assertNotNull(text);
+        assertTrue(text.contains("private static final String DEFAULT_PREFIX"),
+            "Insert edit must include the static final declaration; got: " + text);
+    }
+
+    @Test
+    @DisplayName("Empty constantName rejected")
+    void rejectsEmptyConstantName() {
+        ObjectNode args = prefixArgs(null);
+        args.put("constantName", "");
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess());
+        assertEquals("INVALID_PARAMETER", r.getError().getCode());
+    }
+
+    @Test
+    @DisplayName("Inverted range (start >= end) is rejected")
+    void rejectsInvertedRange() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", refactoringTargetPath);
+        args.put("startLine", 35);
+        args.put("startColumn", 33);
+        args.put("endLine", 35);
+        args.put("endColumn", 24);
+        args.put("constantName", "DEFAULT_PREFIX");
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess());
+    }
 }
