@@ -192,4 +192,107 @@ class ExtractVariableToolTest {
         assertTrue(anyDeclEdit,
             "At least one edit's newText must reference the new variable name; got: " + edits);
     }
+
+    // ========== Behavior-matrix coverage ==========
+
+    private ObjectNode resultExpressionArgs(String name) {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", refactoringTargetPath);
+        args.put("startLine", 31);
+        args.put("startColumn", 21);
+        args.put("endLine", 31);
+        args.put("endColumn", 44);
+        if (name != null) args.put("variableName", name);
+        return args;
+    }
+
+    @Test
+    @DisplayName("variableType is `int` for `input.length() * 2 + 10`")
+    void variableType_isInt() {
+        ToolResponse r = tool.execute(resultExpressionArgs("calculated"));
+        assertTrue(r.isSuccess());
+        assertEquals("int", getData(r).get("variableType"));
+    }
+
+    @Test
+    @DisplayName("expressionText returns the selected expression text")
+    void expressionText_matchesSelection() {
+        ToolResponse r = tool.execute(resultExpressionArgs("calculated"));
+        assertTrue(r.isSuccess());
+        String expr = (String) getData(r).get("expressionText");
+        assertNotNull(expr);
+        // Order of normalisation may vary; assert key tokens are present.
+        assertTrue(expr.contains("input.length()"),
+            "expressionText must contain input.length(); got: " + expr);
+        assertTrue(expr.contains("10"),
+            "expressionText must contain the literal 10; got: " + expr);
+    }
+
+    @Test
+    @DisplayName("declaration string is `int <name> = <expr>;`")
+    void declaration_shape() {
+        ToolResponse r = tool.execute(resultExpressionArgs("calculated"));
+        assertTrue(r.isSuccess());
+        String decl = (String) getData(r).get("declaration");
+        assertNotNull(decl);
+        assertTrue(decl.startsWith("int calculated = "),
+            "declaration must start with `int calculated = `; got: " + decl);
+        assertTrue(decl.endsWith(";"), "declaration must end with `;`; got: " + decl);
+    }
+
+    @Test
+    @DisplayName("Exactly two edits emitted: one insert (declaration) + one replace (expression)")
+    void edits_haveInsertAndReplace() {
+        ToolResponse r = tool.execute(resultExpressionArgs("calculated"));
+        assertTrue(r.isSuccess());
+        List<Map<String, Object>> edits = getEdits(getData(r));
+        assertEquals(2, edits.size(),
+            "extract_variable must emit exactly 2 edits: insert + replace; got: " + edits);
+        java.util.Set<String> types = new java.util.HashSet<>();
+        for (Map<String, Object> e : edits) types.add((String) e.get("type"));
+        assertEquals(java.util.Set.of("insert", "replace"), types);
+    }
+
+    @Test
+    @DisplayName("Insert edit carries type, line, column, offset, newText")
+    void insertEdit_shape() {
+        ToolResponse r = tool.execute(resultExpressionArgs("calculated"));
+        assertTrue(r.isSuccess());
+        Map<String, Object> insert = getEdits(getData(r)).stream()
+            .filter(e -> "insert".equals(e.get("type"))).findFirst().orElseThrow();
+        for (String key : List.of("line", "column", "offset", "newText")) {
+            assertNotNull(insert.get(key), key + " missing on insert edit: " + insert);
+        }
+        assertTrue(((String) insert.get("newText")).contains("calculated"),
+            "Insert edit newText must include the variable name");
+    }
+
+    @Test
+    @DisplayName("Replace edit carries start/end line/column, start/end offset, oldText, newText")
+    void replaceEdit_shape() {
+        ToolResponse r = tool.execute(resultExpressionArgs("calculated"));
+        assertTrue(r.isSuccess());
+        Map<String, Object> replace = getEdits(getData(r)).stream()
+            .filter(e -> "replace".equals(e.get("type"))).findFirst().orElseThrow();
+        for (String key : List.of("startLine", "startColumn", "endLine", "endColumn",
+                "startOffset", "endOffset", "oldText", "newText")) {
+            assertNotNull(replace.get(key), key + " missing on replace edit: " + replace);
+        }
+        assertEquals("calculated", replace.get("newText"),
+            "Replace edit must substitute the variable name");
+    }
+
+    @Test
+    @DisplayName("Inverted range (start >= end) is rejected")
+    void rejectsInvertedRange() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", refactoringTargetPath);
+        args.put("startLine", 31);
+        args.put("startColumn", 44);
+        args.put("endLine", 31);
+        args.put("endColumn", 21);
+        args.put("variableName", "calculated");
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess(), "Inverted range must be rejected");
+    }
 }
