@@ -187,4 +187,82 @@ class InlineVariableToolTest {
 
         assertFalse(response.isSuccess());
     }
+
+    // ========== Behavior-matrix coverage ==========
+
+    private ObjectNode trimmedArgs() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", refactoringTargetPath);
+        args.put("line", 26);
+        args.put("column", 15);
+        return args;
+    }
+
+    @Test
+    @DisplayName("Edits sorted offset-descending so they can be applied in order")
+    void edits_sortedDescendingByOffset() {
+        ToolResponse r = tool.execute(trimmedArgs());
+        assertTrue(r.isSuccess());
+        List<Map<String, Object>> edits = getEdits(getData(r));
+        for (int i = 1; i < edits.size(); i++) {
+            int prev = ((Number) edits.get(i - 1).get("startOffset")).intValue();
+            int curr = ((Number) edits.get(i).get("startOffset")).intValue();
+            assertTrue(prev >= curr,
+                "Edits must be sorted by startOffset descending; got prev=" + prev + " curr=" + curr);
+        }
+    }
+
+    @Test
+    @DisplayName("Exactly one delete edit (the declaration statement) + N replace edits (one per usage)")
+    void edits_haveOneDeleteAndPerUsageReplaces() {
+        ToolResponse r = tool.execute(trimmedArgs());
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        int usageCount = ((Number) data.get("usageCount")).intValue();
+        List<Map<String, Object>> edits = getEdits(data);
+
+        long deletes = edits.stream().filter(e -> "delete".equals(e.get("type"))).count();
+        long replaces = edits.stream().filter(e -> "replace".equals(e.get("type"))).count();
+        assertEquals(1L, deletes, "Exactly one delete edit (the declaration); got: " + edits);
+        assertEquals(usageCount, replaces,
+            "One replace edit per usage; got " + replaces + " for usageCount=" + usageCount);
+    }
+
+    @Test
+    @DisplayName("Delete edit carries oldText, startOffset, endOffset, line")
+    void deleteEdit_shape() {
+        ToolResponse r = tool.execute(trimmedArgs());
+        assertTrue(r.isSuccess());
+        Map<String, Object> del = getEdits(getData(r)).stream()
+            .filter(e -> "delete".equals(e.get("type"))).findFirst().orElseThrow();
+        for (String key : List.of("oldText", "startOffset", "endOffset", "line")) {
+            assertNotNull(del.get(key), key + " missing on delete edit: " + del);
+        }
+        String oldText = (String) del.get("oldText");
+        assertTrue(oldText.contains("trimmed"),
+            "Delete edit's oldText must include the variable name; got: " + oldText);
+    }
+
+    @Test
+    @DisplayName("Each replace edit substitutes the variable name with the initializer")
+    void replaceEdits_substituteInitializer() {
+        ToolResponse r = tool.execute(trimmedArgs());
+        assertTrue(r.isSuccess());
+        for (Map<String, Object> e : getEdits(getData(r))) {
+            if (!"replace".equals(e.get("type"))) continue;
+            assertEquals("trimmed", e.get("oldText"),
+                "Replace edit oldText must be the variable name; got: " + e);
+            String newText = (String) e.get("newText");
+            assertTrue(newText != null && newText.contains("input.trim()"),
+                "Replace edit newText must contain the initializer expression; got: " + e);
+        }
+    }
+
+    @Test
+    @DisplayName("Position on a non-existent file is rejected")
+    void nonExistentFile_isRejected() {
+        ObjectNode args = trimmedArgs();
+        args.put("filePath", "/nonexistent/Path.java");
+        assertFalse(tool.execute(args).isSuccess());
+    }
 }
