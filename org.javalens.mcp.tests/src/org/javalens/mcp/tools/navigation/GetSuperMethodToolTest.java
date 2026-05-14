@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -197,5 +198,86 @@ class GetSuperMethodToolTest {
             "Animal.speak does not override anything; overrides must be null");
         assertNotNull(data.get("message"),
             "Tool must return an explanatory message when there is no override");
+    }
+
+    // ========== Behavior-matrix coverage ==========
+
+    private ObjectNode argsAtIdentifier(String filePath, String identifier) throws Exception {
+        String source = java.nio.file.Files.readString(java.nio.file.Path.of(filePath));
+        int idx = source.indexOf(identifier);
+        if (idx < 0) throw new AssertionError("`" + identifier + "` not in " + filePath);
+        int line = (int) source.substring(0, idx).chars().filter(c -> c == '\n').count();
+        int lineStart = source.lastIndexOf('\n', idx) + 1;
+        int column = idx - lineStart;
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", filePath);
+        args.put("line", line);
+        args.put("column", column);
+        return args;
+    }
+
+    @Test
+    @DisplayName("Method response info includes signature, modifiers, declaringType, location")
+    @SuppressWarnings("unchecked")
+    void methodInfo_carriesFullShape() {
+        // Use Dog.speak — known override case.
+        ToolResponse r = tool.execute(argsAt(animalPath, 22, 16));
+        Map<String, Object> data = SemanticAssertions.assertSuccessData(r);
+
+        Map<String, Object> method = (Map<String, Object>) data.get("method");
+        assertNotNull(method);
+        assertEquals("speak", method.get("name"));
+        assertEquals("com.example.Dog", method.get("declaringType"));
+        assertEquals("speak(): void", method.get("signature"),
+            "signature must be `name(params): returnType`; got: " + method);
+        List<String> modifiers = (List<String>) method.get("modifiers");
+        assertTrue(modifiers.contains("public"));
+        assertNotNull(method.get("filePath"));
+        assertNotNull(method.get("line"));
+    }
+
+    @Test
+    @DisplayName("Override entry includes the supertype's signature and declaringType")
+    @SuppressWarnings("unchecked")
+    void overrideEntry_carriesFullShape() {
+        ToolResponse r = tool.execute(argsAt(animalPath, 22, 16));
+        Map<String, Object> data = SemanticAssertions.assertSuccessData(r);
+
+        Map<String, Object> overrides = (Map<String, Object>) data.get("overrides");
+        assertNotNull(overrides);
+        assertEquals("speak", overrides.get("name"));
+        assertEquals("com.example.Animal", overrides.get("declaringType"));
+        assertEquals("speak(): void", overrides.get("signature"));
+    }
+
+    @Test
+    @DisplayName("Static method (TypeKindsFixture.staticHelper) does not override anything")
+    void staticMethod_noOverride() throws Exception {
+        String tkf = projectPath.resolve("src/main/java/com/example/TypeKindsFixture.java").toString();
+        ToolResponse r = tool.execute(argsAtIdentifier(tkf, "staticHelper"));
+        Map<String, Object> data = SemanticAssertions.assertSuccessData(r);
+        assertNull(data.get("overrides"),
+            "Static method on a class with no static super-method has null overrides; got: " + data);
+    }
+
+    @Test
+    @DisplayName("Constructor (HelloWorld()) does not override anything")
+    void constructor_noOverride() throws Exception {
+        String hello = projectPath.resolve("src/main/java/com/example/HelloWorld.java").toString();
+        String source = java.nio.file.Files.readString(java.nio.file.Path.of(hello));
+        int idx = source.indexOf("public HelloWorld(");
+        idx = source.indexOf("HelloWorld(", idx);
+        int line = (int) source.substring(0, idx).chars().filter(c -> c == '\n').count();
+        int lineStart = source.lastIndexOf('\n', idx) + 1;
+        int column = idx - lineStart;
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", hello);
+        args.put("line", line);
+        args.put("column", column);
+
+        ToolResponse r = tool.execute(args);
+        Map<String, Object> data = SemanticAssertions.assertSuccessData(r);
+        assertNull(data.get("overrides"),
+            "Constructors do not override any method; got: " + data);
     }
 }
