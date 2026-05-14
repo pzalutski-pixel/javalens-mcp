@@ -23,6 +23,11 @@ public class AnnotationUsages {
     public void repeatedTags() {
     }
 
+    @Label("one")
+    @Label("two")
+    public void repeatedLabels() {
+    }
+
     public void markedParameter(@Marker int p) {
         @Marker int local = p;
         System.out.println(local);
