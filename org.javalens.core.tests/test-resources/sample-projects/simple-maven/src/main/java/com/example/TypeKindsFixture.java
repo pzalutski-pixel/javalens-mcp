@@ -97,4 +97,32 @@ public class TypeKindsFixture {
         private N value;
         public N get() { return value; }
     }
+
+    /**
+     * Rich Javadoc fixture for get_javadoc tag-parsing coverage.
+     *
+     * Demonstrates parsing of every supported Javadoc tag.
+     *
+     * @param input the value to process
+     * @param count number of iterations
+     * @return formatted string built from input
+     * @throws java.lang.IllegalArgumentException when input is null
+     * @see com.example.Calculator
+     * @since 1.0
+     * @author JavaLens fixture
+     * @version 2.5
+     * @deprecated kept only for tag-parsing tests; not part of any real API
+     */
+    @Deprecated
+    public String richlyDocumentedMethod(String input, int count) {
+        if (input == null) {
+            throw new IllegalArgumentException("input must not be null");
+        }
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < count; i++) sb.append(input);
+        return sb.toString();
+    }
+
+    public void noJavadocMethod() {
+    }
 }

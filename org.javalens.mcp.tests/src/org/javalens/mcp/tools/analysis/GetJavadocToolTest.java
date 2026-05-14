@@ -24,13 +24,14 @@ class GetJavadocToolTest {
     private GetJavadocTool tool;
     private ObjectMapper objectMapper;
     private String calculatorPath;
+    private Path projectPath;
 
     @BeforeEach
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new GetJavadocTool(() -> service);
         objectMapper = new ObjectMapper();
-        Path projectPath = helper.getFixturePath("simple-maven");
+        projectPath = helper.getFixturePath("simple-maven");
         calculatorPath = projectPath.resolve("src/main/java/com/example/Calculator.java").toString();
     }
 
@@ -117,5 +118,128 @@ class GetJavadocToolTest {
         assertNotNull(summary);
         assertTrue(summary.toLowerCase().contains("adds"),
             "Calculator.add javadoc summary mentions 'Adds two numbers'; got: " + summary);
+    }
+
+    // ========== Behavior-matrix coverage ==========
+
+    private ObjectNode argsAtIdentifier(String filePath, String identifier) throws Exception {
+        String source = java.nio.file.Files.readString(java.nio.file.Path.of(filePath));
+        int idx = source.indexOf(identifier);
+        if (idx < 0) throw new AssertionError("`" + identifier + "` not in " + filePath);
+        int line = (int) source.substring(0, idx).chars().filter(c -> c == '\n').count();
+        int lineStart = source.lastIndexOf('\n', idx) + 1;
+        int column = idx - lineStart;
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", filePath);
+        args.put("line", line);
+        args.put("column", column);
+        return args;
+    }
+
+    @Test
+    @DisplayName("Calculator.add: @param entries parsed with name and description for a, b")
+    @SuppressWarnings("unchecked")
+    void calculatorAdd_paramTagsParsed() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        args.put("line", 13);
+        args.put("column", 15);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+
+        List<Map<String, String>> params = (List<Map<String, String>>) data.get("params");
+        assertNotNull(params, "Calculator.add has @param a / @param b; got: " + data);
+        assertEquals(2, params.size(),
+            "Calculator.add javadoc has exactly two @param entries; got: " + params);
+
+        java.util.Map<String, String> byName = new java.util.HashMap<>();
+        for (Map<String, String> p : params) {
+            byName.put(p.get("name"), p.get("description"));
+        }
+        assertEquals(java.util.Set.of("a", "b"), byName.keySet(),
+            "@param names must be a and b; got: " + byName);
+        assertEquals("first operand", byName.get("a"));
+        assertEquals("second operand", byName.get("b"));
+    }
+
+    @Test
+    @DisplayName("Calculator.add: @return text is 'the sum'")
+    void calculatorAdd_returnTagParsed() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        args.put("line", 13);
+        args.put("column", 15);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        assertEquals("the sum", getData(r).get("returns"),
+            "@return text must be parsed; got: " + getData(r));
+    }
+
+    @Test
+    @DisplayName("richlyDocumentedMethod: all Javadoc tags parsed (@throws, @see, @since, @author, @version, @deprecated)")
+    @SuppressWarnings("unchecked")
+    void richlyDocumentedMethod_allTagsParsed() throws Exception {
+        String tkf = projectPath.resolve("src/main/java/com/example/TypeKindsFixture.java").toString();
+        ToolResponse r = tool.execute(argsAtIdentifier(tkf, "richlyDocumentedMethod"));
+        assertTrue(r.isSuccess(),
+            "Position on richlyDocumentedMethod must succeed; got: " +
+                (r.getError() != null ? r.getError().getMessage() : "n/a"));
+        Map<String, Object> data = getData(r);
+        assertEquals("richlyDocumentedMethod", data.get("symbol"));
+        assertEquals(true, data.get("hasDocumentation"));
+
+        // @throws
+        List<Map<String, String>> throwsList = (List<Map<String, String>>) data.get("throws");
+        assertNotNull(throwsList, "@throws must be parsed; got: " + data);
+        assertEquals(1, throwsList.size());
+        assertEquals("java.lang.IllegalArgumentException", throwsList.get(0).get("type"));
+        assertTrue(throwsList.get(0).get("description").contains("input is null"),
+            "@throws description must be captured; got: " + throwsList);
+
+        // @see
+        List<String> see = (List<String>) data.get("see");
+        assertNotNull(see, "@see must be parsed; got: " + data);
+        assertTrue(see.stream().anyMatch(s -> s.contains("Calculator")),
+            "@see must include Calculator reference; got: " + see);
+
+        // @since
+        assertEquals("1.0", data.get("since"),
+            "@since must be parsed; got: " + data);
+
+        // @author
+        List<String> authors = (List<String>) data.get("authors");
+        assertNotNull(authors);
+        assertTrue(authors.contains("JavaLens fixture"),
+            "@author must be parsed; got: " + authors);
+
+        // @version
+        assertEquals("2.5", data.get("version"));
+
+        // @deprecated
+        assertNotNull(data.get("deprecated"));
+        assertTrue(data.get("deprecated").toString().contains("tag-parsing tests"),
+            "@deprecated must be parsed; got: " + data.get("deprecated"));
+
+        // @param x 2
+        List<Map<String, String>> params = (List<Map<String, String>>) data.get("params");
+        assertEquals(2, params.size());
+
+        // @return
+        assertNotNull(data.get("returns"));
+    }
+
+    @Test
+    @DisplayName("Method without Javadoc reports hasDocumentation=false and no parsed tags")
+    void methodWithoutJavadoc_hasDocumentationFalse() throws Exception {
+        String tkf = projectPath.resolve("src/main/java/com/example/TypeKindsFixture.java").toString();
+        ToolResponse r = tool.execute(argsAtIdentifier(tkf, "noJavadocMethod"));
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertEquals("noJavadocMethod", data.get("symbol"));
+        assertEquals(false, data.get("hasDocumentation"));
+        assertNull(data.get("summary"));
+        assertNull(data.get("params"));
+        assertNull(data.get("returns"));
     }
 }
