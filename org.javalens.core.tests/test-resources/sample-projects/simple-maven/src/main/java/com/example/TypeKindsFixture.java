@@ -64,4 +64,13 @@ public class TypeKindsFixture {
             return "hello";
         }
     }
+
+    /** Protected field for protected-modifier coverage. */
+    protected int protectedField;
+
+    /** Transient field for transient-modifier coverage. */
+    public transient String transientField;
+
+    /** Volatile field for volatile-modifier coverage. */
+    public volatile int volatileField;
 }

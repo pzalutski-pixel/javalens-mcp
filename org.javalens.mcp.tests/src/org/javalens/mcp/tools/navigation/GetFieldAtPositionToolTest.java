@@ -152,4 +152,112 @@ class GetFieldAtPositionToolTest {
 
         assertFalse(response.isSuccess());
     }
+
+    // ========== Behavior-matrix coverage ==========
+
+    /**
+     * Resolve the 0-based line/column where the given identifier first appears in the
+     * file. Lets tests avoid fragile hand-counted positions.
+     */
+    private ObjectNode argsAtIdentifier(String filePath, String identifier) throws Exception {
+        String source = java.nio.file.Files.readString(java.nio.file.Path.of(filePath));
+        int idx = source.indexOf(identifier);
+        if (idx < 0) {
+            throw new AssertionError("Identifier `" + identifier + "` not found in " + filePath);
+        }
+        int line = (int) source.substring(0, idx).chars().filter(c -> c == '\n').count();
+        int lineStart = source.lastIndexOf('\n', idx) + 1;
+        int column = idx - lineStart;
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", filePath);
+        args.put("line", line);
+        args.put("column", column);
+        return args;
+    }
+
+    @Test
+    @DisplayName("Static final field (MAX_SIZE=100) reports isConstant=true and constantValue")
+    @SuppressWarnings("unchecked")
+    void staticFinalField_reportsConstantValueAndIsConstant() throws Exception {
+        String refTarget = projectPath.resolve("src/main/java/com/example/RefactoringTarget.java").toString();
+        ToolResponse r = tool.execute(argsAtIdentifier(refTarget, "MAX_SIZE"));
+        assertTrue(r.isSuccess(),
+            "Position on MAX_SIZE field must succeed; got error: " +
+                (r.getError() != null ? r.getError().getMessage() : "n/a"));
+        Map<String, Object> data = getData(r);
+        assertEquals("MAX_SIZE", data.get("name"));
+        assertEquals("int", data.get("type"));
+        assertEquals(Boolean.TRUE, data.get("isConstant"),
+            "static + final → isConstant must be true; got: " + data);
+
+        List<String> modifiers = (List<String>) data.get("modifiers");
+        assertTrue(modifiers.contains("static"),
+            "static modifier must appear; got: " + modifiers);
+        assertTrue(modifiers.contains("final"),
+            "final modifier must appear; got: " + modifiers);
+        assertTrue(modifiers.contains("private"),
+            "private modifier must appear; got: " + modifiers);
+
+        // Constant value: MAX_SIZE is set to 100 — Eclipse compute-constant should
+        // expose this via IField.getConstant().
+        assertEquals("100", data.get("constantValue"),
+            "constantValue must be 100; got: " + data);
+    }
+
+    @Test
+    @DisplayName("Enum constant (Color.RED) reports isEnumConstant=true")
+    @SuppressWarnings("unchecked")
+    void enumConstant_reportsIsEnumConstantTrue() throws Exception {
+        String tkf = projectPath.resolve("src/main/java/com/example/TypeKindsFixture.java").toString();
+        ToolResponse r = tool.execute(argsAtIdentifier(tkf, "RED"));
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertEquals("RED", data.get("name"));
+        assertEquals(Boolean.TRUE, data.get("isEnumConstant"),
+            "Enum constant must have isEnumConstant=true; got: " + data);
+        assertEquals("com.example.TypeKindsFixture.Color", data.get("declaringType"),
+            "Declaring type must be the enum; got: " + data);
+    }
+
+    @Test
+    @DisplayName("Protected field reports modifier 'protected'")
+    @SuppressWarnings("unchecked")
+    void protectedField_reportsProtectedModifier() throws Exception {
+        String tkf = projectPath.resolve("src/main/java/com/example/TypeKindsFixture.java").toString();
+        ToolResponse r = tool.execute(argsAtIdentifier(tkf, "protectedField"));
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertEquals("protectedField", data.get("name"));
+        List<String> modifiers = (List<String>) data.get("modifiers");
+        assertTrue(modifiers.contains("protected"),
+            "protected modifier must appear; got: " + modifiers);
+    }
+
+    @Test
+    @DisplayName("Transient field reports modifier 'transient'")
+    @SuppressWarnings("unchecked")
+    void transientField_reportsTransientModifier() throws Exception {
+        String tkf = projectPath.resolve("src/main/java/com/example/TypeKindsFixture.java").toString();
+        ToolResponse r = tool.execute(argsAtIdentifier(tkf, "transientField"));
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertEquals("transientField", data.get("name"));
+        List<String> modifiers = (List<String>) data.get("modifiers");
+        assertTrue(modifiers.contains("transient"),
+            "transient modifier must appear; got: " + modifiers);
+    }
+
+    @Test
+    @DisplayName("Volatile field reports modifier 'volatile'")
+    @SuppressWarnings("unchecked")
+    void volatileField_reportsVolatileModifier() throws Exception {
+        String tkf = projectPath.resolve("src/main/java/com/example/TypeKindsFixture.java").toString();
+        ToolResponse r = tool.execute(argsAtIdentifier(tkf, "volatileField"));
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertEquals("volatileField", data.get("name"));
+        List<String> modifiers = (List<String>) data.get("modifiers");
+        assertTrue(modifiers.contains("volatile"),
+            "volatile modifier must appear; got: " + modifiers);
+    }
 }
