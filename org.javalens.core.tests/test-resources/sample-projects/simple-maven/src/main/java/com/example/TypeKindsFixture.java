@@ -91,4 +91,10 @@ public class TypeKindsFixture {
         }
         return sb.toString();
     }
+
+    /** Generic class with bounded type parameter for type-parameter-bounds coverage. */
+    public static class BoundedBox<N extends Number> {
+        private N value;
+        public N get() { return value; }
+    }
 }
