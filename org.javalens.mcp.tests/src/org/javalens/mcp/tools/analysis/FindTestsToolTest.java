@@ -248,4 +248,98 @@ class FindTestsToolTest {
         assertEquals(java.util.Set.of("scenarioOne", "scenarioTwo"), names,
             "TestngSampleTest declares scenarioOne and scenarioTwo; got: " + names);
     }
+
+    // ========== Behavior-matrix coverage ==========
+
+    @Test
+    @DisplayName("testClassCount equals testClasses.size()")
+    void testClassCount_equalsListSize() {
+        ToolResponse r = tool.execute(objectMapper.createObjectNode());
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        int count = ((Number) data.get("testClassCount")).intValue();
+        @SuppressWarnings("unchecked")
+        List<?> testClasses = (List<?>) data.get("testClasses");
+        assertEquals(count, testClasses.size());
+    }
+
+    @Test
+    @DisplayName("Each test class entry has className, filePath, line, testMethodCount, testMethods")
+    void testClassEntry_shape() {
+        ToolResponse r = tool.execute(objectMapper.createObjectNode());
+        assertTrue(r.isSuccess());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> classes = (List<Map<String, Object>>) getData(r).get("testClasses");
+        for (Map<String, Object> tc : classes) {
+            for (String key : List.of("className", "filePath", "line", "testMethodCount", "testMethods")) {
+                assertNotNull(tc.get(key), key + " missing on test class entry: " + tc);
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("Each test method entry has name and line")
+    void testMethodEntry_shape() {
+        ToolResponse r = tool.execute(objectMapper.createObjectNode());
+        assertTrue(r.isSuccess());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> classes = (List<Map<String, Object>>) getData(r).get("testClasses");
+        for (Map<String, Object> tc : classes) {
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> methods = (List<Map<String, Object>>) tc.get("testMethods");
+            for (Map<String, Object> m : methods) {
+                assertNotNull(m.get("name"), "name missing on test method: " + m);
+                assertNotNull(m.get("line"), "line missing on test method: " + m);
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("SampleTest is classified as JUnit5 (uses @BeforeEach)")
+    void sampleTest_frameworkIsJUnit5() {
+        ToolResponse r = tool.execute(objectMapper.createObjectNode());
+        assertTrue(r.isSuccess());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> classes = (List<Map<String, Object>>) getData(r).get("testClasses");
+        Map<String, Object> sampleTest = classes.stream()
+            .filter(tc -> "SampleTest".equals(tc.get("className")))
+            .findFirst().orElseThrow();
+        assertEquals("JUnit5", sampleTest.get("framework"),
+            "SampleTest uses @BeforeEach — must be classified as JUnit5; got: " + sampleTest);
+    }
+
+    @Test
+    @DisplayName("Pattern filter excludes non-matching test classes (Junit4*)")
+    void patternFilter_excludesNonMatching() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("pattern", "Junit4*");
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> classes = (List<Map<String, Object>>) getData(r).get("testClasses");
+        for (Map<String, Object> tc : classes) {
+            String name = (String) tc.get("className");
+            assertTrue(name.startsWith("Junit4"),
+                "Pattern `Junit4*` must only match classes beginning with Junit4; got: " + name);
+        }
+    }
+
+    @Test
+    @DisplayName("testWithCustomDisplayName carries the @DisplayName value")
+    void displayName_reported() {
+        ToolResponse r = tool.execute(objectMapper.createObjectNode());
+        assertTrue(r.isSuccess());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> classes = (List<Map<String, Object>>) getData(r).get("testClasses");
+        Map<String, Object> sampleTest = classes.stream()
+            .filter(tc -> "SampleTest".equals(tc.get("className")))
+            .findFirst().orElseThrow();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> methods = (List<Map<String, Object>>) sampleTest.get("testMethods");
+        Map<String, Object> custom = methods.stream()
+            .filter(m -> "testWithCustomDisplayName".equals(m.get("name")))
+            .findFirst().orElseThrow();
+        assertNotNull(custom.get("displayName"),
+            "testWithCustomDisplayName must carry its @DisplayName value; got: " + custom);
+    }
 }
