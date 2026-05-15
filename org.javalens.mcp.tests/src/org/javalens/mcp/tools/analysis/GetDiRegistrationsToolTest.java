@@ -87,4 +87,51 @@ class GetDiRegistrationsToolTest {
         // Should not throw and should return valid structure
         assertNotNull(getData(response).get("summary"));
     }
+
+    // ========== Behavior-matrix coverage ==========
+
+    @Test
+    @DisplayName("summary keys are exactly {components, configurations, beans, injectionPoints}")
+    void summary_hasExactKeys() {
+        ToolResponse r = tool.execute(objectMapper.createObjectNode());
+        assertTrue(r.isSuccess());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> summary = (Map<String, Object>) getData(r).get("summary");
+        assertEquals(
+            java.util.Set.of("components", "configurations", "beans", "injectionPoints"),
+            summary.keySet(),
+            "summary keys must be exactly the four documented categories; got: " + summary.keySet());
+    }
+
+    @Test
+    @DisplayName("Top-level data has summary + four category lists; lists are all empty for non-Spring project")
+    void categories_emptyListsForNonSpring() {
+        ToolResponse r = tool.execute(objectMapper.createObjectNode());
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        for (String key : List.of("components", "configurations", "beans", "injectionPoints")) {
+            @SuppressWarnings("unchecked")
+            List<?> list = (List<?>) data.get(key);
+            assertNotNull(list, key + " missing on data");
+            assertTrue(list.isEmpty(),
+                key + " must be empty for non-Spring project; got: " + list);
+        }
+    }
+
+    @Test
+    @DisplayName("Each summary count equals the corresponding list's size")
+    void summaryCounts_matchListSizes() {
+        ToolResponse r = tool.execute(objectMapper.createObjectNode());
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        @SuppressWarnings("unchecked")
+        Map<String, Number> summary = (Map<String, Number>) data.get("summary");
+        for (String key : List.of("components", "configurations", "beans", "injectionPoints")) {
+            @SuppressWarnings("unchecked")
+            List<?> list = (List<?>) data.get(key);
+            assertEquals(summary.get(key).intValue(), list.size(),
+                "summary." + key + " must equal " + key + ".size(); got summary="
+                    + summary.get(key) + " listSize=" + list.size());
+        }
+    }
 }
