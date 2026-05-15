@@ -145,4 +145,73 @@ class FindCircularDependenciesToolTest {
         assertEquals(1, ((Number) data.get("cycleCount")).intValue(),
             "Expected exactly 1 cycle project-wide (only cycledemo); got: " + data);
     }
+
+    // ========== Behavior-matrix coverage ==========
+
+    @Test
+    @DisplayName("Each cycle entry carries packages, path, length, severity")
+    void cycleEntry_shape() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("packageFilter", "com.example.cycledemo");
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> cycles = (List<Map<String, Object>>) getData(r).get("cycles");
+        assertFalse(cycles.isEmpty());
+        for (Map<String, Object> c : cycles) {
+            for (String key : List.of("packages", "path", "length", "severity")) {
+                assertNotNull(c.get(key), key + " missing on cycle: " + c);
+            }
+            String path = (String) c.get("path");
+            assertTrue(path.contains(" -> "),
+                "Cycle path must use ` -> ` separator; got: " + path);
+        }
+    }
+
+    @Test
+    @DisplayName("cycleCount equals cycles.size()")
+    void cycleCount_equalsListSize() {
+        ToolResponse r = tool.execute(objectMapper.createObjectNode());
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        int count = ((Number) data.get("cycleCount")).intValue();
+        @SuppressWarnings("unchecked")
+        List<?> cycles = (List<?>) data.get("cycles");
+        assertEquals(count, cycles.size());
+    }
+
+    @Test
+    @DisplayName("suggestions provided when cycles exist")
+    void suggestions_presentWithCycles() {
+        ToolResponse r = tool.execute(objectMapper.createObjectNode());
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        @SuppressWarnings("unchecked")
+        List<String> suggestions = (List<String>) data.get("suggestions");
+        if (Boolean.TRUE.equals(data.get("hasCycles"))) {
+            assertNotNull(suggestions);
+            assertFalse(suggestions.isEmpty(),
+                "Suggestions must be non-empty when cycles exist");
+        }
+    }
+
+    @Test
+    @DisplayName("Severity is 'medium' for 2-package cycles and 'high' for larger cycles")
+    void severity_byCycleLength() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("packageFilter", "com.example.cycledemo");
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> cycles = (List<Map<String, Object>>) getData(r).get("cycles");
+        for (Map<String, Object> c : cycles) {
+            int len = ((Number) c.get("length")).intValue();
+            String sev = (String) c.get("severity");
+            if (len <= 2) {
+                assertEquals("medium", sev, "2-package cycle must be medium severity; got: " + c);
+            } else {
+                assertEquals("high", sev, ">2-package cycle must be high severity; got: " + c);
+            }
+        }
+    }
 }
