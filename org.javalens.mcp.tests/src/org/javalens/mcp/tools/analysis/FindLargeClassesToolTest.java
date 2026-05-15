@@ -177,4 +177,68 @@ class FindLargeClassesToolTest {
             "With all thresholds above LargeClass's metrics, it must not appear; got: " +
                 classes.stream().map(c -> c.get("typeName")).toList());
     }
+
+    // ========== Behavior-matrix coverage ==========
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> classesOf(ToolResponse r) {
+        return (List<Map<String, Object>>) getData(r).get("largeClasses");
+    }
+
+    @Test
+    @DisplayName("violations list mentions specific thresholds breached (methods or fields)")
+    void violations_describeThresholds() {
+        ObjectNode args = objectMapper.createObjectNode();
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        for (Map<String, Object> c : classesOf(r)) {
+            @SuppressWarnings("unchecked")
+            List<String> v = (List<String>) c.get("violations");
+            assertFalse(v.isEmpty(), "violations list must be non-empty when class is flagged: " + c);
+            for (String entry : v) {
+                assertTrue(
+                    entry.startsWith("methods:") || entry.startsWith("fields:") || entry.startsWith("lines:"),
+                    "Each violation must specify methods/fields/lines threshold; got: " + entry);
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("totalViolations == largeClasses.size()")
+    void totalViolations_equalsListSize() {
+        ToolResponse r = tool.execute(objectMapper.createObjectNode());
+        assertTrue(r.isSuccess());
+        int total = ((Number) getData(r).get("totalViolations")).intValue();
+        assertEquals(total, classesOf(r).size());
+    }
+
+    @Test
+    @DisplayName("Each large class entry has file, typeName, methodCount, fieldCount, lineCount, violations")
+    void entryShape_includesAllFields() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("maxMethods", 5);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        for (Map<String, Object> c : classesOf(r)) {
+            for (String key : List.of("file", "typeName", "methodCount", "fieldCount", "lineCount", "violations")) {
+                assertNotNull(c.get(key), key + " missing on largeClass entry: " + c);
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("Custom thresholds reported in thresholds map verbatim")
+    void thresholds_echoed() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("maxMethods", 7);
+        args.put("maxFields", 4);
+        args.put("maxLines", 150);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> thresholds = (Map<String, Object>) getData(r).get("thresholds");
+        assertEquals(7, thresholds.get("maxMethods"));
+        assertEquals(4, thresholds.get("maxFields"));
+        assertEquals(150, thresholds.get("maxLines"));
+    }
 }
