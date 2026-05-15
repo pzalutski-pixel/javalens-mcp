@@ -109,4 +109,71 @@ class FindUnusedCodeToolTest {
         assertFalse(names.contains("publicField"),
             "publicField is public — must not be flagged as unused");
     }
+
+    // ========== Behavior-matrix coverage ==========
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> itemsOf(ToolResponse r) {
+        return (List<Map<String, Object>>) getData(r).get("unusedItems");
+    }
+
+    @Test
+    @DisplayName("Each unused item carries name, kind, filePath, line, column")
+    void unusedEntry_shape() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", "src/main/java/com/example/UnusedCode.java");
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        for (Map<String, Object> i : itemsOf(r)) {
+            assertNotNull(i.get("name"), "name missing: " + i);
+            assertNotNull(i.get("kind"), "kind missing: " + i);
+            assertNotNull(i.get("filePath"), "filePath missing: " + i);
+            assertNotNull(i.get("line"), "line missing: " + i);
+            assertNotNull(i.get("column"), "column missing: " + i);
+        }
+    }
+
+    @Test
+    @DisplayName("Field entries carry type; method entries carry signature")
+    void unusedEntry_kindSpecificFields() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", "src/main/java/com/example/UnusedCode.java");
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        for (Map<String, Object> i : itemsOf(r)) {
+            if ("Field".equals(i.get("kind"))) {
+                assertNotNull(i.get("type"), "Field entry must carry `type`: " + i);
+            } else if ("Method".equals(i.get("kind"))) {
+                assertNotNull(i.get("signature"), "Method entry must carry `signature`: " + i);
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("unusedFieldCount + unusedMethodCount == totalUnused")
+    void counts_consistent() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", "src/main/java/com/example/UnusedCode.java");
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        long total = ((Number) data.get("totalUnused")).longValue();
+        long fields = ((Number) data.get("unusedFieldCount")).longValue();
+        long methods = ((Number) data.get("unusedMethodCount")).longValue();
+        assertEquals(total, fields + methods,
+            "totalUnused must equal unusedFieldCount + unusedMethodCount; got total=" + total
+                + " fields=" + fields + " methods=" + methods);
+    }
+
+    @Test
+    @DisplayName("includeFields=false and includeMethods=false → totalUnused=0")
+    void bothFlagsFalse_returnsEmpty() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", "src/main/java/com/example/UnusedCode.java");
+        args.put("includeFields", false);
+        args.put("includeMethods", false);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        assertEquals(0, ((Number) getData(r).get("totalUnused")).intValue());
+    }
 }
