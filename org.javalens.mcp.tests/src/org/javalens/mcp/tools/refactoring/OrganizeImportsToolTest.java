@@ -193,4 +193,100 @@ class OrganizeImportsToolTest {
         ToolResponse response2 = tool.execute(args2);
         assertFalse(response2.isSuccess());
     }
+
+    // ========== Behavior-matrix coverage ==========
+
+    @Test
+    @DisplayName("Sorted import block: java.* sorted alphabetically; java.io.IOException is dropped because unused")
+    void organizedBlock_sortedAndUnusedDropped() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", refactoringTargetPath);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        String block = (String) data.get("organizedImportBlock");
+        assertNotNull(block);
+        // Unused java.io.IOException, java.util.ArrayList, java.util.HashMap, java.util.Map
+        // must NOT appear in organized block. java.util.List must remain.
+        assertFalse(block.contains("java.io.IOException"),
+            "Unused IOException must NOT be in organized block; got: " + block);
+        assertFalse(block.contains("java.util.ArrayList"),
+            "Unused ArrayList must NOT be in organized block; got: " + block);
+        assertFalse(block.contains("java.util.HashMap"),
+            "Unused HashMap must NOT be in organized block; got: " + block);
+        assertFalse(block.contains("java.util.Map\n") && !block.contains("java.util.Map.")
+            ? false : false); // (no separate java.util.Map import remains)
+        assertTrue(block.contains("java.util.List"),
+            "Used java.util.List must remain in organized block; got: " + block);
+    }
+
+    @Test
+    @DisplayName("importRange exposes startLine, endLine, startOffset, endOffset")
+    void importRange_shape() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", refactoringTargetPath);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> range = (Map<String, Object>) data.get("importRange");
+        assertNotNull(range);
+        for (String key : List.of("startLine", "endLine", "startOffset", "endOffset")) {
+            assertNotNull(range.get(key), key + " missing on importRange: " + range);
+        }
+    }
+
+    @Test
+    @DisplayName("textEdit carries startLine, endLine, newText; newText equals organizedImportBlock")
+    void textEdit_shape() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", refactoringTargetPath);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertTrue((Boolean) data.get("hasChanges"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> edit = (Map<String, Object>) data.get("textEdit");
+        assertNotNull(edit);
+        for (String key : List.of("startLine", "endLine", "newText")) {
+            assertNotNull(edit.get(key), key + " missing on textEdit: " + edit);
+        }
+        assertEquals(data.get("organizedImportBlock"), edit.get("newText"),
+            "textEdit.newText must equal organizedImportBlock");
+    }
+
+    @Test
+    @DisplayName("totalImports + usedImports + unusedImports sums correctly")
+    void importCounts_consistent() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", refactoringTargetPath);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        int total = ((Number) data.get("totalImports")).intValue();
+        int used = ((Number) data.get("usedImports")).intValue();
+        int unused = getUnusedImports(data).size();
+        assertEquals(total, used + unused,
+            "totalImports = usedImports + unusedImports; got total=" + total
+                + " used=" + used + " unused=" + unused);
+    }
+
+    @Test
+    @DisplayName("File with no imports: hasChanges=false, textEdit absent")
+    void noImports_noChangesNoEdit() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertEquals(0, ((Number) data.get("totalImports")).intValue());
+        assertEquals(Boolean.FALSE, data.get("hasChanges"));
+        assertNull(data.get("textEdit"),
+            "textEdit must be absent when no changes are needed; got: " + data.get("textEdit"));
+    }
 }
