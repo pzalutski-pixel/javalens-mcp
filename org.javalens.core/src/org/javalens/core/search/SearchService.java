@@ -61,13 +61,19 @@ public class SearchService {
      * @return List of matching elements
      */
     public List<SearchMatch> searchSymbols(String pattern, Integer searchFor, int maxResults) throws CoreException {
-        // Convert glob to SearchPattern format
-        String searchPattern = pattern.replace("*", "*");  // Already compatible
-
+        // JDT's R_PATTERN_MATCH supports `*` natively but not `?`. The tool's contract
+        // documents both as wildcards, so for patterns containing `?` we broaden the
+        // JDT search (substituting `?` -> `*`) and then narrow client-side with a regex
+        // compiled from the original glob.
         int searchForType = searchFor != null ? searchFor : IJavaSearchConstants.TYPE;
+        boolean hasQuestionMark = pattern.indexOf('?') >= 0;
+        String jdtSearchPattern = hasQuestionMark ? pattern.replace('?', '*') : pattern;
+        java.util.regex.Pattern clientFilter = hasQuestionMark
+            ? java.util.regex.Pattern.compile(globToRegex(pattern))
+            : null;
 
         SearchPattern jdtPattern = SearchPattern.createPattern(
-            searchPattern,
+            jdtSearchPattern,
             searchForType,
             IJavaSearchConstants.DECLARATIONS,
             SearchPattern.R_PATTERN_MATCH | SearchPattern.R_CASE_SENSITIVE
@@ -78,7 +84,11 @@ public class SearchService {
             return List.of();
         }
 
-        CollectingSearchRequestor requestor = new CollectingSearchRequestor(maxResults);
+        // If we broadened with `?`->`*`, collect more raw matches than the cap so the
+        // client-side filter can find enough still-matching entries. Otherwise the cap
+        // applies directly.
+        int collectCap = hasQuestionMark ? Math.max(maxResults * 4, 200) : maxResults;
+        CollectingSearchRequestor requestor = new CollectingSearchRequestor(collectCap);
 
         engine.search(
             jdtPattern,
@@ -88,8 +98,32 @@ public class SearchService {
             new NullProgressMonitor()
         );
 
-        log.debug("Symbol search '{}' found {} results", pattern, requestor.getMatches().size());
-        return requestor.getMatches();
+        List<SearchMatch> raw = requestor.getMatches();
+        if (clientFilter == null) {
+            log.debug("Symbol search '{}' found {} results", pattern, raw.size());
+            return raw;
+        }
+
+        // Narrow with the proper glob-as-regex against the matched element's simple name.
+        List<SearchMatch> narrowed = new ArrayList<>();
+        for (SearchMatch m : raw) {
+            String name = simpleNameOf(m);
+            if (name != null && clientFilter.matcher(name).matches()) {
+                narrowed.add(m);
+                if (narrowed.size() >= maxResults) break;
+            }
+        }
+        log.debug("Symbol search '{}' found {} raw, {} after client-side ?-filter",
+            pattern, raw.size(), narrowed.size());
+        return narrowed;
+    }
+
+    private static String simpleNameOf(SearchMatch m) {
+        Object element = m.getElement();
+        if (element instanceof org.eclipse.jdt.core.IJavaElement je) {
+            return je.getElementName();
+        }
+        return null;
     }
 
     /**
@@ -352,6 +386,32 @@ public class SearchService {
         log.debug("Fine-grain search for {} (type={}) found {} after .java filter",
             type.getFullyQualifiedName(), referenceType, filtered.size());
         return filtered;
+    }
+
+    /**
+     * Translate a glob (`*` = any chars, `?` = single char) to a Java regex,
+     * quoting all other regex metacharacters so identifier punctuation in the
+     * pattern is treated literally.
+     */
+    private static String globToRegex(String glob) {
+        StringBuilder out = new StringBuilder(glob.length() + 4);
+        StringBuilder literal = new StringBuilder();
+        for (int i = 0; i < glob.length(); i++) {
+            char c = glob.charAt(i);
+            if (c == '*' || c == '?') {
+                if (literal.length() > 0) {
+                    out.append(java.util.regex.Pattern.quote(literal.toString()));
+                    literal.setLength(0);
+                }
+                out.append(c == '*' ? ".*" : ".");
+            } else {
+                literal.append(c);
+            }
+        }
+        if (literal.length() > 0) {
+            out.append(java.util.regex.Pattern.quote(literal.toString()));
+        }
+        return out.toString();
     }
 
     /**
