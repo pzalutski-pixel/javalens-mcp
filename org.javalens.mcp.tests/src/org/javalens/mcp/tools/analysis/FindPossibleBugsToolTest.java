@@ -124,4 +124,85 @@ class FindPossibleBugsToolTest {
         assertTrue(labels.stream().anyMatch(l -> l.contains("resource") || l.contains("close")),
             "Expected an issue mentioning resource leak / unclosed resource; got labels: " + labels);
     }
+
+    // ========== Behavior-matrix coverage ==========
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> issuesOf(ToolResponse r) {
+        return (List<Map<String, Object>>) getData(r).get("issues");
+    }
+
+    @Test
+    @DisplayName("Each issue carries severity in {high, medium, low}")
+    void issueSeverity_valid() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", "src/main/java/com/example/BugPatterns.java");
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        java.util.Set<String> validSeverity = java.util.Set.of("high", "medium", "low");
+        for (Map<String, Object> i : issuesOf(r)) {
+            Object sev = i.get("severity");
+            assertNotNull(sev, "severity missing on issue: " + i);
+            assertTrue(validSeverity.contains(sev.toString()),
+                "severity must be one of {high, medium, low}; got: " + sev);
+        }
+    }
+
+    @Test
+    @DisplayName("highCount + mediumCount + lowCount == totalIssues")
+    void counts_consistent() {
+        ToolResponse r = tool.execute(objectMapper.createObjectNode());
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        long high = ((Number) data.get("highCount")).longValue();
+        long med = ((Number) data.get("mediumCount")).longValue();
+        long low = ((Number) data.get("lowCount")).longValue();
+        long total = ((Number) data.get("totalIssues")).longValue();
+        assertEquals(total, high + med + low,
+            "high+medium+low must equal totalIssues; got high=" + high + " med=" + med
+                + " low=" + low + " total=" + total);
+    }
+
+    @Test
+    @DisplayName("severity='medium' filter returns only medium-severity issues")
+    void severityMedium_filter() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", "src/main/java/com/example/BugPatterns.java");
+        args.put("severity", "medium");
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        for (Map<String, Object> i : issuesOf(r)) {
+            assertEquals("medium", i.get("severity"),
+                "All issues must be medium when severity=medium; got: " + i);
+        }
+    }
+
+    @Test
+    @DisplayName("severity='low' filter returns only low-severity issues")
+    void severityLow_filter() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", "src/main/java/com/example/BugPatterns.java");
+        args.put("severity", "low");
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        for (Map<String, Object> i : issuesOf(r)) {
+            assertEquals("low", i.get("severity"),
+                "All issues must be low when severity=low; got: " + i);
+        }
+    }
+
+    @Test
+    @DisplayName("Calculator.java (clean) returns zero issues + zero highCount")
+    void cleanFile_zeroCounts() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertEquals(0, ((Number) data.get("totalIssues")).intValue());
+        assertEquals(0, ((Number) data.get("highCount")).intValue());
+        assertEquals(0, ((Number) data.get("mediumCount")).intValue());
+        assertEquals(0, ((Number) data.get("lowCount")).intValue());
+        assertTrue(issuesOf(r).isEmpty());
+    }
 }
