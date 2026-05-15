@@ -331,4 +331,101 @@ class ChangeMethodSignatureToolTest {
             "Expected at least 4 edits in ConstructorCaller.java (one per call site); got: "
                 + callerEdits.size() + " edits: " + callerEdits);
     }
+
+    // ========== Behavior-matrix coverage ==========
+
+    @Test
+    @DisplayName("Invalid Java identifier in newName is rejected")
+    void rejectsInvalidNewName() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", refactoringTargetPath);
+        args.put("line", 71);
+        args.put("column", 18);
+        args.put("newName", "123invalid");
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess());
+        assertEquals("INVALID_PARAMETER", r.getError().getCode());
+    }
+
+    @Test
+    @DisplayName("Empty newParameters array removes all params: signature becomes `String formatMessage()`")
+    void removesAllParameters() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", refactoringTargetPath);
+        args.put("line", 71);
+        args.put("column", 18);
+        args.set("newParameters", objectMapper.createArrayNode());
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertEquals(0, ((Number) data.get("newParameterCount")).intValue());
+
+        Map<String, Object> decl = findDeclarationEdit(data);
+        assertEquals("String formatMessage()", decl.get("newSignature"),
+            "Empty newParameters must drop all params; got: " + decl.get("newSignature"));
+    }
+
+    @Test
+    @DisplayName("Declaration edit carries isDeclaration=true, oldSignature, newSignature, full position shape")
+    void declarationEdit_shape() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", refactoringTargetPath);
+        args.put("line", 71);
+        args.put("column", 18);
+        args.put("newName", "formatOutput");
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> decl = findDeclarationEdit(getData(r));
+        for (String key : List.of("type", "isDeclaration", "oldSignature", "newSignature",
+                "startLine", "startColumn", "endLine", "endColumn", "startOffset", "endOffset")) {
+            assertNotNull(decl.get(key), key + " missing on declaration edit: " + decl);
+        }
+        assertEquals(Boolean.TRUE, decl.get("isDeclaration"));
+        assertEquals("replace", decl.get("type"));
+    }
+
+    @Test
+    @DisplayName("Only one declaration edit exists across all files")
+    void onlyOneDeclarationEdit() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", refactoringTargetPath);
+        args.put("line", 71);
+        args.put("column", 18);
+        args.put("newName", "formatOutput");
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        @SuppressWarnings("unchecked")
+        Map<String, List<Map<String, Object>>> byFile =
+            (Map<String, List<Map<String, Object>>>) data.get("editsByFile");
+        long declCount = byFile.values().stream()
+            .flatMap(List::stream)
+            .filter(e -> Boolean.TRUE.equals(e.get("isDeclaration")))
+            .count();
+        assertEquals(1L, declCount,
+            "Exactly one edit must carry isDeclaration=true; got: " + declCount);
+    }
+
+    @Test
+    @DisplayName("totalEdits equals the sum of per-file edit list sizes")
+    void totalEdits_sumsAcrossFiles() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", refactoringTargetPath);
+        args.put("line", 71);
+        args.put("column", 18);
+        args.put("newName", "formatOutput");
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        int total = ((Number) data.get("totalEdits")).intValue();
+        @SuppressWarnings("unchecked")
+        Map<String, List<Map<String, Object>>> byFile =
+            (Map<String, List<Map<String, Object>>>) data.get("editsByFile");
+        int sum = byFile.values().stream().mapToInt(List::size).sum();
+        assertEquals(total, sum);
+    }
 }
