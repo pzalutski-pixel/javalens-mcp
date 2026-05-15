@@ -121,4 +121,71 @@ class GetDependencyGraphToolTest {
             "UserService uses Calculator (as field type and method parameter); must appear in graph nodes; got: "
                 + nodes);
     }
+
+    // ========== Behavior-matrix coverage ==========
+
+    @Test
+    @DisplayName("Top-level response has scope, root, nodes, edges, summary")
+    void responseShape_includesAllFields() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("scope", "type");
+        args.put("name", "com.example.service.UserService");
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        for (String key : List.of("scope", "root", "nodes", "edges", "summary")) {
+            assertNotNull(data.get(key), key + " missing on response: " + data.keySet());
+        }
+    }
+
+    @Test
+    @DisplayName("includeExternal=false omits JDK nodes (java.lang, java.util)")
+    void includeExternalFalse_omitsJdkNodes() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("scope", "type");
+        args.put("name", "com.example.service.UserService");
+        args.put("includeExternal", false);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        @SuppressWarnings("unchecked")
+        List<Object> nodes = (List<Object>) getData(r).get("nodes");
+        for (Object n : nodes) {
+            String name = n.toString();
+            assertFalse(name.startsWith("java.lang."),
+                "Internal-only graph must not include java.lang.* nodes; got: " + name);
+        }
+    }
+
+    @Test
+    @DisplayName("scope='invalid' rejected; missing scope rejected; unknown type rejected")
+    void invalidArgs_rejected() {
+        // scope=invalid
+        ObjectNode bad1 = objectMapper.createObjectNode();
+        bad1.put("scope", "invalid");
+        bad1.put("name", "com.example.Calculator");
+        assertFalse(tool.execute(bad1).isSuccess());
+
+        // missing scope
+        ObjectNode bad2 = objectMapper.createObjectNode();
+        bad2.put("name", "com.example.Calculator");
+        assertFalse(tool.execute(bad2).isSuccess());
+
+        // unknown type
+        ObjectNode bad3 = objectMapper.createObjectNode();
+        bad3.put("scope", "type");
+        bad3.put("name", "com.nonexistent.Whatever");
+        assertFalse(tool.execute(bad3).isSuccess());
+    }
+
+    @Test
+    @DisplayName("Calculator scope=type: root is reported verbatim")
+    void rootEchoed() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("scope", "type");
+        args.put("name", "com.example.Calculator");
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        assertEquals("com.example.Calculator", getData(r).get("root"));
+        assertEquals("type", getData(r).get("scope"));
+    }
 }
