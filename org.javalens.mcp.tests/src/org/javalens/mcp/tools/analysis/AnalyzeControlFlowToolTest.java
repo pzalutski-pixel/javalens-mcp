@@ -163,4 +163,138 @@ class AnalyzeControlFlowToolTest {
         assertEquals(3, throwsP.size(),
             "throwMultiple has 3 throw statements; got: " + throwsP);
     }
+
+    // ========== Behavior-matrix coverage ==========
+
+    private String cfp() {
+        return helper.getFixturePath("simple-maven")
+            .resolve("src/main/java/com/example/ControlFlowPatterns.java").toString();
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> loopsOf(Map<String, Object> data) {
+        return (Map<String, Object>) data.get("loops");
+    }
+
+    private ObjectNode methodArgs(String path, int line, int col) {
+        ObjectNode a = objectMapper.createObjectNode();
+        a.put("filePath", path);
+        a.put("line", line);
+        a.put("column", col);
+        return a;
+    }
+
+    @Test
+    @DisplayName("simpleLinear: zero branches, zero loops, exactly 1 return, 0 throws, 0 nesting")
+    void simpleLinear_allCountsZeroExceptOneReturn() {
+        // 1-based line 10 → 0-based 9
+        ToolResponse r = tool.execute(methodArgs(cfp(), 9, 16));
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertEquals("simpleLinear", data.get("method"));
+        assertEquals(0, ((Number) data.get("branches")).intValue());
+        assertEquals(0, ((Number) loopsOf(data).get("total")).intValue());
+        assertEquals(1, ((List<?>) data.get("returnPoints")).size());
+        assertEquals(0, ((List<?>) data.get("throwPoints")).size());
+        assertEquals(0, ((Number) data.get("maxNestingDepth")).intValue());
+    }
+
+    @Test
+    @DisplayName("forLoop: loops.for=1, loops.total=1, other loop counts 0")
+    void forLoop_loopCountByKind() {
+        // 1-based line 48 → 0-based 47
+        ToolResponse r = tool.execute(methodArgs(cfp(), 47, 16));
+        assertTrue(r.isSuccess());
+        Map<String, Object> loops = loopsOf(getData(r));
+        assertEquals(1, ((Number) loops.get("total")).intValue());
+        assertEquals(1, ((Number) loops.get("for")).intValue());
+        assertEquals(0, ((Number) loops.get("enhancedFor")).intValue());
+        assertEquals(0, ((Number) loops.get("while")).intValue());
+        assertEquals(0, ((Number) loops.get("doWhile")).intValue());
+    }
+
+    @Test
+    @DisplayName("whileLoop: loops.while=1, loops.total=1")
+    void whileLoop_loopCountByKind() {
+        ToolResponse r = tool.execute(methodArgs(cfp(), 55, 16));
+        assertTrue(r.isSuccess());
+        Map<String, Object> loops = loopsOf(getData(r));
+        assertEquals(1, ((Number) loops.get("while")).intValue());
+        assertEquals(1, ((Number) loops.get("total")).intValue());
+        assertEquals(0, ((Number) loops.get("for")).intValue());
+    }
+
+    @Test
+    @DisplayName("doWhileLoop: loops.doWhile=1, loops.total=1")
+    void doWhileLoop_loopCountByKind() {
+        ToolResponse r = tool.execute(methodArgs(cfp(), 65, 16));
+        assertTrue(r.isSuccess());
+        Map<String, Object> loops = loopsOf(getData(r));
+        assertEquals(1, ((Number) loops.get("doWhile")).intValue());
+        assertEquals(1, ((Number) loops.get("total")).intValue());
+    }
+
+    @Test
+    @DisplayName("enhancedForCollection: loops.enhancedFor=1")
+    void enhancedForCollection_loopCountByKind() {
+        ToolResponse r = tool.execute(methodArgs(cfp(), 75, 16));
+        assertTrue(r.isSuccess());
+        Map<String, Object> loops = loopsOf(getData(r));
+        assertEquals(1, ((Number) loops.get("enhancedFor")).intValue());
+        assertEquals(1, ((Number) loops.get("total")).intValue());
+    }
+
+    @Test
+    @DisplayName("ternary: ConditionalExpression contributes a branch")
+    void ternary_isBranch() {
+        // 1-based line 26 → 0-based 25
+        ToolResponse r = tool.execute(methodArgs(cfp(), 25, 16));
+        assertTrue(r.isSuccess());
+        assertTrue(((Number) getData(r).get("branches")).intValue() >= 1,
+            "Ternary `x >= 0 ? x : -x` must register as a branch");
+    }
+
+    @Test
+    @DisplayName("multiCatch tryCatchBlock has caughtTypes covering both branches of `A | B`")
+    void multiCatch_caughtTypes() {
+        // 1-based line 119 → 0-based 118
+        ToolResponse r = tool.execute(methodArgs(cfp(), 118, 16));
+        assertTrue(r.isSuccess());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> blocks = (List<Map<String, Object>>) getData(r).get("tryCatchBlocks");
+        assertEquals(1, blocks.size(), "multiCatch has exactly one try-catch block");
+        @SuppressWarnings("unchecked")
+        List<String> caught = (List<String>) blocks.get(0).get("caughtTypes");
+        // JDT represents `A | B` as a UnionType.toString() like `NumberFormatException | IOException`
+        // — captured as a single entry. Either format is OK; assert both names are present.
+        String all = String.join(" ", caught);
+        assertTrue(all.contains("NumberFormatException"),
+            "caughtTypes must mention NumberFormatException; got: " + caught);
+        assertTrue(all.contains("IOException"),
+            "caughtTypes must mention IOException; got: " + caught);
+    }
+
+    @Test
+    @DisplayName("nestedTry: 2 tryCatchBlocks; maxNestingDepth >= 2")
+    void nestedTry_blockCountAndDepth() {
+        // 1-based line 129 → 0-based 128
+        ToolResponse r = tool.execute(methodArgs(cfp(), 128, 16));
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        @SuppressWarnings("unchecked")
+        List<?> blocks = (List<?>) data.get("tryCatchBlocks");
+        assertEquals(2, blocks.size(), "nestedTry has two try-catch blocks");
+        assertTrue(((Number) data.get("maxNestingDepth")).intValue() >= 2,
+            "Nested try must produce nesting depth >= 2");
+    }
+
+    @Test
+    @DisplayName("deeplyNested: maxNestingDepth >= 4 (if -> for -> if -> while)")
+    void deeplyNested_depth() {
+        // 1-based line 147 → 0-based 146
+        ToolResponse r = tool.execute(methodArgs(cfp(), 146, 16));
+        assertTrue(r.isSuccess());
+        assertTrue(((Number) getData(r).get("maxNestingDepth")).intValue() >= 4,
+            "deeplyNested must produce maxNestingDepth >= 4");
+    }
 }
