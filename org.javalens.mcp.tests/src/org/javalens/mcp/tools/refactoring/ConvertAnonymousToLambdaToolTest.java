@@ -242,4 +242,112 @@ class ConvertAnonymousToLambdaToolTest {
 
         assertFalse(response.isSuccess());
     }
+
+    // ========== Behavior-matrix coverage ==========
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> editsOf(ToolResponse r) {
+        return (List<Map<String, Object>>) getData(r).get("edits");
+    }
+
+    @Test
+    @DisplayName("Runnable (no params): lambda starts with `() ->`")
+    void runnable_noParamLambdaForm() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", anonymousExamplesPath);
+        args.put("line", 19);
+        args.put("column", 28);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        String lambda = (String) getData(r).get("lambdaExpression");
+        assertNotNull(lambda);
+        assertTrue(lambda.trim().startsWith("() ->"),
+            "No-parameter Runnable must produce `() -> ...`; got: " + lambda);
+    }
+
+    @Test
+    @DisplayName("Consumer (single param): lambda starts with `<name> ->` (no parentheses)")
+    void consumer_singleParamLambdaForm() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", anonymousExamplesPath);
+        args.put("line", 45);
+        args.put("column", 55);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        String lambda = (String) getData(r).get("lambdaExpression");
+        assertNotNull(lambda);
+        // Single param: `s -> ...`, NOT `(s) -> ...`.
+        assertFalse(lambda.trim().startsWith("("),
+            "Single-parameter lambda must omit parentheses; got: " + lambda);
+        assertTrue(lambda.contains("->"));
+    }
+
+    @Test
+    @DisplayName("Comparator (two params): lambda starts with `(a, b) ->`")
+    void comparator_twoParamLambdaForm() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", anonymousExamplesPath);
+        args.put("line", 33);
+        args.put("column", 31);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        String lambda = (String) getData(r).get("lambdaExpression");
+        assertNotNull(lambda);
+        assertTrue(lambda.trim().matches("^\\(.+,.+\\)\\s*->.*"),
+            "Two-parameter Comparator must produce `(a, b) -> ...`; got: " + lambda);
+    }
+
+    @Test
+    @DisplayName("Comparator interfaceType reports parameterized form; methodName=compare")
+    void comparator_typeAndMethodReported() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", anonymousExamplesPath);
+        args.put("line", 33);
+        args.put("column", 31);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        // JDT reports the parameterized type via ITypeBinding.getName(): `Comparator<String>`.
+        String iface = (String) data.get("interfaceType");
+        assertTrue(iface != null && iface.startsWith("Comparator"),
+            "interfaceType must start with `Comparator`; got: " + iface);
+        assertEquals("compare", data.get("methodName"));
+    }
+
+    @Test
+    @DisplayName("Replace edit carries type, startLine/Column, endLine/Column, startOffset/endOffset, oldText, newText")
+    void editShape_full() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", anonymousExamplesPath);
+        args.put("line", 19);
+        args.put("column", 28);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> e = editsOf(r).get(0);
+        for (String key : List.of("type", "startLine", "startColumn", "endLine", "endColumn",
+                "startOffset", "endOffset", "oldText", "newText")) {
+            assertNotNull(e.get(key), key + " missing on convert edit: " + e);
+        }
+        assertEquals("replace", e.get("type"));
+        // oldText must start with `new` (the anonymous class creation).
+        String oldText = (String) e.get("oldText");
+        assertTrue(oldText.startsWith("new "),
+            "oldText must begin with `new` (anonymous class creation); got: " + oldText);
+    }
+
+    @Test
+    @DisplayName("Non-existent file rejected")
+    void nonExistentFile_isRejected() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", "/nonexistent/Path.java");
+        args.put("line", 19);
+        args.put("column", 28);
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess());
+    }
 }
