@@ -126,4 +126,71 @@ class AnalyzeTypeToolTest {
         empty.put("typeName", "");
         assertFalse(tool.execute(empty).isSuccess());
     }
+
+    // ========== Behavior-matrix coverage ==========
+
+    @Test
+    @DisplayName("Top-level response carries type, members, hierarchy, usages")
+    void responseShape_compoundedSections() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("typeName", "com.example.Calculator");
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        for (String key : java.util.List.of("type", "members", "hierarchy", "usages")) {
+            assertNotNull(data.get(key), key + " missing on analyze_type response: " + data.keySet());
+        }
+    }
+
+    @Test
+    @DisplayName("FilledCircle has interface dependency in hierarchy.interfaces")
+    @SuppressWarnings("unchecked")
+    void filledCircle_hierarchyInterfaces() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("typeName", "com.example.FilledCircle");
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> hierarchy = (Map<String, Object>) getData(r).get("hierarchy");
+        // FilledCircle implements IFillable (which extends IShape).
+        assertNotNull(hierarchy.get("interfaces"),
+            "FilledCircle must have an `interfaces` entry in hierarchy; got: " + hierarchy);
+    }
+
+    @Test
+    @DisplayName("Annotation type is reported with kind=Annotation")
+    @SuppressWarnings("unchecked")
+    void annotationType_kindReported() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("typeName", "com.example.Marker");
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> type = (Map<String, Object>) getData(r).get("type");
+        assertEquals("Annotation", type.get("kind"),
+            "Marker is an annotation type — kind must be Annotation; got: " + type);
+    }
+
+    @Test
+    @DisplayName("includeUsages=false omits usages section entirely")
+    void includeUsagesFalse_omitsUsages() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("typeName", "com.example.Calculator");
+        args.put("includeUsages", false);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        assertNull(getData(r).get("usages"));
+    }
+
+    @Test
+    @DisplayName("Members section has constructorCount + methodCount + fieldCount + nestedTypeCount")
+    void membersSection_shape() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("typeName", "com.example.Calculator");
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> members = (Map<String, Object>) getData(r).get("members");
+        for (String key : java.util.List.of("constructorCount", "methodCount", "fieldCount", "nestedTypeCount")) {
+            assertNotNull(members.get(key), key + " missing on members: " + members);
+        }
+    }
 }
