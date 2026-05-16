@@ -9,6 +9,7 @@ An MCP server providing **63 semantic analysis tools** for Java, built directly 
 ## Requirements
 
 - **Java 21 or later** — required as the server runtime, analyzes Java source from version 1.1 through 23
+- **Node.js 18+** — required to run this package via `npx`. If you don't have Node.js, download JavaLens directly from [GitHub Releases](https://github.com/pzalutski-pixel/javalens-mcp/releases) instead.
 
 ## Quick Start
 

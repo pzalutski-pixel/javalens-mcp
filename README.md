@@ -90,11 +90,24 @@ JavaLens wraps **Eclipse JDT Core** directly via OSGi, providing:
 
 ### Prerequisites
 
-- **Java 21** or later (must be on PATH or set JAVA_HOME)
+- **Java 21** or later (must be on PATH or set `JAVA_HOME`) — required for both install paths.
+- **Node.js 18+** — required *only* if you use the npm/`npx` install path below. Skip if you use the direct-download path.
 
 JavaLens is an analytical server, not a compiler. It uses Eclipse JDT 2024-09 to parse and understand Java source code from **version 1.1 through 23**. Java 21 is required only as the server runtime.
 
-### Install via npm
+### Install from GitHub Releases (recommended — Java only)
+
+This is the simplest path if you already have Java 21 and don't have Node.js. Download from [Releases](https://github.com/pzalutski-pixel/javalens-mcp/releases):
+
+| Platform | File |
+|----------|------|
+| All platforms | `javalens.zip` or `javalens.tar.gz` |
+
+Extract to a location of your choice (e.g., `/opt/javalens` or `C:\javalens`). Then point your MCP client at the bundled jar — see [Configure MCP Client](#configure-mcp-client) below.
+
+### Install via npm (requires Node.js 18+)
+
+If you already have Node.js, `npx` will download and cache the JavaLens distribution (~23 MB) on first run:
 
 ```json
 {
@@ -109,18 +122,6 @@ JavaLens is an analytical server, not a compiler. It uses Eclipse JDT 2024-09 to
   }
 }
 ```
-
-The distribution (~23 MB) is downloaded and cached on first run.
-
-### Download
-
-Download from [Releases](https://github.com/pzalutski-pixel/javalens-mcp/releases):
-
-| Platform | File |
-|----------|------|
-| All platforms | `javalens.zip` or `javalens.tar.gz` |
-
-Extract to a location of your choice (e.g., `/opt/javalens` or `C:\javalens`).
 
 ### Configure MCP Client
 
