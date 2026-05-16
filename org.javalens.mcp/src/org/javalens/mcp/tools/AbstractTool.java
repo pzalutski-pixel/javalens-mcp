@@ -3,7 +3,6 @@ package org.javalens.mcp.tools;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.eclipse.core.runtime.IPath;
 import org.eclipse.jdt.core.ICompilationUnit;
-import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.IJdtService;
 import org.javalens.core.exceptions.ProjectNotLoadedException;
@@ -198,62 +197,23 @@ public abstract class AbstractTool implements Tool {
     protected Map<String, Object> formatMatch(SearchMatch match, IJdtService service) {
         try {
             Map<String, Object> info = new LinkedHashMap<>();
-            ICompilationUnit cu = null;
+            ICompilationUnit cu = MatchResolver.resolveCu(match);
 
-            // Try to get ICompilationUnit from the match element
-            Object element = match.getElement();
-            if (element instanceof org.eclipse.jdt.core.IType type) {
-                // For IType, use getCompilationUnit() directly (handles source types properly)
-                cu = type.getCompilationUnit();
-            } else if (element instanceof org.eclipse.jdt.core.IMember member) {
-                // For methods/fields, get the CU from the declaring type
-                cu = member.getCompilationUnit();
-            } else if (element instanceof IJavaElement javaElement) {
-                // Fallback to ancestor traversal
-                cu = (ICompilationUnit) javaElement.getAncestor(IJavaElement.COMPILATION_UNIT);
-            }
-
-            // For TypeReferenceMatch, also check local element if main element didn't give us a CU
-            if (cu == null && match instanceof org.eclipse.jdt.core.search.TypeReferenceMatch typeRefMatch) {
-                IJavaElement localElement = typeRefMatch.getLocalElement();
-                if (localElement != null) {
-                    if (localElement instanceof org.eclipse.jdt.core.IMember member) {
-                        cu = member.getCompilationUnit();
-                    } else {
-                        cu = (ICompilationUnit) localElement.getAncestor(IJavaElement.COMPILATION_UNIT);
-                    }
-                }
-            }
-
-            // Last-resort fallback: resolve CU from the match's IFile resource.
-            if (cu == null && match.getResource() instanceof org.eclipse.core.resources.IFile file
-                && "java".equalsIgnoreCase(file.getFileExtension())) {
-                IJavaElement je = org.eclipse.jdt.core.JavaCore.create(file);
-                if (je instanceof ICompilationUnit fileCu) {
-                    cu = fileCu;
-                }
-            }
-
-            // Get file path - prefer from ICompilationUnit for accurate path. When CU
-            // can't be resolved (binary JDK matches, JDT edge cases), fall back to the
-            // raw resource location; callers that need line/column will see them absent.
+            // Prefer the CU's resource path; fall back to the raw match resource when
+            // the CU couldn't be resolved (binary JDK matches and similar edge cases).
+            IPath location = null;
             if (cu != null && cu.getResource() != null) {
-                IPath location = cu.getResource().getLocation();
-                if (location != null) {
-                    info.put("filePath", service.getPathUtils().formatPath(location.toOSString()));
-                }
+                location = cu.getResource().getLocation();
             } else if (match.getResource() != null) {
-                IPath location = match.getResource().getLocation();
-                if (location != null) {
-                    info.put("filePath", service.getPathUtils().formatPath(location.toOSString()));
-                }
+                location = match.getResource().getLocation();
+            }
+            if (location != null) {
+                info.put("filePath", service.getPathUtils().formatPath(location.toOSString()));
             }
 
-            // Offset and length
             info.put("offset", match.getOffset());
             info.put("length", match.getLength());
 
-            // Line, column, and context (requires ICompilationUnit)
             if (cu != null && match.getOffset() >= 0) {
                 info.put("line", service.getLineNumber(cu, match.getOffset()));
                 info.put("column", service.getColumnNumber(cu, match.getOffset()));
