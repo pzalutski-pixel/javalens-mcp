@@ -117,9 +117,12 @@ public class WorkspaceManager {
             project.delete(true, true, new NullProgressMonitor());
         }
 
-        // Create project description WITHOUT external location
-        // This creates the project INSIDE the workspace, not at the external location
-        IProjectDescription description = workspace.newProjectDescription(name);
+        // Create project description WITHOUT external location, using the same
+        // unique name as the IProject handle. Passing the base `name` here used
+        // to make the description's internal name diverge from the project's
+        // actual name — JDT then consults description in some code paths and
+        // sees a different identity than the workspace root reports.
+        IProjectDescription description = workspace.newProjectDescription(uniqueName);
 
         // Add Java nature
         description.setNatureIds(new String[] { JavaCore.NATURE_ID });

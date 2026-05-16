@@ -1,6 +1,7 @@
 package org.javalens.core.workspace;
 
 import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.IProjectDescription;
 import org.eclipse.core.resources.IWorkspace;
 import org.eclipse.core.resources.IWorkspaceRoot;
 import org.eclipse.core.runtime.CoreException;
@@ -108,6 +109,19 @@ class WorkspaceManagerTest {
         String expectedName = "my-project-" + workspaceManager.getSessionId();
         assertEquals(expectedName, project.getName(),
             "Project name should include session ID");
+    }
+
+    @Test
+    @DisplayName("createLinkedProject: IProjectDescription internal name matches IProject handle name")
+    void createLinkedProject_descriptionNameMatchesProjectName() throws CoreException {
+        // Regression test: before the fix, newProjectDescription was called with
+        // the base `name` while the IProject handle used `name + sessionId`. JDT
+        // sometimes consults the description's internal name, leading to
+        // two-identity bugs. Description and handle must agree.
+        IProject project = workspaceManager.createLinkedProject("desc-name-test", fixturePath);
+        IProjectDescription description = project.getDescription();
+        assertEquals(project.getName(), description.getName(),
+            "Description's internal name must match the IProject handle's name");
     }
 
     @Test
