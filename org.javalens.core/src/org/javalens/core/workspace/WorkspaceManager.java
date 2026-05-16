@@ -41,37 +41,46 @@ public class WorkspaceManager {
      * Must be called before any other operations.
      * Waits for workspace to be ready if needed.
      */
+    private static final int WORKSPACE_INIT_MAX_RETRIES = 10;
+    private static final long WORKSPACE_INIT_RETRY_INTERVAL_MS = 100L;
+
     public void initialize() throws CoreException {
-        // Wait for workspace to be ready (OSGi timing issue)
-        int maxRetries = 10;
-        for (int i = 0; i < maxRetries; i++) {
+        // ResourcesPlugin.getWorkspace() can throw IllegalStateException during OSGi
+        // startup if the resources bundle hasn't fully activated. Bounded poll with
+        // total wait ≤ 1s (was 5s in 1.3.x — slower than needed).
+        IllegalStateException last = null;
+        for (int attempt = 1; attempt <= WORKSPACE_INIT_MAX_RETRIES; attempt++) {
             try {
                 this.workspace = ResourcesPlugin.getWorkspace();
                 this.root = workspace.getRoot();
-                log.info("Workspace initialized at: {}", root.getLocation());
+                log.info("Workspace initialized at: {} (attempt {})", root.getLocation(), attempt);
                 return;
             } catch (IllegalStateException e) {
-                if (i < maxRetries - 1) {
-                    log.debug("Workspace not ready, waiting... (attempt {})", i + 1);
-                    try {
-                        Thread.sleep(500);
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        throw new CoreException(new org.eclipse.core.runtime.Status(
-                            org.eclipse.core.runtime.IStatus.ERROR,
-                            "org.javalens.core",
-                            "Interrupted while waiting for workspace"
-                        ));
-                    }
-                } else {
+                last = e;
+                if (attempt == WORKSPACE_INIT_MAX_RETRIES) break;
+                log.debug("Workspace not ready (attempt {}/{}): {}",
+                    attempt, WORKSPACE_INIT_MAX_RETRIES, e.getMessage());
+                try {
+                    Thread.sleep(WORKSPACE_INIT_RETRY_INTERVAL_MS);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
                     throw new CoreException(new org.eclipse.core.runtime.Status(
                         org.eclipse.core.runtime.IStatus.ERROR,
                         "org.javalens.core",
-                        "Workspace not available after " + maxRetries + " attempts: " + e.getMessage()
+                        "Interrupted while waiting for OSGi resources bundle to start"
                     ));
                 }
             }
         }
+        long totalWaitMs = (long) WORKSPACE_INIT_MAX_RETRIES * WORKSPACE_INIT_RETRY_INTERVAL_MS;
+        throw new CoreException(new org.eclipse.core.runtime.Status(
+            org.eclipse.core.runtime.IStatus.ERROR,
+            "org.javalens.core",
+            "Eclipse workspace not available after " + WORKSPACE_INIT_MAX_RETRIES
+                + " attempts (" + totalWaitMs + "ms total). The OSGi resources bundle "
+                + "(org.eclipse.core.resources) appears not to have started — check the "
+                + "product configuration. Last error: " + (last == null ? "<none>" : last.getMessage())
+        ));
     }
 
     /**
