@@ -145,6 +145,7 @@ public class SearchSymbolsTool extends AbstractTool {
             ));
 
             return ToolResponse.success(data, ResponseMeta.builder()
+                .totalCount(results.size())
                 .returnedCount(results.size())
                 .truncated(results.size() == maxResults)
                 .suggestedNextTools(List.of(

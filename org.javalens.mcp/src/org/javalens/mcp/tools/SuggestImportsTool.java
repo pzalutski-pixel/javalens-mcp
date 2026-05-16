@@ -154,7 +154,9 @@ public class SuggestImportsTool extends AbstractTool {
                 (Map<String, Object> c) -> (int) c.get("relevance")).reversed());
 
             // Limit results
-            List<Map<String, Object>> result = candidates.size() > maxResults
+            int totalCandidates = candidates.size();
+            boolean truncated = totalCandidates > maxResults;
+            List<Map<String, Object>> result = truncated
                 ? candidates.subList(0, maxResults)
                 : candidates;
 
@@ -164,8 +166,9 @@ public class SuggestImportsTool extends AbstractTool {
             data.put("candidates", result);
 
             return ToolResponse.success(data, ResponseMeta.builder()
-                .totalCount(result.size())
+                .totalCount(totalCandidates)
                 .returnedCount(result.size())
+                .truncated(truncated)
                 .suggestedNextTools(List.of(
                     "apply_quick_fix with fixId to add the import",
                     "get_quick_fixes to see all available fixes"

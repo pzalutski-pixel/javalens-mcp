@@ -118,9 +118,18 @@ public class GetDiRegistrationsTool extends AbstractTool {
 
             int total = components.size() + configurations.size() + beans.size() + injectionPoints.size();
 
+            // `maxResults` is the per-category cap (see scanAnnotations) — if any
+            // category list hit the cap, the aggregate output is potentially missing
+            // entries from that category.
+            boolean truncated = components.size() >= maxResults
+                || configurations.size() >= maxResults
+                || beans.size() >= maxResults
+                || injectionPoints.size() >= maxResults;
+
             return ToolResponse.success(data, ResponseMeta.builder()
                 .totalCount(total)
                 .returnedCount(total)
+                .truncated(truncated)
                 .suggestedNextTools(List.of(
                     "find_references to trace a specific dependency",
                     "analyze_type for details on a registered component"

@@ -102,6 +102,7 @@ public class FindReflectionUsageTool extends AbstractTool {
         try {
             List<Map<String, Object>> allCalls = new ArrayList<>();
             Map<String, Integer> summary = new LinkedHashMap<>();
+            boolean anyLabelTruncated = false;
 
             for (String[] entry : REFLECTION_METHODS) {
                 String typeName = entry[0];
@@ -136,6 +137,9 @@ public class FindReflectionUsageTool extends AbstractTool {
                     if (forThisLabel > 0) {
                         summary.put(label, forThisLabel);
                     }
+                    if (forThisLabel >= maxResults) {
+                        anyLabelTruncated = true;
+                    }
                 } catch (Exception e) {
                     log.debug("Could not scan for {}.{}: {}", typeName, methodName, e.getMessage());
                 }
@@ -149,6 +153,7 @@ public class FindReflectionUsageTool extends AbstractTool {
             return ToolResponse.success(data, ResponseMeta.builder()
                 .totalCount(allCalls.size())
                 .returnedCount(allCalls.size())
+                .truncated(anyLabelTruncated)
                 .suggestedNextTools(List.of(
                     "analyze_change_impact to assess risk of renaming reflected types",
                     "get_symbol_info at a reflection call site for context"
