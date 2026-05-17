@@ -125,6 +125,33 @@ class WorkspaceManagerTest {
     }
 
     @Test
+    @DisplayName("createLinkedProject sweeps stale UUID-suffixed projects from prior sessions")
+    void createLinkedProject_sweepsStaleProjectsFromPriorSessions() throws CoreException {
+        // Simulate a prior session that crashed without cleanup by creating
+        // a project with a synthetic UUID suffix.
+        String baseName = "sweep-test";
+        WorkspaceManager priorSession = new WorkspaceManager();
+        priorSession.initialize();
+        IProject priorProject = priorSession.createLinkedProject(baseName, fixturePath);
+        String priorName = priorProject.getName();
+        assertTrue(priorProject.exists(),
+            "Precondition: prior-session project must exist before the sweep test runs");
+
+        // A NEW session (different UUID) calls createLinkedProject. The prior
+        // project should be swept because it matches the {baseName}-{8-hex}
+        // pattern and isn't the new session's own.
+        WorkspaceManager newSession = new WorkspaceManager();
+        newSession.initialize();
+        IProject newProject = newSession.createLinkedProject(baseName, fixturePath);
+        assertTrue(newProject.exists(), "New session's project must exist");
+
+        IProject staleHandle = newSession.getRoot().getProject(priorName);
+        assertFalse(staleHandle.exists(),
+            "Stale prior-session project (" + priorName + ") must be swept by the new "
+                + "session's createLinkedProject; got: still exists.");
+    }
+
+    @Test
     @DisplayName("createLinkedProject should recreate if already exists")
     void createLinkedProject_recreatesIfExists() throws CoreException {
         // Create first time

@@ -119,6 +119,12 @@ public class WorkspaceManager {
     public IProject createLinkedProject(String name, java.nio.file.Path externalProjectRoot) throws CoreException {
         // Append session ID to make project name unique per session
         String uniqueName = name + "-" + sessionId;
+
+        // Defense in depth: sweep stale UUID-suffixed projects from prior sessions
+        // that may have survived a hard kill before the JavaLensLauncher shutdown
+        // hook could clean them. The pattern is "{name}-{8-hex}".
+        sweepStaleProjects(name, uniqueName);
+
         IProject project = root.getProject(uniqueName);
 
         if (project.exists()) {
@@ -166,6 +172,33 @@ public class WorkspaceManager {
         IPath linkPath = new Path(externalPath.toAbsolutePath().toString());
         folder.createLink(linkPath, org.eclipse.core.resources.IResource.NONE, new NullProgressMonitor());
         log.debug("Created linked folder: {} -> {}", folderName, externalPath);
+    }
+
+    /**
+     * Remove UUID-suffixed projects from prior sessions that survived a hard
+     * kill (the JavaLensLauncher shutdown hook didn't fire). Matches the
+     * pattern {@code "{baseName}-{8-hex}"} and skips the current session's
+     * own project. Best-effort: failures are logged at WARN and do not block
+     * the new session.
+     */
+    private void sweepStaleProjects(String baseName, String currentUniqueName) {
+        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(
+            java.util.regex.Pattern.quote(baseName) + "-[a-f0-9]{8}");
+        int swept = 0;
+        for (IProject existing : root.getProjects()) {
+            String existingName = existing.getName();
+            if (existingName.equals(currentUniqueName)) continue;
+            if (!pattern.matcher(existingName).matches()) continue;
+            try {
+                existing.delete(false, true, new NullProgressMonitor());
+                swept++;
+            } catch (CoreException e) {
+                log.warn("Failed to sweep stale project {}: {}", existingName, e.getMessage());
+            }
+        }
+        if (swept > 0) {
+            log.info("Swept {} stale UUID-suffixed project(s) from prior sessions", swept);
+        }
     }
 
     /**
