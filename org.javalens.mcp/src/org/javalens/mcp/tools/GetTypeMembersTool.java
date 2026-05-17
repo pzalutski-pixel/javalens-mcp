@@ -11,6 +11,7 @@ import org.eclipse.jdt.core.ITypeHierarchy;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.Signature;
 import org.javalens.core.IJdtService;
+import org.javalens.core.MethodFormatter;
 import org.javalens.core.ModifierFormatter;
 import org.javalens.core.TypeKindResolver;
 import org.javalens.mcp.models.ResponseMeta;
@@ -232,26 +233,7 @@ public class GetTypeMembersTool extends AbstractTool {
             int flags = method.getFlags();
             info.put("modifiers", ModifierFormatter.format(flags));
 
-            // Build signature
-            StringBuilder sig = new StringBuilder();
-            sig.append(method.getElementName()).append("(");
-            String[] paramTypes = method.getParameterTypes();
-            String[] paramNames = method.getParameterNames();
-            for (int i = 0; i < paramTypes.length; i++) {
-                if (i > 0) sig.append(", ");
-                sig.append(Signature.getSimpleName(Signature.toString(paramTypes[i])));
-                if (i < paramNames.length) {
-                    sig.append(" ").append(paramNames[i]);
-                }
-            }
-            sig.append(")");
-
-            if (!method.isConstructor()) {
-                String returnType = Signature.getSimpleName(Signature.toString(method.getReturnType()));
-                sig.append(": ").append(returnType);
-            }
-
-            info.put("signature", sig.toString());
+            info.put("signature", MethodFormatter.signature(method));
 
             if (declaredIn != null) {
                 info.put("declaredIn", declaredIn);

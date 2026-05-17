@@ -274,8 +274,8 @@ class GetEnclosingElementToolTest {
         assertEquals(Boolean.FALSE, enclosingMethod.get("isConstructor"));
         assertNotNull(enclosingMethod.get("signature"),
             "enclosingMethod.signature must be present; got: " + enclosingMethod);
-        assertEquals("add(int, int): int", enclosingMethod.get("signature"),
-            "Signature includes simple types and return type; got: " + enclosingMethod);
+        assertEquals("add(int a, int b): int", enclosingMethod.get("signature"),
+            "Signature includes simple types, parameter names, and return type; got: " + enclosingMethod);
         List<String> modifiers = (List<String>) enclosingMethod.get("modifiers");
         assertTrue(modifiers.contains("public"),
             "public modifier must appear; got: " + modifiers);

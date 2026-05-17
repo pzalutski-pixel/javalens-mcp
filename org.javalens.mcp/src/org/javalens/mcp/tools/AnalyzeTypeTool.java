@@ -14,6 +14,7 @@ import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.IJdtService;
+import org.javalens.core.MethodFormatter;
 import org.javalens.core.ModifierFormatter;
 import org.javalens.core.TypeKindResolver;
 import org.javalens.mcp.models.ResponseMeta;
@@ -199,26 +200,10 @@ public class AnalyzeTypeTool extends AbstractTool {
         info.put("name", method.getElementName());
         info.put("modifiers", ModifierFormatter.format(method.getFlags()));
 
-        // Signature
-        StringBuilder sig = new StringBuilder();
-        sig.append(method.getElementName()).append("(");
-        String[] paramTypes = method.getParameterTypes();
-        String[] paramNames = method.getParameterNames();
-        for (int i = 0; i < paramTypes.length; i++) {
-            if (i > 0) sig.append(", ");
-            sig.append(Signature.getSimpleName(Signature.toString(paramTypes[i])));
-            if (i < paramNames.length) {
-                sig.append(" ").append(paramNames[i]);
-            }
-        }
-        sig.append(")");
-        if (!method.isConstructor()) {
-            sig.append(": ").append(Signature.getSimpleName(Signature.toString(method.getReturnType())));
-        }
-        info.put("signature", sig.toString());
-
-        if (!method.isConstructor()) {
-            info.put("returnType", Signature.getSimpleName(Signature.toString(method.getReturnType())));
+        info.put("signature", MethodFormatter.signature(method));
+        String returnType = MethodFormatter.returnTypeSimpleName(method);
+        if (returnType != null) {
+            info.put("returnType", returnType);
         }
 
         // Exceptions

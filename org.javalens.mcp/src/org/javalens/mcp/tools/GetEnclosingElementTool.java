@@ -11,6 +11,7 @@ import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.Signature;
 import org.javalens.core.IJdtService;
+import org.javalens.core.MethodFormatter;
 import org.javalens.core.ModifierFormatter;
 import org.javalens.core.TypeKindResolver;
 import org.javalens.mcp.models.ResponseMeta;
@@ -195,19 +196,7 @@ public class GetEnclosingElementTool extends AbstractTool {
         info.put("name", method.getElementName());
         info.put("isConstructor", method.isConstructor());
 
-        // Build signature
-        StringBuilder sig = new StringBuilder();
-        sig.append(method.getElementName()).append("(");
-        String[] paramTypes = method.getParameterTypes();
-        for (int i = 0; i < paramTypes.length; i++) {
-            if (i > 0) sig.append(", ");
-            sig.append(Signature.getSimpleName(Signature.toString(paramTypes[i])));
-        }
-        sig.append(")");
-        if (!method.isConstructor()) {
-            sig.append(": ").append(Signature.getSimpleName(Signature.toString(method.getReturnType())));
-        }
-        info.put("signature", sig.toString());
+        info.put("signature", MethodFormatter.signature(method));
 
         info.put("modifiers", ModifierFormatter.format(method.getFlags()));
 

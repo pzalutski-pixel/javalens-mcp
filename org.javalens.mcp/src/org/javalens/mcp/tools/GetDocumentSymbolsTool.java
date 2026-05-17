@@ -10,6 +10,7 @@ import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.Signature;
 import org.javalens.core.IJdtService;
+import org.javalens.core.MethodFormatter;
 import org.javalens.core.ModifierFormatter;
 import org.javalens.core.TypeKindResolver;
 import org.javalens.mcp.models.ResponseMeta;
@@ -203,26 +204,7 @@ public class GetDocumentSymbolsTool extends AbstractTool {
 
             symbol.put("modifiers", ModifierFormatter.format(flags));
 
-            // Build signature
-            StringBuilder sig = new StringBuilder();
-            sig.append(method.getElementName()).append("(");
-            String[] paramTypes = method.getParameterTypes();
-            String[] paramNames = method.getParameterNames();
-            for (int i = 0; i < paramTypes.length; i++) {
-                if (i > 0) sig.append(", ");
-                sig.append(Signature.getSimpleName(Signature.toString(paramTypes[i])));
-                if (i < paramNames.length) {
-                    sig.append(" ").append(paramNames[i]);
-                }
-            }
-            sig.append(")");
-
-            if (!method.isConstructor()) {
-                String returnType = Signature.getSimpleName(Signature.toString(method.getReturnType()));
-                sig.append(": ").append(returnType);
-            }
-
-            symbol.put("signature", sig.toString());
+            symbol.put("signature", MethodFormatter.signature(method));
 
             int offset = method.getSourceRange().getOffset();
             symbol.put("line", service.getLineNumber(cu, offset));
