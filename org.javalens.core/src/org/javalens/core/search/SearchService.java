@@ -309,48 +309,6 @@ public class SearchService {
         return findFineGrainReferences(type, JDT_KIND.get(kind), maxResults);
     }
 
-    /** @deprecated use {@link #findReferences(IType, ReferenceKind, int)} with {@link ReferenceKind#ANNOTATION}. */
-    @Deprecated
-    public List<SearchMatch> findAnnotationUsages(IType annotationType, int maxResults) throws CoreException {
-        return findReferences(annotationType, ReferenceKind.ANNOTATION, maxResults);
-    }
-
-    /** @deprecated use {@link #findReferences(IType, ReferenceKind, int)} with {@link ReferenceKind#INSTANTIATION}. */
-    @Deprecated
-    public List<SearchMatch> findTypeInstantiations(IType type, int maxResults) throws CoreException {
-        return findReferences(type, ReferenceKind.INSTANTIATION, maxResults);
-    }
-
-    /** @deprecated use {@link #findReferences(IType, ReferenceKind, int)} with {@link ReferenceKind#CAST}. */
-    @Deprecated
-    public List<SearchMatch> findCasts(IType type, int maxResults) throws CoreException {
-        return findReferences(type, ReferenceKind.CAST, maxResults);
-    }
-
-    /** @deprecated use {@link #findReferences(IType, ReferenceKind, int)} with {@link ReferenceKind#INSTANCEOF}. */
-    @Deprecated
-    public List<SearchMatch> findInstanceofChecks(IType type, int maxResults) throws CoreException {
-        return findReferences(type, ReferenceKind.INSTANCEOF, maxResults);
-    }
-
-    /** @deprecated use {@link #findReferences(IType, ReferenceKind, int)} with {@link ReferenceKind#THROWS_CLAUSE}. */
-    @Deprecated
-    public List<SearchMatch> findThrowsDeclarations(IType exceptionType, int maxResults) throws CoreException {
-        return findReferences(exceptionType, ReferenceKind.THROWS_CLAUSE, maxResults);
-    }
-
-    /** @deprecated use {@link #findReferences(IType, ReferenceKind, int)} with {@link ReferenceKind#CATCH}. */
-    @Deprecated
-    public List<SearchMatch> findCatchBlocks(IType exceptionType, int maxResults) throws CoreException {
-        return findReferences(exceptionType, ReferenceKind.CATCH, maxResults);
-    }
-
-    /** @deprecated use {@link #findReferences(IType, ReferenceKind, int)} with {@link ReferenceKind#TYPE_ARGUMENT}. */
-    @Deprecated
-    public List<SearchMatch> findTypeArguments(IType type, int maxResults) throws CoreException {
-        return findReferences(type, ReferenceKind.TYPE_ARGUMENT, maxResults);
-    }
-
     /**
      * Find all method reference expressions ({@code Foo::bar} lambdas).
      * JDT-unique: distinct from the type-reference enum above because it

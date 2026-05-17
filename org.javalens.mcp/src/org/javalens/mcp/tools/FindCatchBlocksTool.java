@@ -1,24 +1,21 @@
 package org.javalens.mcp.tools;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import org.eclipse.jdt.core.IType;
-import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.IJdtService;
-import org.javalens.mcp.models.ResponseMeta;
-import org.javalens.mcp.models.ToolResponse;
+import org.javalens.core.search.SearchService;
 
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.function.Supplier;
 
 /**
- * Find all catch blocks for an exception type (catch(Foo e)).
+ * Find all catch blocks for an exception type ({@code catch(Foo e)}).
  *
- * JDT-unique capability: Uses CATCH_TYPE_REFERENCE to find only catch blocks,
- * not other type references. LSP cannot distinguish these.
+ * <p>JDT-unique capability: uses {@code CATCH_TYPE_REFERENCE} to find only
+ * catch blocks, not other type references. LSP cannot distinguish these.
+ *
+ * <p>Note: input param is named {@code typeName} (not the previous
+ * {@code exceptionType}) for consistency with the other 6 find_* tools.
  */
-public class FindCatchBlocksTool extends AbstractTool {
+public class FindCatchBlocksTool extends AbstractFineGrainReferenceTool {
 
     public FindCatchBlocksTool(Supplier<IJdtService> serviceSupplier) {
         super(serviceSupplier);
@@ -36,7 +33,7 @@ public class FindCatchBlocksTool extends AbstractTool {
 
             JDT-UNIQUE: This fine-grained search is not available in LSP.
 
-            USAGE: Provide fully qualified exception type name
+            USAGE: Provide fully qualified exception type name as `typeName`
             OUTPUT: All catch blocks that handle this exception type
 
             Useful for:
@@ -49,48 +46,25 @@ public class FindCatchBlocksTool extends AbstractTool {
     }
 
     @Override
-    public Map<String, Object> getInputSchema() {
-        return SchemaBuilder.object()
-            .required("exceptionType", "string", "Fully qualified exception type name (e.g., 'java.io.IOException')")
-            .optional("maxResults", "integer", "Maximum results to return (default 100)")
-            .build();
+    protected SearchService.ReferenceKind getReferenceKind() {
+        return SearchService.ReferenceKind.CATCH;
     }
 
     @Override
-    protected ToolResponse executeWithService(IJdtService service, JsonNode arguments) {
-        String exceptionTypeName = getStringParam(arguments, "exceptionType");
-        int maxResults = getIntParam(arguments, "maxResults", 100);
+    protected String getTypeNameParamDescription() {
+        return "Fully qualified exception type name (e.g., 'java.io.IOException')";
+    }
 
-        if (exceptionTypeName == null || exceptionTypeName.isBlank()) {
-            return ToolResponse.invalidParameter("exceptionType", "Exception type name is required");
-        }
+    @Override
+    protected String getAdvice() {
+        return null;
+    }
 
-        try {
-            IType type = service.findType(exceptionTypeName);
-            if (type == null) {
-                return ToolResponse.symbolNotFound("Exception type not found: " + exceptionTypeName);
-            }
-
-            List<SearchMatch> matches = service.getSearchService().findCatchBlocks(type, maxResults);
-            List<Map<String, Object>> catchBlocks = formatMatches(matches, service);
-
-            Map<String, Object> data = new LinkedHashMap<>();
-            data.put("exceptionType", exceptionTypeName);
-            data.put("totalCatchBlocks", catchBlocks.size());
-            data.put("catchBlocks", catchBlocks);
-
-            return ToolResponse.success(data, ResponseMeta.builder()
-                .totalCount(catchBlocks.size())
-                .returnedCount(catchBlocks.size())
-                .truncated(matches.size() >= maxResults)
-                .suggestedNextTools(List.of(
-                    "find_throws_declarations to find sources of this exception",
-                    "get_type_hierarchy to see exception hierarchy"
-                ))
-                .build());
-
-        } catch (Exception e) {
-            return ToolResponse.internalError(e);
-        }
+    @Override
+    protected List<String> getSuggestedNextTools() {
+        return List.of(
+            "find_throws_declarations to find sources of this exception",
+            "get_type_hierarchy to see exception hierarchy"
+        );
     }
 }

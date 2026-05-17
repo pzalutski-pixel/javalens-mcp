@@ -1,24 +1,24 @@
 package org.javalens.mcp.tools;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import org.eclipse.jdt.core.IType;
-import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.IJdtService;
-import org.javalens.mcp.models.ResponseMeta;
-import org.javalens.mcp.models.ToolResponse;
+import org.javalens.core.search.SearchService;
 
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.function.Supplier;
 
 /**
- * Find all throws declarations of an exception type (throws Foo in method signatures).
+ * Find all {@code throws} declarations of an exception type in method
+ * signatures.
  *
- * JDT-unique capability: Uses THROWS_CLAUSE_TYPE_REFERENCE to find only throws declarations,
- * not other type references. LSP cannot distinguish these.
+ * <p>JDT-unique capability: uses {@code THROWS_CLAUSE_TYPE_REFERENCE} to find
+ * only throws declarations, not other type references. LSP cannot distinguish
+ * these.
+ *
+ * <p>Note: input param is named {@code typeName} (not the previous
+ * {@code exceptionType}) for consistency with the other 6 find_* tools, per
+ * the {@code feedback_no_backwards_compat_for_ai_consumers} memory.
  */
-public class FindThrowsDeclarationsTool extends AbstractTool {
+public class FindThrowsDeclarationsTool extends AbstractFineGrainReferenceTool {
 
     public FindThrowsDeclarationsTool(Supplier<IJdtService> serviceSupplier) {
         super(serviceSupplier);
@@ -36,7 +36,7 @@ public class FindThrowsDeclarationsTool extends AbstractTool {
 
             JDT-UNIQUE: This fine-grained search is not available in LSP.
 
-            USAGE: Provide fully qualified exception type name
+            USAGE: Provide fully qualified exception type name as `typeName`
             OUTPUT: All methods that declare 'throws ExceptionType'
 
             Useful for:
@@ -49,48 +49,25 @@ public class FindThrowsDeclarationsTool extends AbstractTool {
     }
 
     @Override
-    public Map<String, Object> getInputSchema() {
-        return SchemaBuilder.object()
-            .required("exceptionType", "string", "Fully qualified exception type name (e.g., 'java.io.IOException')")
-            .optional("maxResults", "integer", "Maximum results to return (default 100)")
-            .build();
+    protected SearchService.ReferenceKind getReferenceKind() {
+        return SearchService.ReferenceKind.THROWS_CLAUSE;
     }
 
     @Override
-    protected ToolResponse executeWithService(IJdtService service, JsonNode arguments) {
-        String exceptionTypeName = getStringParam(arguments, "exceptionType");
-        int maxResults = getIntParam(arguments, "maxResults", 100);
+    protected String getTypeNameParamDescription() {
+        return "Fully qualified exception type name (e.g., 'java.io.IOException')";
+    }
 
-        if (exceptionTypeName == null || exceptionTypeName.isBlank()) {
-            return ToolResponse.invalidParameter("exceptionType", "Exception type name is required");
-        }
+    @Override
+    protected String getAdvice() {
+        return null;
+    }
 
-        try {
-            IType type = service.findType(exceptionTypeName);
-            if (type == null) {
-                return ToolResponse.symbolNotFound("Exception type not found: " + exceptionTypeName);
-            }
-
-            List<SearchMatch> matches = service.getSearchService().findThrowsDeclarations(type, maxResults);
-            List<Map<String, Object>> declarations = formatMatches(matches, service);
-
-            Map<String, Object> data = new LinkedHashMap<>();
-            data.put("exceptionType", exceptionTypeName);
-            data.put("totalDeclarations", declarations.size());
-            data.put("throwsDeclarations", declarations);
-
-            return ToolResponse.success(data, ResponseMeta.builder()
-                .totalCount(declarations.size())
-                .returnedCount(declarations.size())
-                .truncated(matches.size() >= maxResults)
-                .suggestedNextTools(List.of(
-                    "find_catch_blocks to find handlers for this exception",
-                    "get_type_hierarchy to see exception hierarchy"
-                ))
-                .build());
-
-        } catch (Exception e) {
-            return ToolResponse.internalError(e);
-        }
+    @Override
+    protected List<String> getSuggestedNextTools() {
+        return List.of(
+            "find_catch_blocks to find handlers for this exception",
+            "get_type_hierarchy to see exception hierarchy"
+        );
     }
 }

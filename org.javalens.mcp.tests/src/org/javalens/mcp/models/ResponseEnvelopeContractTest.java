@@ -119,11 +119,11 @@ class ResponseEnvelopeContractTest {
                     .put("maxResults", 1),
                 ctx -> new FindTypeInstantiationsTool(() -> ctx.service)),
             row("find_throws_declarations",
-                (ctx) -> ctx.args().put("exceptionType", "java.io.IOException")
+                (ctx) -> ctx.args().put("typeName", "java.io.IOException")
                     .put("maxResults", 1),
                 ctx -> new FindThrowsDeclarationsTool(() -> ctx.service)),
             row("find_catch_blocks",
-                (ctx) -> ctx.args().put("exceptionType", "java.lang.Exception")
+                (ctx) -> ctx.args().put("typeName", "java.lang.Exception")
                     .put("maxResults", 1),
                 ctx -> new FindCatchBlocksTool(() -> ctx.service)),
             row("find_type_arguments",
@@ -131,7 +131,7 @@ class ResponseEnvelopeContractTest {
                     .put("maxResults", 1),
                 ctx -> new FindTypeArgumentsTool(() -> ctx.service)),
             row("find_annotation_usages",
-                (ctx) -> ctx.args().put("annotation", "com.example.Marker")
+                (ctx) -> ctx.args().put("typeName", "com.example.Marker")
                     .put("maxResults", 1),
                 ctx -> new FindAnnotationUsagesTool(() -> ctx.service)),
             row("find_reflection_usage",

@@ -33,22 +33,22 @@ class FindThrowsDeclarationsToolTest {
     @SuppressWarnings("unchecked")
     private Map<String, Object> getData(ToolResponse r) { return (Map<String, Object>) r.getData(); }
     @SuppressWarnings("unchecked")
-    private List<?> getDeclarations(Map<String, Object> d) { return (List<?>) d.get("throwsDeclarations"); }
+    private List<?> getDeclarations(Map<String, Object> d) { return (List<?>) d.get("locations"); }
 
     @Test @DisplayName("finds throws declarations")
     void findsThrowsDeclarations() {
         ObjectNode args = objectMapper.createObjectNode();
-        args.put("exceptionType", "java.io.IOException");
+        args.put("typeName", "java.io.IOException");
         ToolResponse r = tool.execute(args);
         assertTrue(r.isSuccess());
         assertFalse(getDeclarations(getData(r)).isEmpty());
-        assertNotNull(getData(r).get("totalDeclarations"));
+        assertNotNull(getData(r).get("totalCount"));
     }
 
     @Test @DisplayName("respects maxResults")
     void respectsMaxResults() {
         ObjectNode args = objectMapper.createObjectNode();
-        args.put("exceptionType", "java.io.IOException");
+        args.put("typeName", "java.io.IOException");
         args.put("maxResults", 1);
         assertTrue(getDeclarations(getData(tool.execute(args))).size() <= 1);
     }
@@ -61,7 +61,7 @@ class FindThrowsDeclarationsToolTest {
     @Test @DisplayName("handles unknown exception type")
     void handlesUnknownType() {
         ObjectNode args = objectMapper.createObjectNode();
-        args.put("exceptionType", "com.nonexistent.X");
+        args.put("typeName", "com.nonexistent.X");
         assertFalse(tool.execute(args).isSuccess());
     }
 
@@ -71,14 +71,14 @@ class FindThrowsDeclarationsToolTest {
     @DisplayName("IOException throws declarations: SearchPatterns.readFile, SearchPatterns.riskyOperation, ControlFlowPatterns.tryWithResources")
     void ioException_findsExpectedDeclarations() {
         ObjectNode args = objectMapper.createObjectNode();
-        args.put("exceptionType", "java.io.IOException");
+        args.put("typeName", "java.io.IOException");
         args.put("maxResults", 100);
 
         ToolResponse r = tool.execute(args);
         assertTrue(r.isSuccess());
         // SearchPatterns.readFile throws IOException, riskyOperation throws IOException,
         // ControlFlowPatterns.tryWithResources throws IOException. Expect at least 3 matches.
-        int total = ((Number) getData(r).get("totalDeclarations")).intValue();
+        int total = ((Number) getData(r).get("totalCount")).intValue();
         assertTrue(total >= 3,
             "Expected at least 3 IOException throws declarations; got: "
                 + total + " (" + getDeclarations(getData(r)) + ")");
@@ -88,14 +88,14 @@ class FindThrowsDeclarationsToolTest {
 
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> declsOf(ToolResponse r) {
-        return (List<Map<String, Object>>) getData(r).get("throwsDeclarations");
+        return (List<Map<String, Object>>) getData(r).get("locations");
     }
 
     @Test
     @DisplayName("IOException throws declarations: exactly 4 across all fixtures")
     void ioException_exactCountAndFileSet() {
         ObjectNode args = objectMapper.createObjectNode();
-        args.put("exceptionType", "java.io.IOException");
+        args.put("typeName", "java.io.IOException");
         args.put("maxResults", 100);
 
         ToolResponse r = tool.execute(args);
@@ -124,7 +124,7 @@ class FindThrowsDeclarationsToolTest {
     @DisplayName("Each declaration entry includes filePath, line, column, offset, length, context")
     void declarationEntries_includeFullLocation() {
         ObjectNode args = objectMapper.createObjectNode();
-        args.put("exceptionType", "java.io.IOException");
+        args.put("typeName", "java.io.IOException");
         args.put("maxResults", 100);
 
         ToolResponse r = tool.execute(args);
@@ -151,7 +151,7 @@ class FindThrowsDeclarationsToolTest {
         //  - SearchPatterns.riskyOperation (multi-throws)
         //  - InterfaceExtractTarget.validate
         ObjectNode args = objectMapper.createObjectNode();
-        args.put("exceptionType", "java.lang.IllegalArgumentException");
+        args.put("typeName", "java.lang.IllegalArgumentException");
         args.put("maxResults", 100);
 
         ToolResponse r = tool.execute(args);
@@ -167,13 +167,13 @@ class FindThrowsDeclarationsToolTest {
         // riskyOperation has `throws IOException, IllegalArgumentException`. Both queries
         // must find a declaration on the SAME source line (1-based 124, 0-based 123).
         ObjectNode args = objectMapper.createObjectNode();
-        args.put("exceptionType", "java.io.IOException");
+        args.put("typeName", "java.io.IOException");
         args.put("maxResults", 100);
         ToolResponse rIo = tool.execute(args);
         assertTrue(rIo.isSuccess());
 
         ObjectNode args2 = objectMapper.createObjectNode();
-        args2.put("exceptionType", "java.lang.IllegalArgumentException");
+        args2.put("typeName", "java.lang.IllegalArgumentException");
         args2.put("maxResults", 100);
         ToolResponse rIae = tool.execute(args2);
         assertTrue(rIae.isSuccess());
@@ -193,7 +193,7 @@ class FindThrowsDeclarationsToolTest {
     @DisplayName("maxResults caps and sets meta.truncated=true")
     void maxResults_capsAndSetsTruncated() {
         ObjectNode args = objectMapper.createObjectNode();
-        args.put("exceptionType", "java.io.IOException");
+        args.put("typeName", "java.io.IOException");
         args.put("maxResults", 2);
 
         ToolResponse r = tool.execute(args);
@@ -209,7 +209,7 @@ class FindThrowsDeclarationsToolTest {
     @DisplayName("Large maxResults: returns all and meta.truncated=false")
     void maxResults_large_noTruncation() {
         ObjectNode args = objectMapper.createObjectNode();
-        args.put("exceptionType", "java.io.IOException");
+        args.put("typeName", "java.io.IOException");
         args.put("maxResults", 1000);
 
         ToolResponse r = tool.execute(args);
@@ -223,11 +223,11 @@ class FindThrowsDeclarationsToolTest {
     @DisplayName("totalDeclarations == throwsDeclarations.size()")
     void totalDeclarations_equalsListSize() {
         ObjectNode args = objectMapper.createObjectNode();
-        args.put("exceptionType", "java.io.IOException");
+        args.put("typeName", "java.io.IOException");
 
         ToolResponse r = tool.execute(args);
         assertTrue(r.isSuccess());
-        int total = ((Number) getData(r).get("totalDeclarations")).intValue();
+        int total = ((Number) getData(r).get("totalCount")).intValue();
         assertEquals(total, declsOf(r).size());
     }
 }

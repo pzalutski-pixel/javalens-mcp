@@ -140,7 +140,7 @@ class Java21SyntaxToleranceTest {
         @SuppressWarnings("unchecked")
         Map<String, Object> data = (Map<String, Object>) r.getData();
         @SuppressWarnings("unchecked")
-        List<Map<String, Object>> locations = (List<Map<String, Object>>) data.get("instanceofChecks");
+        List<Map<String, Object>> locations = (List<Map<String, Object>>) data.get("locations");
         assertNotNull(locations);
         // Java21Modern.legacyVsPatternInstanceof has TWO String instanceof sites:
         // one legacy ("instanceof String") and one pattern ("instanceof String s").

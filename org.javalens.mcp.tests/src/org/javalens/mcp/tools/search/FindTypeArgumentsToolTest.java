@@ -33,7 +33,7 @@ class FindTypeArgumentsToolTest {
     @SuppressWarnings("unchecked")
     private Map<String, Object> getData(ToolResponse r) { return (Map<String, Object>) r.getData(); }
     @SuppressWarnings("unchecked")
-    private List<?> getUsages(Map<String, Object> d) { return (List<?>) d.get("typeArgumentUsages"); }
+    private List<?> getUsages(Map<String, Object> d) { return (List<?>) d.get("locations"); }
 
     @Test @DisplayName("finds type argument usages")
     void findsTypeArgumentUsages() {
@@ -42,7 +42,7 @@ class FindTypeArgumentsToolTest {
         ToolResponse r = tool.execute(args);
         assertTrue(r.isSuccess());
         assertFalse(getUsages(getData(r)).isEmpty());
-        assertNotNull(getData(r).get("totalUsages"));
+        assertNotNull(getData(r).get("totalCount"));
     }
 
     @Test @DisplayName("respects maxResults")
@@ -79,7 +79,7 @@ class FindTypeArgumentsToolTest {
         // SearchPatterns declares `private List<Calculator> calculatorList;` and inside
         // useGenerics has `List<Calculator> calcs = new ArrayList<>();`. JDT may report 1
         // or 2 depending on how `new ArrayList<>()`'s diamond inference is counted.
-        int total = ((Number) getData(r).get("totalUsages")).intValue();
+        int total = ((Number) getData(r).get("totalCount")).intValue();
         assertTrue(total >= 1,
             "Expected at least 1 List<Calculator> usage; got: "
                 + total + " (" + getUsages(getData(r)) + ")");
@@ -89,7 +89,7 @@ class FindTypeArgumentsToolTest {
 
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> usagesOf(ToolResponse r) {
-        return (List<Map<String, Object>>) getData(r).get("typeArgumentUsages");
+        return (List<Map<String, Object>>) getData(r).get("locations");
     }
 
     @Test
@@ -226,7 +226,7 @@ class FindTypeArgumentsToolTest {
 
         ToolResponse r = tool.execute(args);
         assertTrue(r.isSuccess());
-        int total = ((Number) getData(r).get("totalUsages")).intValue();
+        int total = ((Number) getData(r).get("totalCount")).intValue();
         assertEquals(total, usagesOf(r).size());
     }
 }

@@ -33,22 +33,22 @@ class FindCatchBlocksToolTest {
     @SuppressWarnings("unchecked")
     private Map<String, Object> getData(ToolResponse r) { return (Map<String, Object>) r.getData(); }
     @SuppressWarnings("unchecked")
-    private List<?> getCatchBlocks(Map<String, Object> d) { return (List<?>) d.get("catchBlocks"); }
+    private List<?> getCatchBlocks(Map<String, Object> d) { return (List<?>) d.get("locations"); }
 
     @Test @DisplayName("finds catch blocks")
     void findsCatchBlocks() {
         ObjectNode args = objectMapper.createObjectNode();
-        args.put("exceptionType", "java.io.IOException");
+        args.put("typeName", "java.io.IOException");
         ToolResponse r = tool.execute(args);
         assertTrue(r.isSuccess());
         assertFalse(getCatchBlocks(getData(r)).isEmpty());
-        assertNotNull(getData(r).get("totalCatchBlocks"));
+        assertNotNull(getData(r).get("totalCount"));
     }
 
     @Test @DisplayName("respects maxResults")
     void respectsMaxResults() {
         ObjectNode args = objectMapper.createObjectNode();
-        args.put("exceptionType", "java.io.IOException");
+        args.put("typeName", "java.io.IOException");
         args.put("maxResults", 1);
         assertTrue(getCatchBlocks(getData(tool.execute(args))).size() <= 1);
     }
@@ -61,7 +61,7 @@ class FindCatchBlocksToolTest {
     @Test @DisplayName("handles unknown exception type")
     void handlesUnknownType() {
         ObjectNode args = objectMapper.createObjectNode();
-        args.put("exceptionType", "com.nonexistent.X");
+        args.put("typeName", "com.nonexistent.X");
         assertFalse(tool.execute(args).isSuccess());
     }
 
@@ -71,7 +71,7 @@ class FindCatchBlocksToolTest {
     @DisplayName("IOException catch blocks: SearchPatterns.handleExceptions has two; ControlFlowPatterns has none directly catching IOException")
     void ioException_findsExpectedCatchBlocks() {
         ObjectNode args = objectMapper.createObjectNode();
-        args.put("exceptionType", "java.io.IOException");
+        args.put("typeName", "java.io.IOException");
         args.put("maxResults", 100);
 
         ToolResponse r = tool.execute(args);
@@ -79,7 +79,7 @@ class FindCatchBlocksToolTest {
         // SearchPatterns.handleExceptions has two catch (IOException ...) blocks
         // plus ControlFlowPatterns.multiCatch's `catch (NumberFormatException | IOException e)`.
         // Total >= 3.
-        int total = ((Number) getData(r).get("totalCatchBlocks")).intValue();
+        int total = ((Number) getData(r).get("totalCount")).intValue();
         assertTrue(total >= 3,
             "Expected at least 3 IOException catch blocks; got: "
                 + total + " (" + getCatchBlocks(getData(r)) + ")");
@@ -89,14 +89,14 @@ class FindCatchBlocksToolTest {
 
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> blocksOf(ToolResponse r) {
-        return (List<Map<String, Object>>) getData(r).get("catchBlocks");
+        return (List<Map<String, Object>>) getData(r).get("locations");
     }
 
     @Test
     @DisplayName("IOException catch blocks: exactly 3 across SearchPatterns (x2) and ControlFlowPatterns multi-catch")
     void ioException_exactCountAndFileSet() {
         ObjectNode args = objectMapper.createObjectNode();
-        args.put("exceptionType", "java.io.IOException");
+        args.put("typeName", "java.io.IOException");
         args.put("maxResults", 100);
 
         ToolResponse r = tool.execute(args);
@@ -124,7 +124,7 @@ class FindCatchBlocksToolTest {
     @DisplayName("Catch-block entries include filePath, line, column, offset, length, context")
     void catchBlockEntries_includeFullLocation() {
         ObjectNode args = objectMapper.createObjectNode();
-        args.put("exceptionType", "java.io.IOException");
+        args.put("typeName", "java.io.IOException");
         args.put("maxResults", 100);
 
         ToolResponse r = tool.execute(args);
@@ -147,7 +147,7 @@ class FindCatchBlocksToolTest {
         // IllegalStateException is used in a catch clause (ControlFlowPatterns nested try)
         // and nowhere else in throws/instanceof/instantiations in our fixtures. Exactly 1.
         ObjectNode args = objectMapper.createObjectNode();
-        args.put("exceptionType", "java.lang.IllegalStateException");
+        args.put("typeName", "java.lang.IllegalStateException");
         args.put("maxResults", 100);
 
         ToolResponse r = tool.execute(args);
@@ -163,13 +163,13 @@ class FindCatchBlocksToolTest {
         // ControlFlowPatterns.multiCatch: `catch (NumberFormatException | IOException e)`
         // at 0-based line 123.
         ObjectNode args1 = objectMapper.createObjectNode();
-        args1.put("exceptionType", "java.io.IOException");
+        args1.put("typeName", "java.io.IOException");
         args1.put("maxResults", 100);
         ToolResponse rIo = tool.execute(args1);
         assertTrue(rIo.isSuccess());
 
         ObjectNode args2 = objectMapper.createObjectNode();
-        args2.put("exceptionType", "java.lang.NumberFormatException");
+        args2.put("typeName", "java.lang.NumberFormatException");
         args2.put("maxResults", 100);
         ToolResponse rNfe = tool.execute(args2);
         assertTrue(rNfe.isSuccess());
@@ -189,7 +189,7 @@ class FindCatchBlocksToolTest {
     @DisplayName("maxResults caps and sets meta.truncated=true")
     void maxResults_capsAndSetsTruncated() {
         ObjectNode args = objectMapper.createObjectNode();
-        args.put("exceptionType", "java.io.IOException");
+        args.put("typeName", "java.io.IOException");
         args.put("maxResults", 2);
 
         ToolResponse r = tool.execute(args);
@@ -205,7 +205,7 @@ class FindCatchBlocksToolTest {
     @DisplayName("Large maxResults: meta.truncated=false")
     void maxResults_large_noTruncation() {
         ObjectNode args = objectMapper.createObjectNode();
-        args.put("exceptionType", "java.io.IOException");
+        args.put("typeName", "java.io.IOException");
         args.put("maxResults", 1000);
 
         ToolResponse r = tool.execute(args);
@@ -219,11 +219,11 @@ class FindCatchBlocksToolTest {
     @DisplayName("totalCatchBlocks == catchBlocks.size()")
     void totalCatchBlocks_equalsListSize() {
         ObjectNode args = objectMapper.createObjectNode();
-        args.put("exceptionType", "java.io.IOException");
+        args.put("typeName", "java.io.IOException");
 
         ToolResponse r = tool.execute(args);
         assertTrue(r.isSuccess());
-        int total = ((Number) getData(r).get("totalCatchBlocks")).intValue();
+        int total = ((Number) getData(r).get("totalCount")).intValue();
         assertEquals(total, blocksOf(r).size());
     }
 }

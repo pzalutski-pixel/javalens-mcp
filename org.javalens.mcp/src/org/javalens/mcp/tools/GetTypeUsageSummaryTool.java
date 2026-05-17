@@ -80,10 +80,11 @@ public class GetTypeUsageSummaryTool extends AbstractTool {
 
             Map<String, Object> summary = new LinkedHashMap<>();
             int totalUsages = 0;
+            org.javalens.core.search.SearchService search = service.getSearchService();
 
             // Instantiations (new Foo())
-            List<SearchMatch> instantiations = service.getSearchService()
-                .findTypeInstantiations(type, maxPerCategory);
+            List<SearchMatch> instantiations = search.findReferences(
+                type, org.javalens.core.search.SearchService.ReferenceKind.INSTANTIATION, maxPerCategory);
             List<Map<String, Object>> instantiationResults = formatMatches(instantiations, service);
             summary.put("instantiations", Map.of(
                 "count", instantiationResults.size(),
@@ -92,8 +93,8 @@ public class GetTypeUsageSummaryTool extends AbstractTool {
             totalUsages += instantiationResults.size();
 
             // Casts ((Foo) x)
-            List<SearchMatch> casts = service.getSearchService()
-                .findCasts(type, maxPerCategory);
+            List<SearchMatch> casts = search.findReferences(
+                type, org.javalens.core.search.SearchService.ReferenceKind.CAST, maxPerCategory);
             List<Map<String, Object>> castResults = formatMatches(casts, service);
             summary.put("casts", Map.of(
                 "count", castResults.size(),
@@ -102,8 +103,8 @@ public class GetTypeUsageSummaryTool extends AbstractTool {
             totalUsages += castResults.size();
 
             // Instanceof checks (x instanceof Foo)
-            List<SearchMatch> instanceofChecks = service.getSearchService()
-                .findInstanceofChecks(type, maxPerCategory);
+            List<SearchMatch> instanceofChecks = search.findReferences(
+                type, org.javalens.core.search.SearchService.ReferenceKind.INSTANCEOF, maxPerCategory);
             List<Map<String, Object>> instanceofResults = formatMatches(instanceofChecks, service);
             summary.put("instanceofChecks", Map.of(
                 "count", instanceofResults.size(),
@@ -112,8 +113,8 @@ public class GetTypeUsageSummaryTool extends AbstractTool {
             totalUsages += instanceofResults.size();
 
             // Type arguments (List<Foo>)
-            List<SearchMatch> typeArgs = service.getSearchService()
-                .findTypeArguments(type, maxPerCategory);
+            List<SearchMatch> typeArgs = search.findReferences(
+                type, org.javalens.core.search.SearchService.ReferenceKind.TYPE_ARGUMENT, maxPerCategory);
             List<Map<String, Object>> typeArgResults = formatMatches(typeArgs, service);
             summary.put("typeArguments", Map.of(
                 "count", typeArgResults.size(),
@@ -123,8 +124,8 @@ public class GetTypeUsageSummaryTool extends AbstractTool {
 
             // Annotation usages (if annotation type)
             if (type.isAnnotation()) {
-                List<SearchMatch> annotations = service.getSearchService()
-                    .findAnnotationUsages(type, maxPerCategory);
+                List<SearchMatch> annotations = search.findReferences(
+                    type, org.javalens.core.search.SearchService.ReferenceKind.ANNOTATION, maxPerCategory);
                 List<Map<String, Object>> annotationResults = formatMatches(annotations, service);
                 summary.put("annotationUsages", Map.of(
                     "count", annotationResults.size(),

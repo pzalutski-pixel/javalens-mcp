@@ -1,24 +1,19 @@
 package org.javalens.mcp.tools;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import org.eclipse.jdt.core.IType;
-import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.IJdtService;
-import org.javalens.mcp.models.ResponseMeta;
-import org.javalens.mcp.models.ToolResponse;
+import org.javalens.core.search.SearchService;
 
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.function.Supplier;
 
 /**
- * Find all instanceof checks for a type (x instanceof Foo).
+ * Find all {@code instanceof} checks for a type ({@code x instanceof Foo}).
  *
- * JDT-unique capability: Uses INSTANCEOF_TYPE_REFERENCE to find only instanceof checks,
- * not other type references. LSP cannot distinguish these.
+ * <p>JDT-unique capability: uses {@code INSTANCEOF_TYPE_REFERENCE} to find
+ * only instanceof checks, not other type references. LSP cannot distinguish
+ * these.
  */
-public class FindInstanceofChecksTool extends AbstractTool {
+public class FindInstanceofChecksTool extends AbstractFineGrainReferenceTool {
 
     public FindInstanceofChecksTool(Supplier<IJdtService> serviceSupplier) {
         super(serviceSupplier);
@@ -49,52 +44,25 @@ public class FindInstanceofChecksTool extends AbstractTool {
     }
 
     @Override
-    public Map<String, Object> getInputSchema() {
-        return SchemaBuilder.object()
-            .required("typeName", "string", "Fully qualified type name to find instanceof checks for")
-            .optional("maxResults", "integer", "Maximum results to return (default 100)")
-            .build();
+    protected SearchService.ReferenceKind getReferenceKind() {
+        return SearchService.ReferenceKind.INSTANCEOF;
     }
 
     @Override
-    protected ToolResponse executeWithService(IJdtService service, JsonNode arguments) {
-        String typeName = getStringParam(arguments, "typeName");
-        int maxResults = getIntParam(arguments, "maxResults", 100);
+    protected String getTypeNameParamDescription() {
+        return "Fully qualified type name to find instanceof checks for";
+    }
 
-        if (typeName == null || typeName.isBlank()) {
-            return ToolResponse.invalidParameter("typeName", "Type name is required");
-        }
+    @Override
+    protected String getAdvice() {
+        return "Consider visitor pattern or polymorphism to replace instanceof chains";
+    }
 
-        try {
-            IType type = service.findType(typeName);
-            if (type == null) {
-                return ToolResponse.symbolNotFound("Type not found: " + typeName);
-            }
-
-            List<SearchMatch> matches = service.getSearchService().findInstanceofChecks(type, maxResults);
-            List<Map<String, Object>> checks = formatMatches(matches, service);
-
-            Map<String, Object> data = new LinkedHashMap<>();
-            data.put("typeName", typeName);
-            data.put("totalChecks", checks.size());
-            data.put("instanceofChecks", checks);
-
-            if (!checks.isEmpty()) {
-                data.put("suggestion", "Consider visitor pattern or polymorphism to replace instanceof chains");
-            }
-
-            return ToolResponse.success(data, ResponseMeta.builder()
-                .totalCount(checks.size())
-                .returnedCount(checks.size())
-                .truncated(matches.size() >= maxResults)
-                .suggestedNextTools(List.of(
-                    "find_casts to find related cast expressions",
-                    "get_type_hierarchy to understand inheritance"
-                ))
-                .build());
-
-        } catch (Exception e) {
-            return ToolResponse.internalError(e);
-        }
+    @Override
+    protected List<String> getSuggestedNextTools() {
+        return List.of(
+            "find_casts to find related cast expressions",
+            "get_type_hierarchy to understand inheritance"
+        );
     }
 }

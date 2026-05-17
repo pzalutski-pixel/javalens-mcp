@@ -304,27 +304,29 @@ public class AnalyzeTypeTool extends AbstractTool {
         int total = 0;
 
         try {
+            org.javalens.core.search.SearchService search = service.getSearchService();
+
             // Instantiations
-            List<SearchMatch> instantiations = service.getSearchService()
-                .findTypeInstantiations(type, maxUsages);
+            List<SearchMatch> instantiations = search.findReferences(
+                type, org.javalens.core.search.SearchService.ReferenceKind.INSTANTIATION, maxUsages);
             usages.put("instantiations", instantiations.size());
             total += instantiations.size();
 
             // Casts
-            List<SearchMatch> casts = service.getSearchService()
-                .findCasts(type, maxUsages);
+            List<SearchMatch> casts = search.findReferences(
+                type, org.javalens.core.search.SearchService.ReferenceKind.CAST, maxUsages);
             usages.put("casts", casts.size());
             total += casts.size();
 
             // Instanceof
-            List<SearchMatch> instanceofs = service.getSearchService()
-                .findInstanceofChecks(type, maxUsages);
+            List<SearchMatch> instanceofs = search.findReferences(
+                type, org.javalens.core.search.SearchService.ReferenceKind.INSTANCEOF, maxUsages);
             usages.put("instanceofChecks", instanceofs.size());
             total += instanceofs.size();
 
             // Type arguments
-            List<SearchMatch> typeArgs = service.getSearchService()
-                .findTypeArguments(type, maxUsages);
+            List<SearchMatch> typeArgs = search.findReferences(
+                type, org.javalens.core.search.SearchService.ReferenceKind.TYPE_ARGUMENT, maxUsages);
             usages.put("typeArguments", typeArgs.size());
             total += typeArgs.size();
 

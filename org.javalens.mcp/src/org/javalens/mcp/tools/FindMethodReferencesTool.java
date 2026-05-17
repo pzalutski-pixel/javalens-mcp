@@ -94,8 +94,8 @@ public class FindMethodReferencesTool extends AbstractTool {
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("methodName", method.getElementName());
             data.put("declaringType", method.getDeclaringType().getFullyQualifiedName());
-            data.put("totalMethodReferences", methodRefs.size());
-            data.put("methodReferences", methodRefs);
+            data.put("totalCount", methodRefs.size());
+            data.put("locations", methodRefs);
 
             return ToolResponse.success(data, ResponseMeta.builder()
                 .totalCount(methodRefs.size())

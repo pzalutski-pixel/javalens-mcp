@@ -33,23 +33,23 @@ class FindAnnotationUsagesToolTest {
     @SuppressWarnings("unchecked")
     private Map<String, Object> getData(ToolResponse r) { return (Map<String, Object>) r.getData(); }
     @SuppressWarnings("unchecked")
-    private List<?> getUsages(Map<String, Object> d) { return (List<?>) d.get("usages"); }
+    private List<?> getUsages(Map<String, Object> d) { return (List<?>) d.get("locations"); }
 
     @Test @DisplayName("finds annotation usages")
     void findsAnnotationUsages() {
         ObjectNode args = objectMapper.createObjectNode();
-        args.put("annotation", "java.lang.Override");
+        args.put("typeName", "java.lang.Override");
         ToolResponse r = tool.execute(args);
         assertTrue(r.isSuccess());
         assertFalse(getUsages(getData(r)).isEmpty());
-        assertNotNull(getData(r).get("totalUsages"));
-        assertEquals("java.lang.Override", getData(r).get("annotation"));
+        assertNotNull(getData(r).get("totalCount"));
+        assertEquals("java.lang.Override", getData(r).get("typeName"));
     }
 
     @Test @DisplayName("respects maxResults")
     void respectsMaxResults() {
         ObjectNode args = objectMapper.createObjectNode();
-        args.put("annotation", "java.lang.Override");
+        args.put("typeName", "java.lang.Override");
         args.put("maxResults", 1);
         assertTrue(getUsages(getData(tool.execute(args))).size() <= 1);
     }
@@ -62,7 +62,7 @@ class FindAnnotationUsagesToolTest {
     @Test @DisplayName("handles unknown annotation")
     void handlesUnknownAnnotation() {
         ObjectNode args = objectMapper.createObjectNode();
-        args.put("annotation", "com.nonexistent.X");
+        args.put("typeName", "com.nonexistent.X");
         assertFalse(tool.execute(args).isSuccess());
     }
 
@@ -72,7 +72,7 @@ class FindAnnotationUsagesToolTest {
     @DisplayName("@Marker usages from AnnotationUsages span all 6 documented targets")
     void marker_findsAllDocumentedTargets() {
         ObjectNode args = objectMapper.createObjectNode();
-        args.put("annotation", "com.example.Marker");
+        args.put("typeName", "com.example.Marker");
         args.put("maxResults", 100);
 
         ToolResponse r = tool.execute(args);
@@ -82,23 +82,23 @@ class FindAnnotationUsagesToolTest {
         // method markedMethod, parameter p in markedParameter, local 'local' inside
         // markedParameter, and the type-use 'List<@Marker String>' return in typeUseUsage.
         // Expect at least 6 usages found (depending on JDT's type-use representation).
-        assertTrue(((Number) data.get("totalUsages")).intValue() >= 6,
+        assertTrue(((Number) data.get("totalCount")).intValue() >= 6,
             "Expected at least 6 @Marker usages across all documented targets; got: "
-                + data.get("totalUsages") + " (" + getUsages(data) + ")");
+                + data.get("totalCount") + " (" + getUsages(data) + ")");
     }
 
     // ========== Behavior-matrix coverage ==========
 
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> usagesOf(ToolResponse r) {
-        return (List<Map<String, Object>>) getData(r).get("usages");
+        return (List<Map<String, Object>>) getData(r).get("locations");
     }
 
     @Test
     @DisplayName("Usage entries expose filePath, line, column, offset, length")
     void marker_usageEntriesIncludeLocation() {
         ObjectNode args = objectMapper.createObjectNode();
-        args.put("annotation", "com.example.Marker");
+        args.put("typeName", "com.example.Marker");
         args.put("maxResults", 100);
 
         ToolResponse r = tool.execute(args);
@@ -118,7 +118,7 @@ class FindAnnotationUsagesToolTest {
     @DisplayName("Marker.java itself has no @Marker usages — all usages are in AnnotationUsages.java")
     void marker_isolation_allUsagesInAnnotationUsagesJava() {
         ObjectNode args = objectMapper.createObjectNode();
-        args.put("annotation", "com.example.Marker");
+        args.put("typeName", "com.example.Marker");
         args.put("maxResults", 100);
 
         ToolResponse r = tool.execute(args);
@@ -134,7 +134,7 @@ class FindAnnotationUsagesToolTest {
     @DisplayName("Top-level @Repeatable @Label is found at both occurrences on repeatedLabels()")
     void label_repeatableAnnotation_findsBothOccurrences() {
         ObjectNode args = objectMapper.createObjectNode();
-        args.put("annotation", "com.example.Label");
+        args.put("typeName", "com.example.Label");
         args.put("maxResults", 100);
 
         ToolResponse r = tool.execute(args);
@@ -151,7 +151,7 @@ class FindAnnotationUsagesToolTest {
     @DisplayName("maxResults caps usages list and sets meta.truncated=true")
     void maxResults_capsAndSetsTruncatedTrue() {
         ObjectNode args = objectMapper.createObjectNode();
-        args.put("annotation", "com.example.Marker");
+        args.put("typeName", "com.example.Marker");
         args.put("maxResults", 2);
 
         ToolResponse r = tool.execute(args);
@@ -169,7 +169,7 @@ class FindAnnotationUsagesToolTest {
     @DisplayName("Large maxResults returns all usages and meta.truncated=false")
     void maxResults_large_noTruncation() {
         ObjectNode args = objectMapper.createObjectNode();
-        args.put("annotation", "com.example.AnnotationsFixture.Tag");
+        args.put("typeName", "com.example.AnnotationsFixture.Tag");
         args.put("maxResults", 1000);
 
         ToolResponse r = tool.execute(args);
@@ -185,13 +185,13 @@ class FindAnnotationUsagesToolTest {
     @DisplayName("totalUsages == usages.size()")
     void totalUsagesEqualsUsagesSize() {
         ObjectNode args = objectMapper.createObjectNode();
-        args.put("annotation", "com.example.Marker");
+        args.put("typeName", "com.example.Marker");
         args.put("maxResults", 100);
 
         ToolResponse r = tool.execute(args);
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
-        int total = ((Number) data.get("totalUsages")).intValue();
+        int total = ((Number) data.get("totalCount")).intValue();
         assertEquals(total, usagesOf(r).size(),
             "totalUsages must equal usages list size in this response");
     }

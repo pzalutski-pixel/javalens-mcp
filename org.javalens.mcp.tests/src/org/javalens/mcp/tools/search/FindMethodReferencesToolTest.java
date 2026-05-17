@@ -54,9 +54,9 @@ class FindMethodReferencesToolTest {
         Map<String, Object> data = getData(r);
         assertEquals("add", data.get("methodName"));
         assertEquals("com.example.Calculator", data.get("declaringType"));
-        assertNotNull(data.get("methodReferences"),
+        assertNotNull(data.get("locations"),
             "methodReferences must always be a list (possibly empty), not null");
-        assertNotNull(data.get("totalMethodReferences"));
+        assertNotNull(data.get("totalCount"));
     }
 
     @Test @DisplayName("requires filePath")
@@ -114,10 +114,10 @@ class FindMethodReferencesToolTest {
         assertEquals("com.example.MethodRefTarget", data.get("declaringType"));
 
         @SuppressWarnings("unchecked")
-        List<Map<String, Object>> refs = (List<Map<String, Object>>) data.get("methodReferences");
-        assertEquals(1, ((Number) data.get("totalMethodReferences")).intValue(),
+        List<Map<String, Object>> refs = (List<Map<String, Object>>) data.get("locations");
+        assertEquals(1, ((Number) data.get("totalCount")).intValue(),
             "MethodRefUser uses `MethodRefTarget::formatId` exactly once; got: "
-                + data.get("totalMethodReferences") + " (" + refs + ")");
+                + data.get("totalCount") + " (" + refs + ")");
 
         // The single match must come from MethodRefUser.java.
         Map<String, Object> ref = refs.get(0);
@@ -147,7 +147,7 @@ class FindMethodReferencesToolTest {
         // uses other JDK method references (String::valueOf, ArrayList::new, etc.) but
         // not Calculator::add.
         @SuppressWarnings("unchecked")
-        List<Map<String, Object>> refs = (List<Map<String, Object>>) data.get("methodReferences");
+        List<Map<String, Object>> refs = (List<Map<String, Object>>) data.get("locations");
         assertNotNull(refs);
         assertEquals(0, refs.size(),
             "Calculator.add is never used as a method reference; got: " + refs);
@@ -191,7 +191,7 @@ class FindMethodReferencesToolTest {
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
         assertEquals("greet", data.get("methodName"));
-        List<Map<String, Object>> refs = (List<Map<String, Object>>) data.get("methodReferences");
+        List<Map<String, Object>> refs = (List<Map<String, Object>>) data.get("locations");
         // MethodRefUser uses `instance::greet` once.
         assertEquals(1, refs.size(),
             "greet should have exactly one bound method-reference usage; got: " + refs);
@@ -219,7 +219,7 @@ class FindMethodReferencesToolTest {
         assertTrue(r.isSuccess(),
             "Position on constructor must resolve; got: " +
                 (r.getError() != null ? r.getError().getMessage() : "n/a"));
-        List<Map<String, Object>> refs = (List<Map<String, Object>>) getData(r).get("methodReferences");
+        List<Map<String, Object>> refs = (List<Map<String, Object>>) getData(r).get("locations");
         assertNotNull(refs);
         // MethodRefUser uses `MethodRefTarget::new` once. The tool's method-reference
         // search may or may not match constructors depending on JDT semantics — if
@@ -236,7 +236,7 @@ class FindMethodReferencesToolTest {
             .resolve("src/main/java/com/example/MethodRefTarget.java").toString();
         ToolResponse r = tool.execute(argsAtIdentifier(tgt, "formatId"));
         assertTrue(r.isSuccess());
-        List<Map<String, Object>> refs = (List<Map<String, Object>>) getData(r).get("methodReferences");
+        List<Map<String, Object>> refs = (List<Map<String, Object>>) getData(r).get("locations");
         assertFalse(refs.isEmpty());
         Map<String, Object> ref = refs.get(0);
         assertNotNull(ref.get("filePath"));

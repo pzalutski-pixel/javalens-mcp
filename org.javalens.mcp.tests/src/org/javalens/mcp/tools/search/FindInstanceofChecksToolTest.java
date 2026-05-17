@@ -33,7 +33,7 @@ class FindInstanceofChecksToolTest {
     @SuppressWarnings("unchecked")
     private Map<String, Object> getData(ToolResponse r) { return (Map<String, Object>) r.getData(); }
     @SuppressWarnings("unchecked")
-    private List<?> getChecks(Map<String, Object> d) { return (List<?>) d.get("instanceofChecks"); }
+    private List<?> getChecks(Map<String, Object> d) { return (List<?>) d.get("locations"); }
 
     @Test @DisplayName("finds instanceof checks")
     void findsInstanceofChecks() {
@@ -42,7 +42,7 @@ class FindInstanceofChecksToolTest {
         ToolResponse r = tool.execute(args);
         assertTrue(r.isSuccess());
         assertFalse(getChecks(getData(r)).isEmpty());
-        assertNotNull(getData(r).get("totalChecks"));
+        assertNotNull(getData(r).get("totalCount"));
         assertEquals("com.example.Calculator", getData(r).get("typeName"));
     }
 
@@ -79,16 +79,16 @@ class FindInstanceofChecksToolTest {
         assertTrue(r.isSuccess());
         // SearchPatterns has TWO `instanceof Calculator` checks: one in performCasts (line 79)
         // and one in checkTypes (line 100). No other instanceof Calculator anywhere.
-        assertEquals(2, ((Number) getData(r).get("totalChecks")).intValue(),
+        assertEquals(2, ((Number) getData(r).get("totalCount")).intValue(),
             "Expected exactly 2 instanceof Calculator checks; got: "
-                + getData(r).get("totalChecks") + " (" + getChecks(getData(r)) + ")");
+                + getData(r).get("totalCount") + " (" + getChecks(getData(r)) + ")");
     }
 
     // ========== Behavior-matrix coverage ==========
 
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> checksOf(ToolResponse r) {
-        return (List<Map<String, Object>>) getData(r).get("instanceofChecks");
+        return (List<Map<String, Object>>) getData(r).get("locations");
     }
 
     @Test
@@ -124,8 +124,8 @@ class FindInstanceofChecksToolTest {
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
         assertFalse(checksOf(r).isEmpty(), "Precondition: Calculator has instanceof checks");
-        assertNotNull(data.get("suggestion"),
-            "suggestion must be present when checks exist; data keys: " + data.keySet());
+        assertNotNull(data.get("advice"),
+            "advice must be present when checks exist; data keys: " + data.keySet());
     }
 
     @Test
@@ -141,8 +141,8 @@ class FindInstanceofChecksToolTest {
         Map<String, Object> data = getData(r);
         assertEquals(0, checksOf(r).size(),
             "Animal is never checked via instanceof; got: " + checksOf(r));
-        assertNull(data.get("suggestion"),
-            "suggestion must be absent when no checks exist; got: " + data.get("suggestion"));
+        assertNull(data.get("advice"),
+            "advice must be absent when no checks exist; got: " + data.get("advice"));
     }
 
     @Test
@@ -196,14 +196,14 @@ class FindInstanceofChecksToolTest {
     }
 
     @Test
-    @DisplayName("totalChecks == instanceofChecks.size()")
-    void totalChecks_equalsListSize() {
+    @DisplayName("totalCount == locations.size()")
+    void totalCount_equalsListSize() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("typeName", "com.example.Calculator");
 
         ToolResponse r = tool.execute(args);
         assertTrue(r.isSuccess());
-        int total = ((Number) getData(r).get("totalChecks")).intValue();
+        int total = ((Number) getData(r).get("totalCount")).intValue();
         assertEquals(total, checksOf(r).size());
     }
 }

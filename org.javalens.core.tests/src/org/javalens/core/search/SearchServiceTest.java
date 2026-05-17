@@ -181,7 +181,8 @@ class SearchServiceTest {
     void findTypeInstantiations_findsNewExpressions() throws CoreException {
         IType arrayListType = javaProject.findType("java.util.ArrayList");
         if (arrayListType != null) {
-            List<SearchMatch> instantiations = searchService.findTypeInstantiations(arrayListType, 100);
+            List<SearchMatch> instantiations = searchService.findReferences(
+                arrayListType, SearchService.ReferenceKind.INSTANTIATION, 100);
             // ArrayList is instantiated in UserService
             assertNotNull(instantiations, "Should return instantiation list");
         }

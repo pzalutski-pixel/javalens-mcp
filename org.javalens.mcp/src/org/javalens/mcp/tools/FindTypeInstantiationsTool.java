@@ -1,24 +1,19 @@
 package org.javalens.mcp.tools;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import org.eclipse.jdt.core.IType;
-import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.IJdtService;
-import org.javalens.mcp.models.ResponseMeta;
-import org.javalens.mcp.models.ToolResponse;
+import org.javalens.core.search.SearchService;
 
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.function.Supplier;
 
 /**
- * Find all instantiations of a type (new Foo() calls).
+ * Find all instantiations of a type ({@code new Foo()} calls).
  *
- * JDT-unique capability: Uses CLASS_INSTANCE_CREATION_TYPE_REFERENCE to find only
- * instantiations, not other type references. LSP cannot distinguish these.
+ * <p>JDT-unique capability: uses {@code CLASS_INSTANCE_CREATION_TYPE_REFERENCE}
+ * to find only instantiations, not other type references. LSP cannot
+ * distinguish these.
  */
-public class FindTypeInstantiationsTool extends AbstractTool {
+public class FindTypeInstantiationsTool extends AbstractFineGrainReferenceTool {
 
     public FindTypeInstantiationsTool(Supplier<IJdtService> serviceSupplier) {
         super(serviceSupplier);
@@ -49,48 +44,25 @@ public class FindTypeInstantiationsTool extends AbstractTool {
     }
 
     @Override
-    public Map<String, Object> getInputSchema() {
-        return SchemaBuilder.object()
-            .required("typeName", "string", "Fully qualified type name (e.g., 'java.util.ArrayList')")
-            .optional("maxResults", "integer", "Maximum results to return (default 100)")
-            .build();
+    protected SearchService.ReferenceKind getReferenceKind() {
+        return SearchService.ReferenceKind.INSTANTIATION;
     }
 
     @Override
-    protected ToolResponse executeWithService(IJdtService service, JsonNode arguments) {
-        String typeName = getStringParam(arguments, "typeName");
-        int maxResults = getIntParam(arguments, "maxResults", 100);
+    protected String getTypeNameParamDescription() {
+        return "Fully qualified type name (e.g., 'java.util.ArrayList')";
+    }
 
-        if (typeName == null || typeName.isBlank()) {
-            return ToolResponse.invalidParameter("typeName", "Type name is required");
-        }
+    @Override
+    protected String getAdvice() {
+        return null;
+    }
 
-        try {
-            IType type = service.findType(typeName);
-            if (type == null) {
-                return ToolResponse.symbolNotFound("Type not found: " + typeName);
-            }
-
-            List<SearchMatch> matches = service.getSearchService().findTypeInstantiations(type, maxResults);
-            List<Map<String, Object>> instantiations = formatMatches(matches, service);
-
-            Map<String, Object> data = new LinkedHashMap<>();
-            data.put("typeName", typeName);
-            data.put("totalInstantiations", instantiations.size());
-            data.put("instantiations", instantiations);
-
-            return ToolResponse.success(data, ResponseMeta.builder()
-                .totalCount(instantiations.size())
-                .returnedCount(instantiations.size())
-                .truncated(matches.size() >= maxResults)
-                .suggestedNextTools(List.of(
-                    "get_type_hierarchy to understand inheritance",
-                    "find_references for all references"
-                ))
-                .build());
-
-        } catch (Exception e) {
-            return ToolResponse.internalError(e);
-        }
+    @Override
+    protected List<String> getSuggestedNextTools() {
+        return List.of(
+            "get_type_hierarchy to understand inheritance",
+            "find_references for all references"
+        );
     }
 }

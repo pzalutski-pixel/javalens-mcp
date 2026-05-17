@@ -33,7 +33,7 @@ class FindCastsToolTest {
     @SuppressWarnings("unchecked")
     private Map<String, Object> getData(ToolResponse r) { return (Map<String, Object>) r.getData(); }
     @SuppressWarnings("unchecked")
-    private List<?> getCasts(Map<String, Object> d) { return (List<?>) d.get("casts"); }
+    private List<?> getCasts(Map<String, Object> d) { return (List<?>) d.get("locations"); }
 
     @Test @DisplayName("finds casts to project type")
     void findsCastsToProjectType() {
@@ -42,7 +42,7 @@ class FindCastsToolTest {
         ToolResponse r = tool.execute(args);
         assertTrue(r.isSuccess());
         assertFalse(getCasts(getData(r)).isEmpty());
-        assertNotNull(getData(r).get("totalCasts"));
+        assertNotNull(getData(r).get("totalCount"));
         assertEquals("com.example.Calculator", getData(r).get("typeName"));
     }
 
@@ -79,16 +79,16 @@ class FindCastsToolTest {
         assertTrue(r.isSuccess());
         // SearchPatterns.performCasts has `(Calculator) obj` exactly once. No other casts to
         // Calculator anywhere in the fixture.
-        assertEquals(1, ((Number) getData(r).get("totalCasts")).intValue(),
+        assertEquals(1, ((Number) getData(r).get("totalCount")).intValue(),
             "Expected exactly 1 (Calculator) cast in fixtures; got: "
-                + getData(r).get("totalCasts") + " (" + getCasts(getData(r)) + ")");
+                + getData(r).get("totalCount") + " (" + getCasts(getData(r)) + ")");
     }
 
     // ========== Behavior-matrix coverage ==========
 
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> castsOf(ToolResponse r) {
-        return (List<Map<String, Object>>) getData(r).get("casts");
+        return (List<Map<String, Object>>) getData(r).get("locations");
     }
 
     @Test
@@ -124,8 +124,8 @@ class FindCastsToolTest {
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
         assertFalse(castsOf(r).isEmpty(), "Precondition: Calculator has casts");
-        assertNotNull(data.get("warning"),
-            "warning must be present when casts exist; data keys: " + data.keySet());
+        assertNotNull(data.get("advice"),
+            "advice must be present when casts exist; data keys: " + data.keySet());
     }
 
     @Test
@@ -142,8 +142,8 @@ class FindCastsToolTest {
         Map<String, Object> data = getData(r);
         assertEquals(0, castsOf(r).size(),
             "Animal is never cast; cast list must be empty; got: " + castsOf(r));
-        assertNull(data.get("warning"),
-            "warning must be absent when no casts exist; got: " + data.get("warning"));
+        assertNull(data.get("advice"),
+            "advice must be absent when no casts exist; got: " + data.get("advice"));
     }
 
     @Test
@@ -203,14 +203,14 @@ class FindCastsToolTest {
     }
 
     @Test
-    @DisplayName("totalCasts == casts.size()")
+    @DisplayName("totalCount == locations.size()")
     void totalCasts_equalsListSize() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("typeName", "com.example.Calculator");
 
         ToolResponse r = tool.execute(args);
         assertTrue(r.isSuccess());
-        int total = ((Number) getData(r).get("totalCasts")).intValue();
+        int total = ((Number) getData(r).get("totalCount")).intValue();
         assertEquals(total, castsOf(r).size());
     }
 }

@@ -33,7 +33,7 @@ class FindTypeInstantiationsToolTest {
     @SuppressWarnings("unchecked")
     private Map<String, Object> getData(ToolResponse r) { return (Map<String, Object>) r.getData(); }
     @SuppressWarnings("unchecked")
-    private List<?> getInstantiations(Map<String, Object> d) { return (List<?>) d.get("instantiations"); }
+    private List<?> getInstantiations(Map<String, Object> d) { return (List<?>) d.get("locations"); }
 
     @Test @DisplayName("finds instantiations of project type")
     void findsInstantiationsOfProjectType() {
@@ -42,7 +42,7 @@ class FindTypeInstantiationsToolTest {
         ToolResponse r = tool.execute(args);
         assertTrue(r.isSuccess());
         assertFalse(getInstantiations(getData(r)).isEmpty());
-        assertNotNull(getData(r).get("totalInstantiations"));
+        assertNotNull(getData(r).get("totalCount"));
         assertEquals("com.example.Calculator", getData(r).get("typeName"));
     }
 
@@ -82,16 +82,16 @@ class FindTypeInstantiationsToolTest {
         // makeMany -> 3 new ConstructorTarget calls. Total = 5.
         // Plus ConstructorTarget itself does `this(name, 0)` which is a constructor
         // delegation, NOT an instantiation; should NOT be counted.
-        assertEquals(5, ((Number) getData(r).get("totalInstantiations")).intValue(),
+        assertEquals(5, ((Number) getData(r).get("totalCount")).intValue(),
             "Expected exactly 5 `new ConstructorTarget(...)` instantiations; got: "
-                + getData(r).get("totalInstantiations") + " (" + getInstantiations(getData(r)) + ")");
+                + getData(r).get("totalCount") + " (" + getInstantiations(getData(r)) + ")");
     }
 
     // ========== Behavior-matrix coverage ==========
 
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> instOf(ToolResponse r) {
-        return (List<Map<String, Object>>) getData(r).get("instantiations");
+        return (List<Map<String, Object>>) getData(r).get("locations");
     }
 
     @Test
@@ -244,14 +244,14 @@ class FindTypeInstantiationsToolTest {
     }
 
     @Test
-    @DisplayName("totalInstantiations == instantiations.size()")
-    void totalInstantiations_equalsListSize() {
+    @DisplayName("totalCount == locations.size()")
+    void totalCount_equalsListSize() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("typeName", "com.example.Calculator");
 
         ToolResponse r = tool.execute(args);
         assertTrue(r.isSuccess());
-        int total = ((Number) getData(r).get("totalInstantiations")).intValue();
+        int total = ((Number) getData(r).get("totalCount")).intValue();
         assertEquals(total, instOf(r).size());
     }
 }
