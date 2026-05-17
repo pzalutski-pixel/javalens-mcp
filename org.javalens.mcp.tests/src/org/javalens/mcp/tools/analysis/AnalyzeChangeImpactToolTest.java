@@ -139,7 +139,7 @@ class AnalyzeChangeImpactToolTest {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> affectedFiles = (List<Map<String, Object>>) data.get("affectedFiles");
         boolean hasUserService = affectedFiles.stream()
-            .map(m -> (String) m.get("file"))
+            .map(m -> (String) m.get("filePath"))
             .filter(java.util.Objects::nonNull)
             .map(s -> s.replace('\\', '/'))
             .anyMatch(s -> s.endsWith("UserService.java"));
@@ -228,13 +228,13 @@ class AnalyzeChangeImpactToolTest {
         Map<String, Object> detailData = getData(detail.execute(args));
 
         List<Map<String, Object>> affectedFiles = (List<Map<String, Object>>) aggregateData.get("affectedFiles");
-        List<Map<String, Object>> references = (List<Map<String, Object>>) detailData.get("references");
+        List<Map<String, Object>> references = (List<Map<String, Object>>) detailData.get("locations");
         assertNotNull(affectedFiles, "aggregate affectedFiles must be present; got: " + aggregateData);
         assertNotNull(references, "detail references must be present; got: " + detailData);
 
         java.util.Set<String> affectedPaths = new java.util.HashSet<>();
         for (Map<String, Object> af : affectedFiles) {
-            Object p = af.get("file");
+            Object p = af.get("filePath");
             if (p != null) affectedPaths.add(p.toString().replace('\\', '/'));
         }
         java.util.Set<String> referencePaths = new java.util.HashSet<>();

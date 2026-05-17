@@ -48,7 +48,7 @@ class FindReferencesToolTest {
 
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> getReferences(Map<String, Object> data) {
-        return (List<Map<String, Object>>) data.get("references");
+        return (List<Map<String, Object>>) data.get("locations");
     }
 
     // ========== Comprehensive Functionality Tests ==========
@@ -69,7 +69,7 @@ class FindReferencesToolTest {
         // Symbol info
         assertEquals("Calculator", data.get("symbol"));
         assertEquals("class", data.get("symbolKind"));
-        assertNotNull(data.get("totalReferences"));
+        assertNotNull(data.get("totalCount"));
 
         // References list with location details
         List<Map<String, Object>> references = getReferences(data);
@@ -361,7 +361,7 @@ class FindReferencesToolTest {
             "Position on constructor name must resolve; got error: " +
                 (r.getError() != null ? r.getError().getMessage() : "n/a"));
         Map<String, Object> data = (Map<String, Object>) r.getData();
-        List<Map<String, Object>> refs = (List<Map<String, Object>>) data.get("references");
+        List<Map<String, Object>> refs = (List<Map<String, Object>>) data.get("locations");
         Set<String> filenames = refs.stream()
             .map(rr -> (String) rr.get("filePath"))
             .map(p -> p == null ? "" : p.replace('\\', '/'))

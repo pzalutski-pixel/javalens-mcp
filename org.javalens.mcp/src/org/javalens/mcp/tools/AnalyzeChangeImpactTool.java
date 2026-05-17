@@ -141,7 +141,7 @@ public class AnalyzeChangeImpactTool extends AbstractTool {
             List<Map<String, Object>> affectedFiles = new ArrayList<>();
             for (Map.Entry<String, Integer> entry : fileReferenceCounts.entrySet()) {
                 Map<String, Object> fileEntry = new LinkedHashMap<>();
-                fileEntry.put("file", entry.getKey());
+                fileEntry.put("filePath", entry.getKey());
                 fileEntry.put("referenceCount", entry.getValue());
                 affectedFiles.add(fileEntry);
             }

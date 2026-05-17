@@ -118,8 +118,8 @@ public class FindReferencesTool extends AbstractTool {
                 data.put("containingType", field.getDeclaringType().getElementName());
             }
 
-            data.put("totalReferences", references.size());
-            data.put("references", references);
+            data.put("totalCount", references.size());
+            data.put("locations", references);
 
             return ToolResponse.success(data, ResponseMeta.builder()
                 .totalCount(references.size())

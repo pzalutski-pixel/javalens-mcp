@@ -81,8 +81,8 @@ class CrossModuleNavigationToolTest {
             @SuppressWarnings("unchecked")
             Map<String, Object> data = (Map<String, Object>) response.getData();
             @SuppressWarnings("unchecked")
-            List<Map<String, Object>> references = (List<Map<String, Object>>) data.get("references");
-            assertNotNull(references, "Response must include a 'references' array");
+            List<Map<String, Object>> references = (List<Map<String, Object>>) data.get("locations");
+            assertNotNull(references, "Response must include a 'locations' array");
 
             // The MCP boundary serializes file paths as strings — assert a cross-module
             // hit lands. GreeterImpl lives in :impl and references Greeter from :api.
