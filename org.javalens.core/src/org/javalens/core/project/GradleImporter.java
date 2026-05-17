@@ -42,7 +42,7 @@ import java.util.stream.Stream;
  * every {@link #getDependencies} invocation so stale state from a prior import does
  * not leak.
  */
-public class GradleImporter {
+public class GradleImporter implements BuildSystemImporter {
 
     private static final Logger log = LoggerFactory.getLogger(GradleImporter.class);
 
@@ -264,13 +264,23 @@ public class GradleImporter {
         return new ArrayList<>(jars);
     }
 
-    /** Cached during {@link #getDependencies}; null when no Gradle build ran. */
-    public String detectCompilerLevel() {
+    /**
+     * Cached during {@link #getDependencies}; null when no Gradle build ran. The
+     * {@code projectPath} parameter is required by the {@link BuildSystemImporter}
+     * contract but ignored — the cache is populated once per import and the path was
+     * already provided to {@code getDependencies}.
+     */
+    @Override
+    public String detectCompilerLevel(Path projectPath) {
         return cachedCompilerLevel;
     }
 
-    /** Cached during {@link #getDependencies}; empty when no Gradle build ran. */
-    public List<Path> detectAnnotationProcessors() {
+    /**
+     * Cached during {@link #getDependencies}; empty when no Gradle build ran. The
+     * {@code projectPath} parameter is ignored (see {@link #detectCompilerLevel}).
+     */
+    @Override
+    public List<Path> detectAnnotationProcessors(Path projectPath) {
         return new ArrayList<>(cachedProcessorJars);
     }
 

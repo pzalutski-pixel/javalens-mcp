@@ -38,7 +38,7 @@ import java.util.stream.Stream;
  *       blocks across the whole reactor, resolved against the local Maven repository.</li>
  * </ul>
  */
-public class MavenImporter {
+public class MavenImporter implements BuildSystemImporter {
 
     private static final Logger log = LoggerFactory.getLogger(MavenImporter.class);
 

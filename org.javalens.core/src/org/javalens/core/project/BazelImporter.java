@@ -29,7 +29,7 @@ import java.util.stream.Stream;
  *   <li>Compiler-level extraction from {@code javacopts} attributes in BUILD files.</li>
  * </ul>
  */
-public class BazelImporter {
+public class BazelImporter implements BuildSystemImporter {
 
     private static final Logger log = LoggerFactory.getLogger(BazelImporter.class);
 

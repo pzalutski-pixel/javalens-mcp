@@ -21,6 +21,7 @@ import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Stream;
 
 /**
@@ -72,6 +73,23 @@ public class ProjectImporter {
      * {@code <annotationProcessorPaths>} blocks across the reactor.
      */
     private final MavenImporter mavenImporter = new MavenImporter();
+
+    /**
+     * Per-build-system dispatch table. Lookup yields the right {@link BuildSystemImporter}
+     * for the detected {@link BuildSystem}; {@link BuildSystem#UNKNOWN} falls back to
+     * {@link BuildSystemImporter#NONE}. Adding a new build system means implementing
+     * {@code BuildSystemImporter}, instantiating it as a field above, and adding one entry
+     * here — no switch-statement edits in the orchestrator methods below.
+     */
+    private final Map<BuildSystem, BuildSystemImporter> importers = Map.of(
+        BuildSystem.MAVEN, mavenImporter,
+        BuildSystem.GRADLE, gradleImporter,
+        BuildSystem.BAZEL, bazelImporter
+    );
+
+    private BuildSystemImporter importerFor(BuildSystem buildSystem) {
+        return importers.getOrDefault(buildSystem, BuildSystemImporter.NONE);
+    }
 
     /**
      * Returns the warnings from the most recent project import.
@@ -160,12 +178,9 @@ public class ProjectImporter {
      * </ol>
      */
     private void applyAnnotationProcessing(IJavaProject javaProject, java.nio.file.Path projectPath, BuildSystem buildSystem) {
+        BuildSystemImporter importer = importerFor(buildSystem);
         java.util.LinkedHashSet<java.nio.file.Path> processorJars = new java.util.LinkedHashSet<>();
-        processorJars.addAll(switch (buildSystem) {
-            case MAVEN -> mavenImporter.detectAnnotationProcessors(projectPath);
-            case GRADLE -> gradleImporter.detectAnnotationProcessors();
-            case BAZEL, UNKNOWN -> List.of();
-        });
+        processorJars.addAll(importer.detectAnnotationProcessors(projectPath));
 
         // Note: an earlier draft also fired GENERATED_SOURCES_NOT_FOUND when processors
         // were declared but no generated-source directory existed. That produced false
@@ -177,13 +192,9 @@ public class ProjectImporter {
         // Cross-cutting scan: pick up any jar with a processor SPI descriptor so Bazel +
         // any classpath that quietly carries a processor (compileOnly, transitive, etc.)
         // gets APT wired up. Maven/Gradle declare processors via build-file blocks already
-        // harvested above; only Bazel needs the resolve-and-scan fallback because there is
-        // no per-target processor-path declaration we parse.
-        List<java.nio.file.Path> resolvedJars = switch (buildSystem) {
-            case BAZEL -> bazelImporter.getResolvedClasspathJars(projectPath, warnings);
-            case MAVEN, GRADLE, UNKNOWN -> List.of();
-        };
-        for (java.nio.file.Path jar : resolvedJars) {
+        // harvested above; only Bazel overrides getResolvedClasspathJars (the default
+        // returns empty), so this loop is a no-op for non-Bazel projects.
+        for (java.nio.file.Path jar : importer.getResolvedClasspathJars(projectPath, warnings)) {
             if (jarDeclaresAnnotationProcessor(jar)) {
                 processorJars.add(jar);
             }
@@ -227,12 +238,7 @@ public class ProjectImporter {
      * code at the same level the build system uses.
      */
     private void applyCompilerOptions(IJavaProject javaProject, java.nio.file.Path projectPath, BuildSystem buildSystem) {
-        String level = switch (buildSystem) {
-            case MAVEN -> mavenImporter.detectCompilerLevel(projectPath);
-            case GRADLE -> gradleImporter.detectCompilerLevel();
-            case BAZEL -> bazelImporter.detectCompilerLevel(projectPath);
-            case UNKNOWN -> null;
-        };
+        String level = importerFor(buildSystem).detectCompilerLevel(projectPath);
         // Final fallback for any build system that didn't surface a level: use the running
         // JVM's feature version. This keeps Plain Java projects (no build file) and
         // partially-declared Maven/Gradle/Bazel projects parsing modern syntax instead of
@@ -328,12 +334,7 @@ public class ProjectImporter {
     private void addDependencyEntries(List<IClasspathEntry> entries, java.nio.file.Path projectPath) {
         BuildSystem buildSystem = detectBuildSystem(projectPath);
 
-        List<String> jars = switch (buildSystem) {
-            case MAVEN -> mavenImporter.getDependencies(projectPath, warnings);
-            case GRADLE -> gradleImporter.getDependencies(projectPath, warnings);
-            case BAZEL -> bazelImporter.getDependencies(projectPath, warnings);
-            default -> List.of();
-        };
+        List<String> jars = importerFor(buildSystem).getDependencies(projectPath, warnings);
 
         for (String jar : jars) {
             java.nio.file.Path jarPath = java.nio.file.Path.of(jar);
