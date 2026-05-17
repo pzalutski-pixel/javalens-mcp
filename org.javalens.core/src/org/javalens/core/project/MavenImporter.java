@@ -75,7 +75,7 @@ public class MavenImporter implements BuildSystemImporter {
     /**
      * Get list of module directories for a multi-module project.
      */
-    public List<Path> getModules(Path projectPath) {
+    private List<Path> getModules(Path projectPath) {
         List<Path> modules = new ArrayList<>();
         Path pomPath = projectPath.resolve("pom.xml");
 
