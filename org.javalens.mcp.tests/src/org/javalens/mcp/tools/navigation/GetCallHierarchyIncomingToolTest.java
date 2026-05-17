@@ -49,10 +49,17 @@ class GetCallHierarchyIncomingToolTest {
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
         assertEquals("add", data.get("method"));
-        assertNotNull(data.get("declaringClass"));
-        assertNotNull(data.get("signature"));
-        assertNotNull(data.get("totalCallers"));
-        assertNotNull(data.get("callers"));
+        assertEquals("com.example.Calculator", data.get("declaringClass"),
+            "Calculator.add must report fully-qualified declaring class; got: " + data);
+        assertEquals("add(int, int)", data.get("signature"),
+            "signature must match the exact method signature; got: " + data.get("signature"));
+        // Calculator.add has 4 known call sites in the fixtures
+        // (SearchPatterns.createObjects, SearchPatterns.performCasts,
+        //  UserService.calculateSum, SampleTest.testAddition).
+        assertEquals(4, ((Number) data.get("totalCallers")).intValue(),
+            "Calculator.add has exactly 4 callers in fixtures; got: " + data.get("totalCallers"));
+        assertTrue(data.get("callers") instanceof List<?>,
+            "callers must be a List; got: " + data.get("callers"));
     }
 
     @Test @DisplayName("supports maxResults parameter")
