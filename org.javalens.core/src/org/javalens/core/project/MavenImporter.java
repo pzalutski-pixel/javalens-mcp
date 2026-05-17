@@ -23,10 +23,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /**
- * Maven build-system support for {@link ProjectImporter}.
- *
- * <p>Extracted from {@link ProjectImporter} as the fourth step of the 1.4.0 E-10
- * god-class split. Owns:
+ * Maven {@link BuildSystemImporter} implementation. Owns:
  * <ul>
  *   <li>Multi-module detection and recursive module walking driven by
  *       {@code <modules>} entries in {@code pom.xml}.</li>

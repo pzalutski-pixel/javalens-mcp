@@ -16,17 +16,16 @@ import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /**
- * Bazel build-system support for {@link ProjectImporter}.
- *
- * <p>Extracted from {@link ProjectImporter} as the second step of the 1.4.0 E-10
- * god-class split. The orchestrator owns build-system detection and dispatch; this
- * class owns the Bazel-specific surface:
+ * Bazel {@link BuildSystemImporter} implementation. Owns the Bazel-specific surface:
  * <ul>
  *   <li>Source-path discovery from BUILD/BUILD.bazel packages, plus the legacy
  *       fallback for layouts that put .java files next to BUILD files directly.</li>
  *   <li>Classpath assembly by walking {@code bazel-bin}/{@code bazel-out} for jars,
  *       with symlink-aware deduplication.</li>
  *   <li>Compiler-level extraction from {@code javacopts} attributes in BUILD files.</li>
+ *   <li>Resolved-classpath SPI scan to discover annotation processors (Bazel
+ *       overrides {@link BuildSystemImporter#getResolvedClasspathJars} because
+ *       {@code java_plugin} rules aren't introspected directly).</li>
  * </ul>
  */
 public class BazelImporter implements BuildSystemImporter {

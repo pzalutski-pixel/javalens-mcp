@@ -20,10 +20,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /**
- * Gradle build-system support for {@link ProjectImporter}.
- *
- * <p>Extracted from {@link ProjectImporter} as the third step of the 1.4.0 E-10
- * god-class split. Owns:
+ * Gradle {@link BuildSystemImporter} implementation. Owns:
  * <ul>
  *   <li>Subproject discovery from {@code settings.gradle}{@code .kts}.</li>
  *   <li>Dependency assembly via a Gradle init script that registers a
@@ -31,16 +28,15 @@ import java.util.stream.Stream;
  *       the project's Gradle Wrapper (preferred) or {@code gradle} on PATH, then walk
  *       the tree for the per-subproject aux files it writes.</li>
  *   <li>Compiler-level and annotation-processor extraction from the aux files written
- *       by that same init script (cached during {@link #getDependencies} so the later
- *       calls in the {@code configureJavaProject} flow can read after the aux files
- *       have been cleaned up).</li>
+ *       by that same init script.</li>
  * </ul>
  *
  * <p>State: {@link #getDependencies} populates the compiler-level and processor-jar
  * caches as a side effect; {@link #detectCompilerLevel} and
- * {@link #detectAnnotationProcessors} read them. The caches are reset at the start of
- * every {@link #getDependencies} invocation so stale state from a prior import does
- * not leak.
+ * {@link #detectAnnotationProcessors} read them (ignoring the {@code projectPath}
+ * argument required by the {@link BuildSystemImporter} contract). The caches are
+ * reset at the start of every {@link #getDependencies} invocation so stale state
+ * from a prior import does not leak.
  */
 public class GradleImporter implements BuildSystemImporter {
 

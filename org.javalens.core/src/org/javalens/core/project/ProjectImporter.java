@@ -25,11 +25,28 @@ import java.util.Map;
 import java.util.stream.Stream;
 
 /**
- * Imports external Java projects (Maven/Gradle/Bazel) into the Eclipse workspace
- * with proper classpath configuration for JDT analysis.
+ * Orchestrator for importing external Java projects into the Eclipse workspace and
+ * configuring their JDT classpath, compiler options, and annotation-processor wiring.
  *
- * Uses linked folders to keep all Eclipse metadata in the workspace,
- * not polluting the user's actual project directory.
+ * <p>The work is split across collaborator classes, each owning one concern:
+ * <ul>
+ *   <li>{@link BuildSystem} — enum naming the supported build systems.</li>
+ *   <li>{@link BuildSystemImporter} — per-build-system contract for classpath /
+ *       compiler-level / annotation-processor extraction. Implemented by
+ *       {@link MavenImporter}, {@link GradleImporter}, {@link BazelImporter};
+ *       lookup-dispatched here via {@link #importerFor}.</li>
+ *   <li>{@link LinkedFolderConfigurator} — Eclipse linked-folder creation and
+ *       layout-specific source-path probing (build-system-agnostic).</li>
+ * </ul>
+ *
+ * <p>Linked folders keep all Eclipse metadata ({@code .project}, {@code .classpath})
+ * inside the workspace so the user's actual project directory is never polluted.
+ *
+ * <p>Adding support for a new build system: implement {@link BuildSystemImporter},
+ * instantiate it as a field, register it in {@link #importers}, and extend
+ * {@link #detectBuildSystem} to recognize the build file marker. The four orchestrator
+ * methods ({@link #configureJavaProject}, {@link #applyAnnotationProcessing},
+ * {@link #applyCompilerOptions}, {@link #addDependencyEntries}) require no edits.
  */
 public class ProjectImporter {
 
@@ -42,44 +59,16 @@ public class ProjectImporter {
      */
     private final List<LoadWarning> warnings = new ArrayList<>();
 
-    /**
-     * Per-directory source-path discovery + linked-folder creation. Split out of this class
-     * in 1.4.0 (E-10 C1): the layout probing and Eclipse linked-folder wiring don't depend
-     * on the build system, so the orchestrator delegates to them after harvesting source
-     * paths from build-system-specific aggregators.
-     */
     private final LinkedFolderConfigurator linkedFolderConfigurator = new LinkedFolderConfigurator();
-
-    /**
-     * Bazel build-system support (1.4.0 E-10 C2): source-path discovery for
-     * BUILD-anchored layouts, classpath assembly from bazel-bin/bazel-out (with
-     * symlink-aware dedup), and javacopts-derived compiler-level extraction.
-     */
     private final BazelImporter bazelImporter = new BazelImporter();
-
-    /**
-     * Gradle build-system support (1.4.0 E-10 C3): subproject discovery, classpath
-     * assembly via an injected init script, and compiler-level / annotation-processor
-     * extraction from the aux files that script writes. Caches compliance and processor
-     * data internally so the orchestrator's later calls in the configure flow can read
-     * after the aux files have been cleaned up.
-     */
     private final GradleImporter gradleImporter = new GradleImporter();
-
-    /**
-     * Maven build-system support (1.4.0 E-10 C4): multi-module detection, reactor walking,
-     * dependency assembly via {@code mvn dependency:build-classpath}, compiler-level
-     * extraction from {@code pom.xml}, and annotation-processor discovery from
-     * {@code <annotationProcessorPaths>} blocks across the reactor.
-     */
     private final MavenImporter mavenImporter = new MavenImporter();
 
     /**
-     * Per-build-system dispatch table. Lookup yields the right {@link BuildSystemImporter}
-     * for the detected {@link BuildSystem}; {@link BuildSystem#UNKNOWN} falls back to
-     * {@link BuildSystemImporter#NONE}. Adding a new build system means implementing
-     * {@code BuildSystemImporter}, instantiating it as a field above, and adding one entry
-     * here — no switch-statement edits in the orchestrator methods below.
+     * Dispatch table: detected {@link BuildSystem} → its {@link BuildSystemImporter}.
+     * {@link BuildSystem#UNKNOWN} falls back to {@link BuildSystemImporter#NONE} via
+     * {@link #importerFor}. Adding a new build system: instantiate an importer field
+     * above, add one entry here, extend {@link #detectBuildSystem}.
      */
     private final Map<BuildSystem, BuildSystemImporter> importers = Map.of(
         BuildSystem.MAVEN, mavenImporter,

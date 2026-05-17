@@ -17,27 +17,24 @@ import java.util.List;
 import java.util.stream.Stream;
 
 /**
- * Discovers source directories inside a project tree and turns them into
- * Eclipse "linked folders" with corresponding {@link IClasspathEntry} source
- * entries.
+ * Build-system-agnostic source-path discovery and Eclipse linked-folder creation.
  *
- * <p>Extracted from {@link ProjectImporter} as the first step of the
- * 1.4.0 E-10 god-class split. ProjectImporter still owns the build-system
- * dispatch ({@link ProjectImporter#getAllSourcePaths(Path)} aggregates over
- * Maven modules, Gradle subprojects, and Bazel packages) and delegates the
- * per-directory probe + linked-folder creation here.
- *
- * <p>Two responsibilities:
+ * <p>The orchestrator harvests module / subproject / package roots from each
+ * {@link BuildSystemImporter}, then delegates here for two operations:
  * <ol>
  *   <li><b>Source-path discovery</b> via {@link #addSourcePathsFromDirectory}:
- *       checks the standard layouts (src/main/java, src/test/java, src/main/kotlin,
- *       src/test/kotlin, fallback src/) and the generated-source directories
- *       written by annotation processors (Maven {@code target/generated-sources/*},
- *       Gradle {@code build/generated/sources/&lt;task&gt;/{main,test}/java}).</li>
+ *       checks the standard layouts ({@code src/main/java}, {@code src/test/java},
+ *       {@code src/main/kotlin}, {@code src/test/kotlin}, fallback {@code src/})
+ *       and the generated-source directories written by annotation processors
+ *       (Maven {@code target/generated-sources/*}, Gradle
+ *       {@code build/generated/sources/<task>/{main,test}/java}).</li>
  *   <li><b>Linked-folder creation</b> via {@link #addLinkedSourceFolders}: for
  *       each discovered source path, create a uniquely-named linked folder under
  *       the workspace project, and append a source {@link IClasspathEntry}.</li>
  * </ol>
+ *
+ * <p>Linked folders keep Eclipse metadata inside the workspace, not in the user's
+ * project directory.
  */
 public class LinkedFolderConfigurator {
 
