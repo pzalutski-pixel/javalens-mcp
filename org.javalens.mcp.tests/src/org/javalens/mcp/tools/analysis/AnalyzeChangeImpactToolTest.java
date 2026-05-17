@@ -6,6 +6,7 @@ import org.javalens.core.JdtServiceImpl;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.AnalyzeChangeImpactTool;
+import org.javalens.mcp.tools.FindReferencesTool;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -21,13 +22,14 @@ class AnalyzeChangeImpactToolTest {
     @RegisterExtension
     TestProjectHelper helper = new TestProjectHelper();
 
+    private JdtServiceImpl service;
     private AnalyzeChangeImpactTool tool;
     private ObjectMapper objectMapper;
     private String calculatorPath;
 
     @BeforeEach
     void setUp() throws Exception {
-        JdtServiceImpl service = helper.loadProject("simple-maven");
+        service = helper.loadProject("simple-maven");
         tool = new AnalyzeChangeImpactTool(() -> service);
         objectMapper = new ObjectMapper();
         calculatorPath = helper.getFixturePath("simple-maven")
@@ -203,5 +205,46 @@ class AnalyzeChangeImpactToolTest {
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
         assertEquals("add", data.get("symbol"));
+    }
+
+    // ========== T-2 cross-tool consistency ==========
+
+    @Test
+    @DisplayName("Calculator.add: analyze_change_impact affectedFiles covers find_references files (cross-tool consistency)")
+    @SuppressWarnings("unchecked")
+    void calculatorAdd_affectedFilesCoverFindReferences() throws Exception {
+        // analyze_change_impact at depth=1 aggregates direct callers. find_references on
+        // the same method returns every reference. The set of files in change_impact's
+        // affectedFiles must contain every file that find_references reports — if a file
+        // is missing from change_impact, the impact analysis under-reports blast radius.
+        FindReferencesTool detail = new FindReferencesTool(() -> service);
+
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        args.put("line", 13);
+        args.put("column", 15);
+
+        Map<String, Object> aggregateData = getData(tool.execute(args));
+        Map<String, Object> detailData = getData(detail.execute(args));
+
+        List<Map<String, Object>> affectedFiles = (List<Map<String, Object>>) aggregateData.get("affectedFiles");
+        List<Map<String, Object>> references = (List<Map<String, Object>>) detailData.get("references");
+        assertNotNull(affectedFiles, "aggregate affectedFiles must be present; got: " + aggregateData);
+        assertNotNull(references, "detail references must be present; got: " + detailData);
+
+        java.util.Set<String> affectedPaths = new java.util.HashSet<>();
+        for (Map<String, Object> af : affectedFiles) {
+            Object p = af.get("file");
+            if (p != null) affectedPaths.add(p.toString().replace('\\', '/'));
+        }
+        java.util.Set<String> referencePaths = new java.util.HashSet<>();
+        for (Map<String, Object> ref : references) {
+            Object p = ref.get("filePath");
+            if (p != null) referencePaths.add(p.toString().replace('\\', '/'));
+        }
+
+        assertTrue(affectedPaths.containsAll(referencePaths),
+            "analyze_change_impact.affectedFiles must cover every file find_references reports; "
+                + "affectedFiles=" + affectedPaths + " references=" + referencePaths);
     }
 }

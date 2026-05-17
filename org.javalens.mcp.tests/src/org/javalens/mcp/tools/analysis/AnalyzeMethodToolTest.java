@@ -6,6 +6,7 @@ import org.javalens.core.JdtServiceImpl;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.AnalyzeMethodTool;
+import org.javalens.mcp.tools.GetCallHierarchyIncomingTool;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -21,13 +22,14 @@ class AnalyzeMethodToolTest {
 
     @RegisterExtension
     TestProjectHelper helper = new TestProjectHelper();
+    private JdtServiceImpl service;
     private AnalyzeMethodTool tool;
     private ObjectMapper objectMapper;
     private String calculatorPath;
 
     @BeforeEach
     void setUp() throws Exception {
-        JdtServiceImpl service = helper.loadProject("simple-maven");
+        service = helper.loadProject("simple-maven");
         tool = new AnalyzeMethodTool(() -> service);
         objectMapper = new ObjectMapper();
         calculatorPath = helper.getFixturePath("simple-maven")
@@ -235,5 +237,36 @@ class AnalyzeMethodToolTest {
         ToolResponse r = tool.execute(args);
         assertTrue(r.isSuccess());
         assertNotNull(getData(r).get("overrides"));
+    }
+
+    // ========== T-2 cross-tool consistency ==========
+
+    @Test
+    @DisplayName("Calculator.add: analyze_method callers count agrees with get_call_hierarchy_incoming (cross-tool consistency)")
+    @SuppressWarnings("unchecked")
+    void calculatorAdd_callerCountAgreesWithCallHierarchy() throws Exception {
+        // If analyze_method's callers count drifts from get_call_hierarchy_incoming,
+        // one of the tools is wrong about what calls Calculator.add. This test pins
+        // them together.
+        GetCallHierarchyIncomingTool detail = new GetCallHierarchyIncomingTool(() -> service);
+
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        args.put("line", 14);
+        args.put("column", 15);
+        args.put("maxCallers", 100);
+
+        Map<String, Object> aggregateData = getData(tool.execute(args));
+        Map<String, Object> detailData = getData(detail.execute(args));
+
+        Map<String, Object> aggregateCallers = (Map<String, Object>) aggregateData.get("callers");
+        List<?> aggregateList = (List<?>) aggregateCallers.get("list");
+        List<?> detailCallers = (List<?>) detailData.get("callers");
+
+        assertNotNull(aggregateList, "aggregate callers.list must be present; got: " + aggregateCallers);
+        assertNotNull(detailCallers, "detail callers list must be present; got: " + detailData);
+        assertEquals(detailCallers.size(), aggregateList.size(),
+            "analyze_method.callers.list.size() must equal get_call_hierarchy_incoming.callers.size(); "
+                + "aggregate=" + aggregateList.size() + " detail=" + detailCallers.size());
     }
 }

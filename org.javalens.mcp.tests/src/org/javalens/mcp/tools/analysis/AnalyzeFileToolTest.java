@@ -6,6 +6,7 @@ import org.javalens.core.JdtServiceImpl;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.AnalyzeFileTool;
+import org.javalens.mcp.tools.GetDocumentSymbolsTool;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -20,6 +21,7 @@ class AnalyzeFileToolTest {
 
     @RegisterExtension
     TestProjectHelper helper = new TestProjectHelper();
+    private JdtServiceImpl service;
     private AnalyzeFileTool tool;
     private ObjectMapper objectMapper;
     private String calculatorPath;
@@ -27,7 +29,7 @@ class AnalyzeFileToolTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        JdtServiceImpl service = helper.loadProject("simple-maven");
+        service = helper.loadProject("simple-maven");
         tool = new AnalyzeFileTool(() -> service);
         objectMapper = new ObjectMapper();
         calculatorPath = helper.getFixturePath("simple-maven")
@@ -190,5 +192,28 @@ class AnalyzeFileToolTest {
         Map<String, Object> type = typesOf(r).get(0);
         assertNotNull(type.get("methods"), "methods list missing when includeMembers=true");
         assertNotNull(type.get("fields"), "fields list missing when includeMembers=true");
+    }
+
+    // ========== T-2 cross-tool consistency ==========
+
+    @Test
+    @DisplayName("Calculator.java: analyze_file top-level type count agrees with get_document_symbols (cross-tool consistency)")
+    @SuppressWarnings("unchecked")
+    void calculator_topLevelTypeCountAgreesWithDocumentSymbols() throws Exception {
+        // Both tools enumerate top-level types via cu.getTypes() on the same compilation
+        // unit. If their lists differ in size, one tool dropped (or duplicated) types.
+        GetDocumentSymbolsTool detail = new GetDocumentSymbolsTool(() -> service);
+
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+
+        List<Map<String, Object>> aggregateTypes = typesOf(tool.execute(args));
+        List<Map<String, Object>> detailSymbols =
+            (List<Map<String, Object>>) getData(detail.execute(args)).get("symbols");
+
+        assertEquals(aggregateTypes.size(), detailSymbols.size(),
+            "analyze_file.types.size() must equal get_document_symbols.symbols.size() (both enumerate "
+                + "top-level types in the file); aggregate=" + aggregateTypes.size()
+                + " detail=" + detailSymbols.size());
     }
 }

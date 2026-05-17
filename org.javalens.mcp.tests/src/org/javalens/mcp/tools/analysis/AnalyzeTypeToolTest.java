@@ -6,6 +6,7 @@ import org.javalens.core.JdtServiceImpl;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.AnalyzeTypeTool;
+import org.javalens.mcp.tools.GetTypeMembersTool;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -19,12 +20,13 @@ class AnalyzeTypeToolTest {
 
     @RegisterExtension
     TestProjectHelper helper = new TestProjectHelper();
+    private JdtServiceImpl service;
     private AnalyzeTypeTool tool;
     private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() throws Exception {
-        JdtServiceImpl service = helper.loadProject("simple-maven");
+        service = helper.loadProject("simple-maven");
         tool = new AnalyzeTypeTool(() -> service);
         objectMapper = new ObjectMapper();
     }
@@ -192,5 +194,44 @@ class AnalyzeTypeToolTest {
         for (String key : java.util.List.of("constructorCount", "methodCount", "fieldCount", "nestedTypeCount")) {
             assertNotNull(members.get(key), key + " missing on members: " + members);
         }
+    }
+
+    // ========== T-2 cross-tool consistency ==========
+
+    @Test
+    @DisplayName("Calculator: analyze_type member counts agree with get_type_members (cross-tool consistency)")
+    @SuppressWarnings("unchecked")
+    void calculator_memberCountsAgreeWithGetTypeMembers() throws Exception {
+        // Aggregate vs detail: if analyze_type's counts disagree with get_type_members,
+        // one of the tools is wrong. This test prevents the class of bugs where the
+        // compounding analyzer drifts from the underlying source-of-truth.
+        GetTypeMembersTool detail = new GetTypeMembersTool(() -> service);
+
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("typeName", "com.example.Calculator");
+
+        Map<String, Object> aggregateData = getData(tool.execute(args));
+        Map<String, Object> detailData = getData(detail.execute(args));
+
+        Map<String, Object> members = (Map<String, Object>) aggregateData.get("members");
+        int aggregateConstructors = ((Number) members.get("constructorCount")).intValue();
+        int aggregateMethods = ((Number) members.get("methodCount")).intValue();
+        int aggregateFields = ((Number) members.get("fieldCount")).intValue();
+        int aggregateNested = ((Number) members.get("nestedTypeCount")).intValue();
+
+        // get_type_members returns a single `methods` list that includes constructors
+        // (IType.getMethods() surfaces both); the aggregate splits them. Sum to compare.
+        java.util.List<?> detailMethods = (java.util.List<?>) detailData.get("methods");
+        java.util.List<?> detailFields = (java.util.List<?>) detailData.get("fields");
+        java.util.List<?> detailNested = (java.util.List<?>) detailData.get("nestedTypes");
+
+        assertEquals(aggregateConstructors + aggregateMethods, detailMethods.size(),
+            "analyze_type constructorCount+methodCount must equal get_type_members methods list size; "
+                + "aggregate ctors=" + aggregateConstructors + " methods=" + aggregateMethods
+                + " vs detail methods=" + detailMethods.size());
+        assertEquals(aggregateFields, detailFields.size(),
+            "field counts must agree; aggregate=" + aggregateFields + " detail=" + detailFields.size());
+        assertEquals(aggregateNested, detailNested.size(),
+            "nested-type counts must agree; aggregate=" + aggregateNested + " detail=" + detailNested.size());
     }
 }
