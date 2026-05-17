@@ -14,6 +14,7 @@ import org.eclipse.jdt.core.compiler.IProblem;
 import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.javalens.core.IJdtService;
+import org.javalens.core.ModifierFormatter;
 import org.javalens.core.TypeKindResolver;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
@@ -163,7 +164,7 @@ public class AnalyzeFileTool extends AbstractTool {
         info.put("kind", TypeKindResolver.kindOf(type));
 
         // Modifiers
-        info.put("modifiers", getModifiers(type.getFlags()));
+        info.put("modifiers", ModifierFormatter.format(type.getFlags()));
 
         // Location
         int offset = type.getSourceRange().getOffset();
@@ -201,7 +202,7 @@ public class AnalyzeFileTool extends AbstractTool {
         Map<String, Object> info = new LinkedHashMap<>();
         info.put("name", method.getElementName());
         info.put("constructor", method.isConstructor());
-        info.put("modifiers", getModifiers(method.getFlags()));
+        info.put("modifiers", ModifierFormatter.format(method.getFlags()));
 
         // Signature
         StringBuilder sig = new StringBuilder();
@@ -226,7 +227,7 @@ public class AnalyzeFileTool extends AbstractTool {
         Map<String, Object> info = new LinkedHashMap<>();
         info.put("name", field.getElementName());
         info.put("type", Signature.getSimpleName(Signature.toString(field.getTypeSignature())));
-        info.put("modifiers", getModifiers(field.getFlags()));
+        info.put("modifiers", ModifierFormatter.format(field.getFlags()));
         info.put("line", service.getLineNumber(cu, field.getSourceRange().getOffset()));
         return info;
     }
@@ -284,14 +285,4 @@ public class AnalyzeFileTool extends AbstractTool {
         return result;
     }
 
-    private List<String> getModifiers(int flags) {
-        List<String> modifiers = new ArrayList<>();
-        if (Flags.isPublic(flags)) modifiers.add("public");
-        if (Flags.isProtected(flags)) modifiers.add("protected");
-        if (Flags.isPrivate(flags)) modifiers.add("private");
-        if (Flags.isStatic(flags)) modifiers.add("static");
-        if (Flags.isFinal(flags)) modifiers.add("final");
-        if (Flags.isAbstract(flags)) modifiers.add("abstract");
-        return modifiers;
-    }
 }

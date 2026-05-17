@@ -11,6 +11,7 @@ import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.Signature;
 import org.javalens.core.IJdtService;
+import org.javalens.core.ModifierFormatter;
 import org.javalens.core.TypeKindResolver;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
@@ -208,7 +209,7 @@ public class GetEnclosingElementTool extends AbstractTool {
         }
         info.put("signature", sig.toString());
 
-        info.put("modifiers", getModifiers(method.getFlags()));
+        info.put("modifiers", ModifierFormatter.format(method.getFlags()));
 
         // Line number
         ICompilationUnit cu = method.getCompilationUnit();
@@ -226,7 +227,7 @@ public class GetEnclosingElementTool extends AbstractTool {
 
         info.put("kind", TypeKindResolver.kindOf(type));
 
-        info.put("modifiers", getModifiers(type.getFlags()));
+        info.put("modifiers", ModifierFormatter.format(type.getFlags()));
 
         ICompilationUnit cu = type.getCompilationUnit();
         if (cu != null && type.getSourceRange() != null) {
@@ -249,14 +250,4 @@ public class GetEnclosingElementTool extends AbstractTool {
         };
     }
 
-    private List<String> getModifiers(int flags) {
-        List<String> modifiers = new ArrayList<>();
-        if (Flags.isPublic(flags)) modifiers.add("public");
-        if (Flags.isProtected(flags)) modifiers.add("protected");
-        if (Flags.isPrivate(flags)) modifiers.add("private");
-        if (Flags.isStatic(flags)) modifiers.add("static");
-        if (Flags.isFinal(flags)) modifiers.add("final");
-        if (Flags.isAbstract(flags)) modifiers.add("abstract");
-        return modifiers;
-    }
 }

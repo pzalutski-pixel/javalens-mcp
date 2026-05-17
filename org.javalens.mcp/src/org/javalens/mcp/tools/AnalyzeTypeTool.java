@@ -14,6 +14,7 @@ import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.IJdtService;
+import org.javalens.core.ModifierFormatter;
 import org.javalens.core.TypeKindResolver;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
@@ -131,7 +132,7 @@ public class AnalyzeTypeTool extends AbstractTool {
 
         info.put("kind", TypeKindResolver.kindOf(type));
 
-        info.put("modifiers", getModifiers(type.getFlags()));
+        info.put("modifiers", ModifierFormatter.format(type.getFlags()));
 
         // Location
         if (cu != null && cu.getResource() != null) {
@@ -178,7 +179,7 @@ public class AnalyzeTypeTool extends AbstractTool {
             Map<String, Object> nestedInfo = new LinkedHashMap<>();
             nestedInfo.put("name", nested.getElementName());
             nestedInfo.put("kind", TypeKindResolver.kindOf(nested));
-            nestedInfo.put("modifiers", getModifiers(nested.getFlags()));
+            nestedInfo.put("modifiers", ModifierFormatter.format(nested.getFlags()));
             nestedTypes.add(nestedInfo);
         }
         members.put("nestedTypes", nestedTypes);
@@ -196,7 +197,7 @@ public class AnalyzeTypeTool extends AbstractTool {
             throws JavaModelException {
         Map<String, Object> info = new LinkedHashMap<>();
         info.put("name", method.getElementName());
-        info.put("modifiers", getModifiers(method.getFlags()));
+        info.put("modifiers", ModifierFormatter.format(method.getFlags()));
 
         // Signature
         StringBuilder sig = new StringBuilder();
@@ -239,7 +240,7 @@ public class AnalyzeTypeTool extends AbstractTool {
         Map<String, Object> info = new LinkedHashMap<>();
         info.put("name", field.getElementName());
         info.put("type", Signature.getSimpleName(Signature.toString(field.getTypeSignature())));
-        info.put("modifiers", getModifiers(field.getFlags()));
+        info.put("modifiers", ModifierFormatter.format(field.getFlags()));
 
         if (field.isEnumConstant()) {
             info.put("enumConstant", true);
@@ -382,14 +383,4 @@ public class AnalyzeTypeTool extends AbstractTool {
         return result;
     }
 
-    private List<String> getModifiers(int flags) {
-        List<String> modifiers = new ArrayList<>();
-        if (Flags.isPublic(flags)) modifiers.add("public");
-        if (Flags.isProtected(flags)) modifiers.add("protected");
-        if (Flags.isPrivate(flags)) modifiers.add("private");
-        if (Flags.isStatic(flags)) modifiers.add("static");
-        if (Flags.isFinal(flags)) modifiers.add("final");
-        if (Flags.isAbstract(flags)) modifiers.add("abstract");
-        return modifiers;
-    }
 }

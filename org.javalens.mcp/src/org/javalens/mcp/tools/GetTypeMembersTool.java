@@ -11,6 +11,7 @@ import org.eclipse.jdt.core.ITypeHierarchy;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.Signature;
 import org.javalens.core.IJdtService;
+import org.javalens.core.ModifierFormatter;
 import org.javalens.core.TypeKindResolver;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
@@ -229,7 +230,7 @@ public class GetTypeMembersTool extends AbstractTool {
             }
 
             int flags = method.getFlags();
-            info.put("modifiers", getModifiers(flags));
+            info.put("modifiers", ModifierFormatter.format(flags));
 
             // Build signature
             StringBuilder sig = new StringBuilder();
@@ -285,7 +286,7 @@ public class GetTypeMembersTool extends AbstractTool {
                 info.put("kind", "Field");
             }
 
-            info.put("modifiers", getModifiers(flags));
+            info.put("modifiers", ModifierFormatter.format(flags));
             info.put("type", Signature.getSimpleName(Signature.toString(field.getTypeSignature())));
 
             if (declaredIn != null) {
@@ -315,7 +316,7 @@ public class GetTypeMembersTool extends AbstractTool {
             info.put("kind", TypeKindResolver.kindOf(type));
 
             int flags = type.getFlags();
-            info.put("modifiers", getModifiers(flags));
+            info.put("modifiers", ModifierFormatter.format(flags));
 
             if (declaredIn != null) {
                 info.put("declaredIn", declaredIn);
@@ -335,17 +336,4 @@ public class GetTypeMembersTool extends AbstractTool {
         }
     }
 
-    private List<String> getModifiers(int flags) {
-        List<String> modifiers = new ArrayList<>();
-        if (Flags.isPublic(flags)) modifiers.add("public");
-        if (Flags.isProtected(flags)) modifiers.add("protected");
-        if (Flags.isPrivate(flags)) modifiers.add("private");
-        if (Flags.isStatic(flags)) modifiers.add("static");
-        if (Flags.isFinal(flags)) modifiers.add("final");
-        if (Flags.isAbstract(flags)) modifiers.add("abstract");
-        if (Flags.isSynchronized(flags)) modifiers.add("synchronized");
-        if (Flags.isNative(flags)) modifiers.add("native");
-        if (Flags.isDefaultMethod(flags)) modifiers.add("default");
-        return modifiers;
-    }
 }

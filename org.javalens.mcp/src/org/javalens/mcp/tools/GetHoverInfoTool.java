@@ -13,6 +13,7 @@ import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.Signature;
 import org.javalens.core.IJdtService;
+import org.javalens.core.ModifierFormatter;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
 import org.slf4j.Logger;
@@ -149,7 +150,7 @@ public class GetHoverInfoTool extends AbstractTool {
 
             // Modifiers
             int flags = member.getFlags();
-            info.put("modifiers", getModifiers(flags));
+            info.put("modifiers", ModifierFormatter.format(flags));
 
             // Declaring type
             IType declaringType = member.getDeclaringType();
@@ -308,15 +309,4 @@ public class GetHoverInfoTool extends AbstractTool {
         };
     }
 
-    private List<String> getModifiers(int flags) {
-        List<String> modifiers = new ArrayList<>();
-        if (Flags.isPublic(flags)) modifiers.add("public");
-        if (Flags.isProtected(flags)) modifiers.add("protected");
-        if (Flags.isPrivate(flags)) modifiers.add("private");
-        if (Flags.isStatic(flags)) modifiers.add("static");
-        if (Flags.isFinal(flags)) modifiers.add("final");
-        if (Flags.isAbstract(flags)) modifiers.add("abstract");
-        if (Flags.isSynchronized(flags)) modifiers.add("synchronized");
-        return modifiers;
-    }
 }

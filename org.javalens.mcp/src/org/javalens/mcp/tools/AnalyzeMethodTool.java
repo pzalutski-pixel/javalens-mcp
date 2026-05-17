@@ -21,6 +21,7 @@ import org.eclipse.jdt.core.dom.NodeFinder;
 import org.eclipse.jdt.core.dom.SuperMethodInvocation;
 import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.IJdtService;
+import org.javalens.core.ModifierFormatter;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
 import org.slf4j.Logger;
@@ -162,7 +163,7 @@ public class AnalyzeMethodTool extends AbstractTool {
         Map<String, Object> info = new LinkedHashMap<>();
         info.put("name", method.getElementName());
         info.put("constructor", method.isConstructor());
-        info.put("modifiers", getModifiers(method.getFlags()));
+        info.put("modifiers", ModifierFormatter.format(method.getFlags()));
 
         // Declaring type
         IType declaringType = method.getDeclaringType();
@@ -456,15 +457,4 @@ public class AnalyzeMethodTool extends AbstractTool {
         return null;
     }
 
-    private List<String> getModifiers(int flags) {
-        List<String> modifiers = new ArrayList<>();
-        if (Flags.isPublic(flags)) modifiers.add("public");
-        if (Flags.isProtected(flags)) modifiers.add("protected");
-        if (Flags.isPrivate(flags)) modifiers.add("private");
-        if (Flags.isStatic(flags)) modifiers.add("static");
-        if (Flags.isFinal(flags)) modifiers.add("final");
-        if (Flags.isAbstract(flags)) modifiers.add("abstract");
-        if (Flags.isSynchronized(flags)) modifiers.add("synchronized");
-        return modifiers;
-    }
 }

@@ -9,6 +9,7 @@ import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.ITypeParameter;
 import org.eclipse.jdt.core.JavaModelException;
 import org.javalens.core.IJdtService;
+import org.javalens.core.ModifierFormatter;
 import org.javalens.core.TypeKindResolver;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
@@ -119,7 +120,7 @@ public class GetTypeAtPositionTool extends AbstractTool {
         info.put("kind", TypeKindResolver.kindOf(type));
 
         int flags = type.getFlags();
-        info.put("modifiers", getModifiers(flags));
+        info.put("modifiers", ModifierFormatter.format(flags));
 
         String superclass = type.getSuperclassName();
         if (superclass != null) {
@@ -171,14 +172,4 @@ public class GetTypeAtPositionTool extends AbstractTool {
         return info;
     }
 
-    private List<String> getModifiers(int flags) {
-        List<String> modifiers = new ArrayList<>();
-        if (Flags.isPublic(flags)) modifiers.add("public");
-        if (Flags.isProtected(flags)) modifiers.add("protected");
-        if (Flags.isPrivate(flags)) modifiers.add("private");
-        if (Flags.isStatic(flags)) modifiers.add("static");
-        if (Flags.isFinal(flags)) modifiers.add("final");
-        if (Flags.isAbstract(flags)) modifiers.add("abstract");
-        return modifiers;
-    }
 }
