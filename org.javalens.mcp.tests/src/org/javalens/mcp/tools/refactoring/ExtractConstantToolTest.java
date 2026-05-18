@@ -66,12 +66,14 @@ class ExtractConstantToolTest {
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
 
-        // Verify constant info
+        // Verify constant info — extracting a String literal yields String type
         assertEquals("DEFAULT_PREFIX", data.get("constantName"));
-        assertNotNull(data.get("constantType"));
+        String constantType = (String) data.get("constantType");
+        assertNotNull(constantType, "constantType missing");
+        assertEquals("String", constantType,
+            "extracted PREFIX_ string literal yields String type; got: " + data);
 
         // Verify edit structure
-        assertNotNull(data.get("edits"));
         List<Map<String, Object>> edits = getEdits(data);
         assertFalse(edits.isEmpty());
 

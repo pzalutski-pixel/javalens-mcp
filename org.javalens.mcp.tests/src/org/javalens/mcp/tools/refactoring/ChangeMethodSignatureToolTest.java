@@ -64,10 +64,15 @@ class ChangeMethodSignatureToolTest {
         assertEquals("formatOutput", data.get("newName"));
 
         // Verify edit structure
-        assertNotNull(data.get("editsByFile"));
-        assertNotNull(data.get("totalEdits"));
-        assertNotNull(data.get("filesAffected"));
-        assertTrue((int) data.get("totalEdits") > 1);  // Declaration + call sites
+        @SuppressWarnings("unchecked")
+        Map<String, ?> editsByFile = (Map<String, ?>) data.get("editsByFile");
+        assertNotNull(editsByFile, "editsByFile must be present");
+        assertFalse(editsByFile.isEmpty(), "renaming a called method must touch at least one file");
+        int totalEdits = ((Number) data.get("totalEdits")).intValue();
+        int filesAffected = ((Number) data.get("filesAffected")).intValue();
+        assertTrue(totalEdits > 1, "Declaration + call sites; totalEdits > 1; got: " + data);
+        assertEquals(editsByFile.size(), filesAffected,
+            "filesAffected must equal editsByFile.size(); got: " + data);
     }
 
     /**

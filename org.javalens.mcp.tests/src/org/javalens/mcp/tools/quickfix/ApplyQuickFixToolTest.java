@@ -73,8 +73,8 @@ class ApplyQuickFixToolTest {
         Map<String, Object> edit = edits.get(0);
         assertEquals("insert", edit.get("type"),
             "Adding an import is an insertion; got: " + edit);
-        assertNotNull(edit.get("offset"));
-        assertNotNull(edit.get("line"));
+        assertTrue(((Number) edit.get("offset")).intValue() >= 0, "offset >= 0; got: " + edit);
+        assertTrue(((Number) edit.get("line")).intValue() >= 0, "line >= 0; got: " + edit);
 
         String newText = (String) edit.get("newText");
         assertNotNull(newText, "Insert edit must carry the text to insert");

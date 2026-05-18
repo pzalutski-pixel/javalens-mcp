@@ -68,10 +68,8 @@ class ExtractInterfaceToolTest {
 
         // Verify interface info
         assertEquals("IExtractTarget", data.get("interfaceName"));
-        assertNotNull(data.get("interfaceContent"));
-
-        // Verify interface content structure
         String content = (String) data.get("interfaceContent");
+        assertNotNull(content, "interfaceContent missing");
         assertTrue(content.contains("package com.example"));
         assertTrue(content.contains("public interface IExtractTarget"));
 
@@ -79,8 +77,12 @@ class ExtractInterfaceToolTest {
         List<Map<String, Object>> methods = getExtractedMethods(data);
         assertFalse(methods.isEmpty());
 
-        // Verify class edits for implements clause
-        assertNotNull(data.get("classEdits"));
+        // Verify class edits for implements clause — non-empty list with implements text
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> classEdits = (List<Map<String, Object>>) data.get("classEdits");
+        assertNotNull(classEdits, "classEdits missing");
+        assertFalse(classEdits.isEmpty(),
+            "extracting an interface must add `implements <name>` to the class; got: " + data);
     }
 
     @Test

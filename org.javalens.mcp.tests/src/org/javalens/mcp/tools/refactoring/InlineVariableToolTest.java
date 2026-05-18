@@ -65,11 +65,13 @@ class InlineVariableToolTest {
 
         // Verify variable info
         assertEquals("trimmed", data.get("variableName"));
-        assertNotNull(data.get("initializerText"));
-        assertNotNull(data.get("usageCount"));
+        String initializerText = (String) data.get("initializerText");
+        assertNotNull(initializerText, "initializerText missing");
+        assertFalse(initializerText.isBlank(), "initializerText non-blank; got: " + data);
+        int usageCount = ((Number) data.get("usageCount")).intValue();
+        assertTrue(usageCount > 0, "trimmed variable is used; usageCount > 0; got: " + data);
 
         // Verify edit structure
-        assertNotNull(data.get("edits"));
         List<Map<String, Object>> edits = getEdits(data);
         assertFalse(edits.isEmpty());
     }

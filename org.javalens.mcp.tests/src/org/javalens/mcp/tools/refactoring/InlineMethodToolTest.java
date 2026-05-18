@@ -60,18 +60,21 @@ class InlineMethodToolTest {
 
         // Verify method info
         assertEquals("doubleValue", data.get("methodName"));
-        assertNotNull(data.get("methodClass"));
+        String methodClass = (String) data.get("methodClass");
+        assertNotNull(methodClass, "methodClass missing");
+        assertFalse(methodClass.isBlank(), "methodClass non-blank; got: " + data);
 
         // Verify edit structure
-        assertNotNull(data.get("edits"));
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> edits = (List<Map<String, Object>>) data.get("edits");
+        assertNotNull(edits, "edits list missing");
         assertFalse(edits.isEmpty());
         Map<String, Object> edit = edits.get(0);
-        assertNotNull(edit.get("newText"));
+        String newText = (String) edit.get("newText");
+        assertNotNull(newText, "newText missing on first edit");
+        assertFalse(newText.isBlank(), "newText non-blank; got: " + edit);
 
         // The inlined code should contain the multiplication
-        String newText = (String) edit.get("newText");
         assertTrue(newText.contains("x") || newText.contains("*"));
     }
 
