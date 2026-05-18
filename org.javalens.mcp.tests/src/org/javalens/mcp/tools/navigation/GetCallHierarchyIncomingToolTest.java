@@ -162,15 +162,24 @@ class GetCallHierarchyIncomingToolTest {
         assertFalse(callers.isEmpty());
 
         Map<String, Object> caller = callers.get(0);
-        assertNotNull(caller.get("callerMethod"),
-            "Caller info must include callerMethod; got: " + caller);
-        assertNotNull(caller.get("callerSignature"));
-        assertNotNull(caller.get("callerClass"));
-        assertNotNull(caller.get("context"),
-            "Caller info must include the context line; got: " + caller);
-        assertNotNull(caller.get("line"));
-        assertNotNull(caller.get("column"));
-        assertNotNull(caller.get("filePath"));
+        String callerMethod = (String) caller.get("callerMethod");
+        assertNotNull(callerMethod, "Caller info must include callerMethod; got: " + caller);
+        assertFalse(callerMethod.isBlank(), "callerMethod must be non-blank; got: " + caller);
+        String callerSignature = (String) caller.get("callerSignature");
+        assertNotNull(callerSignature, "callerSignature missing: " + caller);
+        assertTrue(callerSignature.contains(callerMethod + "("),
+            "callerSignature must start with `<callerMethod>(`; got: " + caller);
+        String callerClass = (String) caller.get("callerClass");
+        assertNotNull(callerClass, "callerClass missing: " + caller);
+        assertFalse(callerClass.isBlank(), "callerClass non-blank; got: " + caller);
+        String context = (String) caller.get("context");
+        assertNotNull(context, "Caller info must include the context line; got: " + caller);
+        assertFalse(context.isBlank(), "context must be non-blank source line; got: " + caller);
+        assertTrue(((Number) caller.get("line")).intValue() >= 0, "line >= 0; got: " + caller);
+        assertTrue(((Number) caller.get("column")).intValue() >= 0, "column >= 0; got: " + caller);
+        String filePath = (String) caller.get("filePath");
+        assertNotNull(filePath, "filePath missing: " + caller);
+        assertTrue(filePath.endsWith(".java"), "filePath must point to .java; got: " + caller);
     }
 
     @Test

@@ -49,16 +49,29 @@ class GetTypeMembersToolTest {
         assertEquals("Calculator", typeInfo.get("name"));
         assertEquals("class", typeInfo.get("kind"));
 
-        // Verify members
-        assertNotNull(data.get("methods"));
-        assertNotNull(data.get("fields"));
-        assertNotNull(data.get("totalMembers"));
-
+        // Verify members — exact counts for Calculator (4 methods, 1 field, 0 nested)
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> methods = (List<Map<String, Object>>) data.get("methods");
-        assertFalse(methods.isEmpty());
-        assertNotNull(methods.get(0).get("name"));
-        assertNotNull(methods.get(0).get("signature"));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> fields = (List<Map<String, Object>>) data.get("fields");
+        int totalMembers = ((Number) data.get("totalMembers")).intValue();
+        assertEquals(4, methods.size(),
+            "Calculator declares 4 methods (add/subtract/multiply/getLastResult); got: " + methods);
+        assertEquals(1, fields.size(),
+            "Calculator declares 1 field (lastResult); got: " + fields);
+        assertEquals(methods.size() + fields.size(), totalMembers,
+            "totalMembers must equal methods + fields (Calculator has no nested types); got: "
+                + totalMembers);
+
+        // First method has non-blank name and valid signature
+        Map<String, Object> first = methods.get(0);
+        String name = (String) first.get("name");
+        assertNotNull(name, "first method name missing: " + first);
+        assertFalse(name.isBlank(), "first method name non-blank; got: " + first);
+        String signature = (String) first.get("signature");
+        assertNotNull(signature, "first method signature missing: " + first);
+        assertTrue(signature.contains(name + "("),
+            "signature must start with `<name>(`; got: " + first);
     }
 
     @Test @DisplayName("supports optional parameters")

@@ -63,9 +63,14 @@ class GetSymbolInfoToolTest {
         assertEquals("Type", data.get("kind"));
         assertEquals("com.example.Calculator", data.get("qualifiedName"));
         assertEquals("class", data.get("typeKind"));
-        assertNotNull(data.get("filePath"));
-        assertNotNull(data.get("line"));
-        assertNotNull(data.get("column"));
+        String filePath = (String) data.get("filePath");
+        assertNotNull(filePath, "filePath must be present");
+        assertTrue(filePath.endsWith("Calculator.java"),
+            "filePath must point to Calculator.java; got: " + filePath);
+        assertTrue(((Number) data.get("line")).intValue() >= 0,
+            "line must be >= 0; got: " + data);
+        assertTrue(((Number) data.get("column")).intValue() >= 0,
+            "column must be >= 0; got: " + data);
     }
 
     @Test

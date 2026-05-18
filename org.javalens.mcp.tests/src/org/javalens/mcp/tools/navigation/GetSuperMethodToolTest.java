@@ -225,15 +225,18 @@ class GetSuperMethodToolTest {
         Map<String, Object> data = SemanticAssertions.assertSuccessData(r);
 
         Map<String, Object> method = (Map<String, Object>) data.get("method");
-        assertNotNull(method);
+        assertNotNull(method, "method block must be present");
         assertEquals("speak", method.get("name"));
         assertEquals("com.example.Dog", method.get("declaringType"));
         assertEquals("speak(): void", method.get("signature"),
             "signature must be `name(params): returnType`; got: " + method);
         List<String> modifiers = (List<String>) method.get("modifiers");
         assertTrue(modifiers.contains("public"));
-        assertNotNull(method.get("filePath"));
-        assertNotNull(method.get("line"));
+        String filePath = (String) method.get("filePath");
+        assertNotNull(filePath, "filePath missing: " + method);
+        assertTrue(filePath.endsWith("Animal.java"),
+            "Dog.speak is declared in Animal.java (the fixture file); got: " + method);
+        assertTrue(((Number) method.get("line")).intValue() >= 0, "line >= 0; got: " + method);
     }
 
     @Test
