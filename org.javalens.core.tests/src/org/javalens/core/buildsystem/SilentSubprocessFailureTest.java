@@ -40,28 +40,38 @@ class SilentSubprocessFailureTest {
     TestProjectHelper helper = new TestProjectHelper();
 
     @Test
-    @DisplayName("mvn dependency resolution failure surfaces a MAVEN_SUBPROCESS_FAILED warning")
+    @DisplayName("mvn dependency resolution failure surfaces exactly one MAVEN_SUBPROCESS_FAILED warning")
     void mavenSubprocessFailureIsSurfaced() throws Exception {
         JdtServiceImpl service = helper.loadProject("broken-maven-deps");
         List<LoadWarning> warnings = service.getWarnings();
 
-        assertFalse(warnings.isEmpty(),
-            "Expected at least one warning when mvn dependency resolution fails. " +
-            "Today this list is empty — that is Bug X.");
-
-        boolean hasMavenWarning = warnings.stream()
-            .anyMatch(w -> LoadWarning.MAVEN_SUBPROCESS_FAILED.equals(w.code()));
-        assertTrue(hasMavenWarning,
-            "Expected a MAVEN_SUBPROCESS_FAILED warning. Got: " + warnings);
-
-        // Sanity: the warning includes a remediation hint
-        warnings.stream()
+        // broken-maven-deps declares <maven.compiler.source>21</maven.compiler.source>, so
+        // COMPLIANCE_LEVEL_UNKNOWN must NOT fire. Only the subprocess failure does.
+        // Pinning the exact count catches a regression that emitted spurious extras.
+        List<LoadWarning> mavenWarnings = warnings.stream()
             .filter(w -> LoadWarning.MAVEN_SUBPROCESS_FAILED.equals(w.code()))
-            .findFirst()
-            .ifPresent(w -> {
-                assertNotNull(w.remediation(), "Warning must include actionable remediation");
-                assertNotNull(w.message(), "Warning must include a message");
-            });
+            .toList();
+        assertEquals(1, mavenWarnings.size(),
+            "Expected exactly one MAVEN_SUBPROCESS_FAILED warning; got warnings: " + warnings);
+        assertEquals(1, warnings.size(),
+            "broken-maven-deps declares compiler.source=21, so the load surfaces ONLY "
+                + "MAVEN_SUBPROCESS_FAILED. Any extra warning indicates a regression that "
+                + "emitted a spurious code; got warnings: " + warnings);
+
+        LoadWarning w = mavenWarnings.get(0);
+        assertNotNull(w.message(), "Warning must include a message");
+        assertFalse(w.message().isBlank(), "Warning message must not be blank");
+        assertNotNull(w.remediation(), "Warning must include actionable remediation");
+        assertFalse(w.remediation().isBlank(), "Warning remediation must not be blank");
+        // Pin message content: source.code emits one of several forms — non-zero exit,
+        // could-not-start, or timeout — every form contains "mvn" or "Maven" or the
+        // "exit code" wording. Without this, a regression emitting "" or generic text
+        // (e.g. just "warning") would still pass the non-blank check.
+        String message = w.message().toLowerCase();
+        assertTrue(message.contains("mvn") || message.contains("maven")
+                || message.contains("exit code") || message.contains("could not start"),
+            "MAVEN_SUBPROCESS_FAILED message must describe the subprocess failure; got: "
+                + w.message());
     }
 
     @Test
