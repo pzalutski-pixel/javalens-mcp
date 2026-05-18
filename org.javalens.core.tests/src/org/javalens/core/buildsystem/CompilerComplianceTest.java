@@ -1,5 +1,6 @@
 package org.javalens.core.buildsystem;
 
+import org.eclipse.jdt.core.JavaCore;
 import org.javalens.core.JdtServiceImpl;
 import org.javalens.core.fixtures.ClasspathSnapshot;
 import org.javalens.core.fixtures.LoadedFixture;
@@ -117,6 +118,103 @@ class CompilerComplianceTest {
         String expected = String.valueOf(Runtime.version().feature());
         assertEquals(expected, fixture.classpath().compilerSource(),
             "Expected runtime fallback when no compiler level is declared");
+    }
+
+    @Test
+    @DisplayName("Properties precedence: maven.compiler.release wins over maven.compiler.source")
+    void propertiesPrecedence_releaseWinsOverSource() throws Exception {
+        // detectCompilerLevel iterates ["release", "source", "target"]; the first non-null
+        // wins. Mutate compliance-level-mismatch (declares source=17) to also declare
+        // release=11. Expected outcome: release wins → "11", not "17".
+        Path projectRoot = helper.copyFixture("compliance-level-mismatch");
+        Path pom = projectRoot.resolve("pom.xml");
+        String original = Files.readString(pom);
+        String withRelease = original.replace(
+            "<maven.compiler.source>17</maven.compiler.source>",
+            "<maven.compiler.release>11</maven.compiler.release>\n"
+                + "        <maven.compiler.source>17</maven.compiler.source>");
+        Files.writeString(pom, withRelease);
+
+        JdtServiceImpl service = new JdtServiceImpl();
+        service.loadProject(projectRoot);
+        ClasspathSnapshot snapshot = ClasspathSnapshot.capture(service.getJavaProject());
+
+        assertEquals("11", snapshot.compilerSource(),
+            "maven.compiler.release must win over maven.compiler.source per documented "
+                + "precedence; got: " + snapshot.compilerSource());
+    }
+
+    @Test
+    @DisplayName("Plugin precedence: <release> wins over <source> within <configuration>")
+    void pluginPrecedence_releaseWinsOverSource() throws Exception {
+        // detectCompilerLevel's plugin branch iterates ["release", "source", "target"].
+        // Mutate compliance-from-plugin-config (declares <release>17</release>) to also
+        // include <source>11</source>. Expected outcome: release still wins → "17".
+        Path projectRoot = helper.copyFixture("compliance-from-plugin-config");
+        Path pom = projectRoot.resolve("pom.xml");
+        String original = Files.readString(pom);
+        String withSource = original.replace(
+            "<release>17</release>",
+            "<release>17</release>\n                    <source>11</source>");
+        Files.writeString(pom, withSource);
+
+        JdtServiceImpl service = new JdtServiceImpl();
+        service.loadProject(projectRoot);
+        ClasspathSnapshot snapshot = ClasspathSnapshot.capture(service.getJavaProject());
+
+        assertEquals("17", snapshot.compilerSource(),
+            "Plugin <release> must win over <source> per documented precedence; got: "
+                + snapshot.compilerSource());
+    }
+
+    @Test
+    @DisplayName("Cross-section precedence: pom <properties> win over plugin <configuration>")
+    void propertiesWinOverPluginConfiguration() throws Exception {
+        // detectCompilerLevel tries <properties> before the plugin block. Construct a pom
+        // declaring BOTH: properties=11, plugin <release>=17. Properties must win → "11".
+        Path projectRoot = helper.copyFixture("compliance-from-plugin-config");
+        Path pom = projectRoot.resolve("pom.xml");
+        String original = Files.readString(pom);
+        // Insert a <properties> block declaring maven.compiler.source=11 inside <project>.
+        // (compliance-from-plugin-config has no existing <properties> for compiler.)
+        String withProperties = original.replace(
+            "</modelVersion>",
+            "</modelVersion>\n\n    <properties>\n"
+                + "        <maven.compiler.source>11</maven.compiler.source>\n"
+                + "    </properties>");
+        Files.writeString(pom, withProperties);
+
+        JdtServiceImpl service = new JdtServiceImpl();
+        service.loadProject(projectRoot);
+        ClasspathSnapshot snapshot = ClasspathSnapshot.capture(service.getJavaProject());
+
+        assertEquals("11", snapshot.compilerSource(),
+            "pom <properties> must win over plugin <configuration> per documented "
+                + "precedence; got: " + snapshot.compilerSource());
+    }
+
+    @Test
+    @DisplayName("applyCompilerOptions pins COMPILER_PB_UNUSED_IMPORT=WARNING and CODEGEN_TARGET_PLATFORM=source")
+    void applyCompilerOptionsPinsAuxiliaryOptions() throws Exception {
+        // Two non-source/compliance options that applyCompilerOptions sets explicitly. The
+        // unused-import option is load-bearing for the get_quick_fixes tool — its
+        // "UnusedImport → remove_import" documented fix path depends on JDT surfacing the
+        // problem as an IProblem, which only happens when the option is WARNING/ERROR.
+        // ClasspathSnapshot doesn't (and shouldn't) expose these; read directly.
+        LoadedFixture fixture = helper.loadFixture("compliance-level-mismatch");
+
+        String unusedImport = fixture.service().getJavaProject()
+            .getOption(JavaCore.COMPILER_PB_UNUSED_IMPORT, true);
+        assertEquals(JavaCore.WARNING, unusedImport,
+            "COMPILER_PB_UNUSED_IMPORT must be WARNING so JDT reconcile surfaces the "
+                + "UnusedImport problem (get_quick_fixes UnusedImport → remove_import path); "
+                + "got: " + unusedImport);
+
+        String codegenTarget = fixture.service().getJavaProject()
+            .getOption(JavaCore.COMPILER_CODEGEN_TARGET_PLATFORM, true);
+        assertEquals("17", codegenTarget,
+            "COMPILER_CODEGEN_TARGET_PLATFORM must match the declared source level so "
+                + "bytecode targets the same JVM family; got: " + codegenTarget);
     }
 
     @Test
