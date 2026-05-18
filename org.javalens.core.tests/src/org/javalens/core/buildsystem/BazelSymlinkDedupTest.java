@@ -110,6 +110,52 @@ class BazelSymlinkDedupTest {
             "Linux/macOS. Got " + libAppEntries + ". Libraries: " + snapshot.libraries());
     }
 
+    @Test
+    @DisplayName("Independent roots: bazel-bin and bazel-out canonicalize to non-overlapping trees — both walked, each jar present exactly once")
+    void independentSymlinks_bothRootsScanned() throws Exception {
+        // canonicalizeAndDedupe's containment check has two outcomes: (a) one root's
+        // canonical path is contained in another's → drop the contained root, (b) the
+        // canonicals are siblings or unrelated → keep both. The two existing tests both
+        // exercise (a). This test exercises (b): bazel-bin and bazel-out canonicalize to
+        // separate trees, each holding a jar. Both roots must be walked and each jar
+        // present exactly once on the classpath.
+        //
+        // (The "shared jar reachable from both roots via independent symlink chains"
+        // bonus check would exercise scanBazelDirForJars's Set<Path> canonical dedup, but
+        // requires creating FILE symlinks — those need Developer Mode on Windows and have
+        // no junction fallback. We test the directory-level dedup behavior here and leave
+        // the file-symlink scenario to CI on Linux/macOS.)
+
+        Path realTreeA = helper.getTempDirectory().resolve("real-tree-a");
+        Files.createDirectories(realTreeA);
+        Files.write(realTreeA.resolve("libonly-a.jar"), new byte[]{'P','K',3,4});
+
+        Path realTreeB = helper.getTempDirectory().resolve("real-tree-b");
+        Files.createDirectories(realTreeB);
+        Files.write(realTreeB.resolve("libonly-b.jar"), new byte[]{'P','K',3,4});
+
+        Path projectRoot = helper.getTempDirectory().resolve("bazel-independent-roots");
+        Files.createDirectories(projectRoot);
+        Files.writeString(projectRoot.resolve("MODULE.bazel"), "module(name = \"split\")\n");
+        TestEnvironment.requireOrSkip(createDirectoryLink(projectRoot.resolve("bazel-bin"), realTreeA),
+            "directory symlink / junction creation (bazel-bin → tree A)");
+        TestEnvironment.requireOrSkip(createDirectoryLink(projectRoot.resolve("bazel-out"), realTreeB),
+            "directory symlink / junction creation (bazel-out → tree B)");
+
+        JdtServiceImpl service = new JdtServiceImpl();
+        service.loadProject(projectRoot);
+        ClasspathSnapshot snapshot = ClasspathSnapshot.capture(service.getJavaProject());
+
+        assertEquals(1L, snapshot.libraryCountEndingWith("libonly-a.jar"),
+            "libonly-a.jar reachable only via bazel-bin — must be present exactly once. "
+                + "If bazel-bin's root were dropped by the containment check (false positive), "
+                + "this would be 0. Libraries: " + snapshot.libraries());
+        assertEquals(1L, snapshot.libraryCountEndingWith("libonly-b.jar"),
+            "libonly-b.jar reachable only via bazel-out — must be present exactly once. "
+                + "If bazel-out's root were dropped, this would be 0. Libraries: "
+                + snapshot.libraries());
+    }
+
     /**
      * Create a directory link at {@code link} pointing to {@code target}. Tries a symbolic
      * link first; on Windows where symlinks need admin/Developer Mode, falls back to a
