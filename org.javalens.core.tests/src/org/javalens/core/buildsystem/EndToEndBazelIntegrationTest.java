@@ -33,9 +33,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * under {@code bazel-bin}/{@code bazel-out}, exercising the Bug E dedup path on a real
  * symlink layout.
  *
- * <p>Bazel APT and compiler-compliance reading are not yet supported in production; this
- * test focuses on classpath aggregation, source discovery across targets, and cross-target
- * navigation — the parts that the production code does claim to support.
+ * <p>Bazel compiler-compliance reading IS supported and is asserted below. Bazel
+ * annotation-processor discovery via the classpath SPI descriptor scan is implemented
+ * but not exercised here — a separate fixture with a real processor jar is the right
+ * place. This test focuses on classpath aggregation, source discovery across targets,
+ * cross-target navigation, javacopts compliance extraction, and the no-spurious-warning
+ * case after a real build.
  */
 class EndToEndBazelIntegrationTest {
 
@@ -80,17 +83,25 @@ class EndToEndBazelIntegrationTest {
         // libmodel.jar, libservice.jar, libweb.jar — each appears in bazel-out under
         // <config>/bin/<package>/, and bazel-bin symlinks into bazel-out. The Bug E fix
         // canonicalizes scan roots so we don't double-count.
-        long modelJars = snapshot.libraryCountEndingWith("libmodel.jar");
-        long serviceJars = snapshot.libraryCountEndingWith("libservice.jar");
-        long webJars = snapshot.libraryCountEndingWith("libweb.jar");
-        assertTrue(modelJars >= 1,
-            "Expected libmodel.jar on classpath. Libraries: " + snapshot.libraries());
-        assertTrue(modelJars == 1,
-            "Expected libmodel.jar exactly once after dedup. Got " + modelJars);
-        assertTrue(serviceJars == 1,
-            "Expected libservice.jar exactly once after dedup. Got " + serviceJars);
-        assertTrue(webJars == 1,
-            "Expected libweb.jar exactly once after dedup. Got " + webJars);
+        assertEquals(1L, snapshot.libraryCountEndingWith("libmodel.jar"),
+            "Expected libmodel.jar exactly once after Bug-E dedup. Libraries: "
+                + snapshot.libraries());
+        assertEquals(1L, snapshot.libraryCountEndingWith("libservice.jar"),
+            "Expected libservice.jar exactly once after Bug-E dedup. Libraries: "
+                + snapshot.libraries());
+        assertEquals(1L, snapshot.libraryCountEndingWith("libweb.jar"),
+            "Expected libweb.jar exactly once after Bug-E dedup. Libraries: "
+                + snapshot.libraries());
+
+        // === Silent-pass: no BAZEL_NOT_BUILT after a real bazel build //... =============
+        // After bazel build //... completes, bazel-bin must contain jars and the
+        // not-built warning must NOT fire. BazelNotBuiltWarningTest covers this
+        // synthetically with fake jars; this is the real-world version.
+        boolean notBuilt = service.getWarnings().stream()
+            .anyMatch(w -> "BAZEL_NOT_BUILT".equals(w.code()));
+        assertTrue(!notBuilt,
+            "BAZEL_NOT_BUILT must NOT fire after a successful bazel build. Warnings: "
+                + service.getWarnings());
 
         // === Each target's source folder is on the classpath ==========================
         // For Bazel layouts where BUILD.bazel sits at <target>/ alongside src/main/java,
