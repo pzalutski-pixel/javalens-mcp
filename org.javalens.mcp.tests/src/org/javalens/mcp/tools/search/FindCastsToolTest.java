@@ -41,9 +41,13 @@ class FindCastsToolTest {
         args.put("typeName", "com.example.Calculator");
         ToolResponse r = tool.execute(args);
         assertTrue(r.isSuccess());
-        assertFalse(getCasts(getData(r)).isEmpty());
-        assertNotNull(getData(r).get("totalCount"));
-        assertEquals("com.example.Calculator", getData(r).get("typeName"));
+        Map<String, Object> data = getData(r);
+        List<?> casts = getCasts(data);
+        assertFalse(casts.isEmpty(), "Calculator has known casts in fixtures");
+        int totalCount = ((Number) data.get("totalCount")).intValue();
+        assertEquals(casts.size(), totalCount,
+            "totalCount must equal casts list size; got: total=" + totalCount + " size=" + casts.size());
+        assertEquals("com.example.Calculator", data.get("typeName"));
     }
 
     @Test @DisplayName("respects maxResults")
@@ -103,14 +107,14 @@ class FindCastsToolTest {
         List<Map<String, Object>> casts = castsOf(r);
         assertFalse(casts.isEmpty());
         for (Map<String, Object> c : casts) {
-            assertNotNull(c.get("filePath"), "filePath missing: " + c);
-            assertNotNull(c.get("line"), "line missing: " + c);
-            assertNotNull(c.get("column"), "column missing: " + c);
-            assertNotNull(c.get("offset"), "offset missing: " + c);
-            assertNotNull(c.get("length"), "length missing: " + c);
             String fp = ((String) c.get("filePath")).replace('\\', '/');
             assertTrue(fp.endsWith("SearchPatterns.java"),
                 "(Calculator) cast must come from SearchPatterns.java; got: " + fp);
+            assertTrue(((Number) c.get("line")).intValue() >= 0, "line >= 0; got: " + c);
+            assertTrue(((Number) c.get("column")).intValue() >= 0, "column >= 0; got: " + c);
+            assertTrue(((Number) c.get("offset")).intValue() >= 0, "offset >= 0; got: " + c);
+            assertTrue(((Number) c.get("length")).intValue() > 0,
+                "length > 0 (a cast spans at least 1 char); got: " + c);
         }
     }
 

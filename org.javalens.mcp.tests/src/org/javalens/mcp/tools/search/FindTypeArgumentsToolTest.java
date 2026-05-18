@@ -158,12 +158,16 @@ class FindTypeArgumentsToolTest {
         List<Map<String, Object>> usages = usagesOf(r);
         assertFalse(usages.isEmpty());
         for (Map<String, Object> u : usages) {
-            assertNotNull(u.get("filePath"), "filePath missing: " + u);
-            assertNotNull(u.get("line"), "line missing: " + u);
-            assertNotNull(u.get("column"), "column missing: " + u);
-            assertNotNull(u.get("offset"), "offset missing: " + u);
-            assertNotNull(u.get("length"), "length missing: " + u);
-            assertNotNull(u.get("context"), "context missing: " + u);
+            String fp = (String) u.get("filePath");
+            assertNotNull(fp, "filePath missing: " + u);
+            assertTrue(fp.endsWith(".java"), "filePath ends with .java; got: " + u);
+            assertTrue(((Number) u.get("line")).intValue() >= 0, "line >= 0; got: " + u);
+            assertTrue(((Number) u.get("column")).intValue() >= 0, "column >= 0; got: " + u);
+            assertTrue(((Number) u.get("offset")).intValue() >= 0, "offset >= 0; got: " + u);
+            assertTrue(((Number) u.get("length")).intValue() > 0, "length > 0; got: " + u);
+            String ctx = (String) u.get("context");
+            assertNotNull(ctx, "context missing: " + u);
+            assertFalse(ctx.isBlank(), "context non-blank; got: " + u);
         }
     }
 

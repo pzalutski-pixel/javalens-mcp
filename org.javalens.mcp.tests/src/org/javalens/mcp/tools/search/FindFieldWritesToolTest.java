@@ -213,10 +213,14 @@ class FindFieldWritesToolTest {
         List<Map<String, Object>> writes = writesOf(r);
         assertFalse(writes.isEmpty());
         for (Map<String, Object> w : writes) {
-            assertNotNull(w.get("filePath"), "filePath missing: " + w);
-            assertNotNull(w.get("line"), "line missing: " + w);
-            assertNotNull(w.get("column"), "column missing: " + w);
-            assertNotNull(w.get("context"), "context missing: " + w);
+            String fp = (String) w.get("filePath");
+            assertNotNull(fp, "filePath missing: " + w);
+            assertTrue(fp.endsWith(".java"), "filePath ends with .java; got: " + w);
+            assertTrue(((Number) w.get("line")).intValue() >= 0, "line >= 0; got: " + w);
+            assertTrue(((Number) w.get("column")).intValue() >= 0, "column >= 0; got: " + w);
+            String ctx = (String) w.get("context");
+            assertNotNull(ctx, "context missing: " + w);
+            assertFalse(ctx.isBlank(), "context non-blank; got: " + w);
             assertEquals("WRITE", w.get("accessType"));
         }
     }

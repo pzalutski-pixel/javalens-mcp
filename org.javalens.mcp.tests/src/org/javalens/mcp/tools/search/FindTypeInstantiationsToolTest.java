@@ -106,11 +106,13 @@ class FindTypeInstantiationsToolTest {
         List<Map<String, Object>> insts = instOf(r);
         assertFalse(insts.isEmpty());
         for (Map<String, Object> i : insts) {
-            assertNotNull(i.get("filePath"), "filePath missing: " + i);
-            assertNotNull(i.get("line"), "line missing: " + i);
-            assertNotNull(i.get("column"), "column missing: " + i);
-            assertNotNull(i.get("offset"), "offset missing: " + i);
-            assertNotNull(i.get("length"), "length missing: " + i);
+            String fp = (String) i.get("filePath");
+            assertNotNull(fp, "filePath missing: " + i);
+            assertTrue(fp.endsWith(".java"), "filePath ends with .java; got: " + i);
+            assertTrue(((Number) i.get("line")).intValue() >= 0, "line >= 0; got: " + i);
+            assertTrue(((Number) i.get("column")).intValue() >= 0, "column >= 0; got: " + i);
+            assertTrue(((Number) i.get("offset")).intValue() >= 0, "offset >= 0; got: " + i);
+            assertTrue(((Number) i.get("length")).intValue() > 0, "length > 0; got: " + i);
         }
     }
 

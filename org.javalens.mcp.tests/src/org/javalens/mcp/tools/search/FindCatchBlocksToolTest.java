@@ -132,12 +132,16 @@ class FindCatchBlocksToolTest {
         List<Map<String, Object>> blocks = blocksOf(r);
         assertFalse(blocks.isEmpty());
         for (Map<String, Object> b : blocks) {
-            assertNotNull(b.get("filePath"), "filePath missing: " + b);
-            assertNotNull(b.get("line"), "line missing: " + b);
-            assertNotNull(b.get("column"), "column missing: " + b);
-            assertNotNull(b.get("offset"), "offset missing: " + b);
-            assertNotNull(b.get("length"), "length missing: " + b);
-            assertNotNull(b.get("context"), "context missing: " + b);
+            String fp = (String) b.get("filePath");
+            assertNotNull(fp, "filePath missing: " + b);
+            assertTrue(fp.endsWith(".java"), "filePath ends with .java; got: " + b);
+            assertTrue(((Number) b.get("line")).intValue() >= 0, "line >= 0; got: " + b);
+            assertTrue(((Number) b.get("column")).intValue() >= 0, "column >= 0; got: " + b);
+            assertTrue(((Number) b.get("offset")).intValue() >= 0, "offset >= 0; got: " + b);
+            assertTrue(((Number) b.get("length")).intValue() > 0, "length > 0; got: " + b);
+            String ctx = (String) b.get("context");
+            assertNotNull(ctx, "context missing: " + b);
+            assertFalse(ctx.isBlank(), "context non-blank; got: " + b);
         }
     }
 

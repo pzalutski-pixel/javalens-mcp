@@ -239,8 +239,10 @@ class FindMethodReferencesToolTest {
         List<Map<String, Object>> refs = (List<Map<String, Object>>) getData(r).get("locations");
         assertFalse(refs.isEmpty());
         Map<String, Object> ref = refs.get(0);
-        assertNotNull(ref.get("filePath"));
-        assertNotNull(ref.get("line"));
-        assertNotNull(ref.get("column"));
+        String fp = (String) ref.get("filePath");
+        assertNotNull(fp, "filePath missing: " + ref);
+        assertTrue(fp.endsWith(".java"), "filePath ends with .java; got: " + ref);
+        assertTrue(((Number) ref.get("line")).intValue() >= 0, "line >= 0; got: " + ref);
+        assertTrue(((Number) ref.get("column")).intValue() >= 0, "column >= 0; got: " + ref);
     }
 }

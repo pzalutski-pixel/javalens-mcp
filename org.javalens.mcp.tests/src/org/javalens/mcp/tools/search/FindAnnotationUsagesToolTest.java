@@ -106,11 +106,13 @@ class FindAnnotationUsagesToolTest {
         List<Map<String, Object>> usages = usagesOf(r);
         assertFalse(usages.isEmpty(), "@Marker has documented usages; list must be non-empty");
         for (Map<String, Object> u : usages) {
-            assertNotNull(u.get("filePath"), "filePath must be present: " + u);
-            assertNotNull(u.get("line"), "line must be present: " + u);
-            assertNotNull(u.get("column"), "column must be present: " + u);
-            assertNotNull(u.get("offset"), "offset must be present: " + u);
-            assertNotNull(u.get("length"), "length must be present: " + u);
+            String fp = (String) u.get("filePath");
+            assertNotNull(fp, "filePath must be present: " + u);
+            assertTrue(fp.endsWith(".java"), "filePath ends with .java; got: " + u);
+            assertTrue(((Number) u.get("line")).intValue() >= 0, "line >= 0; got: " + u);
+            assertTrue(((Number) u.get("column")).intValue() >= 0, "column >= 0; got: " + u);
+            assertTrue(((Number) u.get("offset")).intValue() >= 0, "offset >= 0; got: " + u);
+            assertTrue(((Number) u.get("length")).intValue() > 0, "length > 0; got: " + u);
         }
     }
 

@@ -132,12 +132,16 @@ class FindThrowsDeclarationsToolTest {
         List<Map<String, Object>> decls = declsOf(r);
         assertFalse(decls.isEmpty());
         for (Map<String, Object> d : decls) {
-            assertNotNull(d.get("filePath"), "filePath missing: " + d);
-            assertNotNull(d.get("line"), "line missing: " + d);
-            assertNotNull(d.get("column"), "column missing: " + d);
-            assertNotNull(d.get("offset"), "offset missing: " + d);
-            assertNotNull(d.get("length"), "length missing: " + d);
-            assertNotNull(d.get("context"), "context missing: " + d);
+            String fp = (String) d.get("filePath");
+            assertNotNull(fp, "filePath missing: " + d);
+            assertTrue(fp.endsWith(".java"), "filePath ends with .java; got: " + d);
+            assertTrue(((Number) d.get("line")).intValue() >= 0, "line >= 0; got: " + d);
+            assertTrue(((Number) d.get("column")).intValue() >= 0, "column >= 0; got: " + d);
+            assertTrue(((Number) d.get("offset")).intValue() >= 0, "offset >= 0; got: " + d);
+            assertTrue(((Number) d.get("length")).intValue() > 0, "length > 0; got: " + d);
+            String ctx = (String) d.get("context");
+            assertNotNull(ctx, "context missing: " + d);
+            assertFalse(ctx.isBlank(), "context non-blank; got: " + d);
         }
     }
 

@@ -41,9 +41,12 @@ class FindInstanceofChecksToolTest {
         args.put("typeName", "com.example.Calculator");
         ToolResponse r = tool.execute(args);
         assertTrue(r.isSuccess());
-        assertFalse(getChecks(getData(r)).isEmpty());
-        assertNotNull(getData(r).get("totalCount"));
-        assertEquals("com.example.Calculator", getData(r).get("typeName"));
+        Map<String, Object> data = getData(r);
+        List<?> checks = getChecks(data);
+        assertFalse(checks.isEmpty(), "Calculator has known instanceof checks in fixtures");
+        assertEquals(checks.size(), ((Number) data.get("totalCount")).intValue(),
+            "totalCount must equal locations list size; got: " + data);
+        assertEquals("com.example.Calculator", data.get("typeName"));
     }
 
     @Test @DisplayName("respects maxResults")
@@ -103,14 +106,13 @@ class FindInstanceofChecksToolTest {
         List<Map<String, Object>> checks = checksOf(r);
         assertFalse(checks.isEmpty());
         for (Map<String, Object> c : checks) {
-            assertNotNull(c.get("filePath"), "filePath missing: " + c);
-            assertNotNull(c.get("line"), "line missing: " + c);
-            assertNotNull(c.get("column"), "column missing: " + c);
-            assertNotNull(c.get("offset"), "offset missing: " + c);
-            assertNotNull(c.get("length"), "length missing: " + c);
             String fp = ((String) c.get("filePath")).replace('\\', '/');
             assertTrue(fp.endsWith("SearchPatterns.java"),
                 "instanceof Calculator must come from SearchPatterns.java; got: " + fp);
+            assertTrue(((Number) c.get("line")).intValue() >= 0, "line >= 0; got: " + c);
+            assertTrue(((Number) c.get("column")).intValue() >= 0, "column >= 0; got: " + c);
+            assertTrue(((Number) c.get("offset")).intValue() >= 0, "offset >= 0; got: " + c);
+            assertTrue(((Number) c.get("length")).intValue() > 0, "length > 0; got: " + c);
         }
     }
 

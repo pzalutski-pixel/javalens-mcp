@@ -156,10 +156,14 @@ class FindReflectionUsageToolTest {
         assertFalse(calls.isEmpty(),
             "Fixtures contain reflection usage; reflectionCalls list must be non-empty");
 
-        // Every entry must carry a reflectionMethod label and a filePath.
+        // Every entry must carry a non-blank reflectionMethod label and a filePath.
         for (Map<String, Object> c : calls) {
-            assertNotNull(c.get("reflectionMethod"), "reflectionMethod missing: " + c);
-            assertNotNull(c.get("filePath"), "filePath missing: " + c);
+            String rm = (String) c.get("reflectionMethod");
+            assertNotNull(rm, "reflectionMethod missing: " + c);
+            assertFalse(rm.isBlank(), "reflectionMethod non-blank; got: " + c);
+            String fp = (String) c.get("filePath");
+            assertNotNull(fp, "filePath missing: " + c);
+            assertFalse(fp.isBlank(), "filePath non-blank; got: " + c);
         }
 
         // The project-source subset (entries whose filePath ends with .java) must have
