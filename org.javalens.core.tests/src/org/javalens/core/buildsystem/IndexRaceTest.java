@@ -10,7 +10,8 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Bug F — JDT search index race.
@@ -43,8 +44,18 @@ class IndexRaceTest {
         List<SearchMatch> matches = service.getSearchService()
             .searchSymbols("Calculator", IJavaSearchConstants.TYPE, 10);
 
-        assertFalse(matches.isEmpty(),
-            "Expected to find type 'Calculator' immediately after loadProject. " +
-            "Empty result indicates the JDT search index was not yet ready — Bug F.");
+        // Strict checks. The previous !isEmpty() assertion would pass against a buggy
+        // implementation that leaked matches from a prior load, or that returned the wrong
+        // type with a similar name. The fixture has exactly one Calculator type, declared in
+        // Calculator.java — pin both invariants.
+        assertEquals(1, matches.size(),
+            "Expected exactly 1 'Calculator' type after loadProject. Empty list means the "
+                + "JDT search index was not yet ready (Bug F). A >1 result means stale "
+                + "matches leaked across loads. Got: " + matches.size());
+        String matchPath = matches.get(0).getResource() != null
+            ? matches.get(0).getResource().getFullPath().toString() : "";
+        assertTrue(matchPath.endsWith("Calculator.java"),
+            "Expected the single match to be Calculator.java; got match resource: "
+                + matchPath);
     }
 }
