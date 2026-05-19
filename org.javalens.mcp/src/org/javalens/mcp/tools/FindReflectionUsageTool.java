@@ -3,7 +3,6 @@ package org.javalens.mcp.tools;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.eclipse.jdt.core.IMethod;
 import org.eclipse.jdt.core.IType;
-import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.IJdtService;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
@@ -91,7 +90,7 @@ public class FindReflectionUsageTool extends AbstractTool {
         try {
             List<Map<String, Object>> allCalls = new ArrayList<>();
             Map<String, Integer> summary = new LinkedHashMap<>();
-            boolean anyLabelTruncated = false;
+            int grandTotalEncountered = 0;
 
             for (String[] entry : REFLECTION_METHODS) {
                 String typeName = entry[0];
@@ -103,20 +102,23 @@ public class FindReflectionUsageTool extends AbstractTool {
                     if (type == null) continue;
 
                     int forThisLabel = 0;
-                    // Iterate all overloads of methodName on this type. Searching references
-                    // for each IMethod handle gives us the union across overloads, but the
-                    // documented maxResults is PER REFLECTION METHOD (per label), not per
-                    // overload — so we cap the running per-label total here.
+                    int labelTotalEncountered = 0;
+                    // Iterate all overloads of methodName on this type. The documented
+                    // maxResults is PER REFLECTION METHOD (per label), not per overload.
+                    // Track total matches per label so truncated reports accurately:
+                    // comparing forThisLabel to maxResults misreports the exact-equal case.
+                    labelLoop:
                     for (IMethod method : type.getMethods()) {
-                        if (forThisLabel >= maxResults) break;
                         if (!methodName.equals(method.getElementName())) continue;
                         if (!method.exists()) continue;
 
-                        int remaining = maxResults - forThisLabel;
-                        List<SearchMatch> matches = service.getSearchService().findAllReferences(method, remaining);
-                        List<Map<String, Object>> formatted = formatMatches(matches, service);
+                        org.javalens.core.search.SearchResult result =
+                            service.getSearchService().findAllReferences(method, maxResults);
+                        labelTotalEncountered += result.totalEncountered();
+
+                        List<Map<String, Object>> formatted = formatMatches(result.matches(), service);
                         for (Map<String, Object> match : formatted) {
-                            if (forThisLabel >= maxResults) break;
+                            if (forThisLabel >= maxResults) break labelLoop;
                             match.put("reflectionMethod", label);
                             allCalls.add(match);
                             forThisLabel++;
@@ -126,23 +128,23 @@ public class FindReflectionUsageTool extends AbstractTool {
                     if (forThisLabel > 0) {
                         summary.put(label, forThisLabel);
                     }
-                    if (forThisLabel >= maxResults) {
-                        anyLabelTruncated = true;
-                    }
+                    grandTotalEncountered += labelTotalEncountered;
                 } catch (Exception e) {
                     log.debug("Could not scan for {}.{}: {}", typeName, methodName, e.getMessage());
                 }
             }
 
+            boolean truncated = grandTotalEncountered > allCalls.size();
+
             Map<String, Object> data = new LinkedHashMap<>();
-            data.put("totalCalls", allCalls.size());
+            data.put("totalCalls", grandTotalEncountered);
             data.put("summary", summary);
             data.put("reflectionCalls", allCalls);
 
             return ToolResponse.success(data, ResponseMeta.builder()
-                .totalCount(allCalls.size())
+                .totalCount(grandTotalEncountered)
                 .returnedCount(allCalls.size())
-                .truncated(anyLabelTruncated)
+                .truncated(truncated)
                 .suggestedNextTools(List.of(
                     "analyze_change_impact to assess risk of renaming reflected types",
                     "get_symbol_info at a reflection call site for context"

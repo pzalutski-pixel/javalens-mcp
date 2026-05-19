@@ -10,6 +10,7 @@ import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.Signature;
 import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.IJdtService;
+import org.javalens.core.search.SearchResult;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
 import org.slf4j.Logger;
@@ -108,32 +109,41 @@ public class GetCallHierarchyIncomingTool extends AbstractTool {
             String declaringClass = declaringType != null ? declaringType.getFullyQualifiedName() : "Unknown";
             String signature = buildMethodSignature(method);
 
-            // Use SearchService to find all references to this method
-            List<SearchMatch> matches = service.getSearchService()
-                .findAllReferences(method, maxResults * 2); // Request more since some may not have enclosing methods
+            // Use SearchService to find all references to this method. Request 2× the cap
+            // because some matches don't yield an enclosing method (e.g. references in
+            // initializers) and are skipped during extraction.
+            SearchResult result = service.getSearchService()
+                .findAllReferences(method, maxResults * 2);
 
-            // Extract caller information from each match
+            // Extract caller information from each match. Count total successful
+            // extractions separately from the displayed list so truncated is accurate:
+            // comparing callers.size() to maxResults misreports the exact-equal case.
             List<Map<String, Object>> callers = new ArrayList<>();
-            for (SearchMatch match : matches) {
-                if (callers.size() >= maxResults) break;
-
+            int totalCallers = 0;
+            for (SearchMatch match : result.matches()) {
                 Map<String, Object> callerInfo = extractCallerInfo(match, service);
                 if (callerInfo != null) {
-                    callers.add(callerInfo);
+                    totalCallers++;
+                    if (callers.size() < maxResults) {
+                        callers.add(callerInfo);
+                    }
                 }
             }
+            // If the underlying search itself was clipped at 2× maxResults, more callers
+            // may exist beyond what we processed — fold that into truncated.
+            boolean truncated = totalCallers > maxResults || result.truncated();
 
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("method", methodName);
             data.put("declaringClass", declaringClass);
             data.put("signature", signature);
-            data.put("totalCallers", callers.size());
+            data.put("totalCallers", totalCallers);
             data.put("callers", callers);
 
             return ToolResponse.success(data, ResponseMeta.builder()
-                .totalCount(callers.size())
+                .totalCount(totalCallers)
                 .returnedCount(callers.size())
-                .truncated(callers.size() >= maxResults)
+                .truncated(truncated)
                 .suggestedNextTools(List.of(
                     "get_call_hierarchy_outgoing to see what this method calls",
                     "go_to_definition to navigate to a caller"

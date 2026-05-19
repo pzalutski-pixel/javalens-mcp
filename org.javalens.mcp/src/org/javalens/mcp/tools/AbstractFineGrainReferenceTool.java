@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.IJdtService;
+import org.javalens.core.search.SearchResult;
 import org.javalens.core.search.SearchService;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
@@ -81,13 +82,13 @@ public abstract class AbstractFineGrainReferenceTool extends AbstractTool {
                 return ToolResponse.symbolNotFound("Type not found: " + typeName);
             }
 
-            List<SearchMatch> matches = service.getSearchService()
+            SearchResult result = service.getSearchService()
                 .findReferences(type, getReferenceKind(), maxResults);
-            List<Map<String, Object>> locations = formatMatches(matches, service);
+            List<Map<String, Object>> locations = formatMatches(result.matches(), service);
 
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("typeName", typeName);
-            data.put("totalCount", locations.size());
+            data.put("totalCount", result.totalEncountered());
             data.put("locations", locations);
 
             String advice = getAdvice();
@@ -96,9 +97,9 @@ public abstract class AbstractFineGrainReferenceTool extends AbstractTool {
             }
 
             return ToolResponse.success(data, ResponseMeta.builder()
-                .totalCount(locations.size())
+                .totalCount(result.totalEncountered())
                 .returnedCount(locations.size())
-                .truncated(matches.size() >= maxResults)
+                .truncated(result.truncated())
                 .suggestedNextTools(getSuggestedNextTools())
                 .build());
 

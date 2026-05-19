@@ -7,6 +7,7 @@ import org.eclipse.jdt.core.IField;
 import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.IJdtService;
+import org.javalens.core.search.SearchResult;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
 import org.slf4j.Logger;
@@ -104,12 +105,12 @@ public class FindFieldWritesTool extends AbstractTool {
             }
 
             // Use SearchService for indexed write access search
-            List<SearchMatch> matches = service.getSearchService()
+            SearchResult result = service.getSearchService()
                 .findWriteAccesses(field, maxResults);
 
             // Convert matches to write location info
             List<Map<String, Object>> writeLocations = new ArrayList<>();
-            for (SearchMatch match : matches) {
+            for (SearchMatch match : result.matches()) {
                 Map<String, Object> writeInfo = createWriteInfo(match, service);
                 if (writeInfo != null) {
                     writeLocations.add(writeInfo);
@@ -129,13 +130,13 @@ public class FindFieldWritesTool extends AbstractTool {
                 // Ignore if can't get type
             }
 
-            data.put("totalWriteLocations", writeLocations.size());
+            data.put("totalWriteLocations", result.totalEncountered());
             data.put("writeLocations", writeLocations);
 
             return ToolResponse.success(data, ResponseMeta.builder()
-                .totalCount(writeLocations.size())
+                .totalCount(result.totalEncountered())
                 .returnedCount(writeLocations.size())
-                .truncated(writeLocations.size() >= maxResults)
+                .truncated(result.truncated())
                 .suggestedNextTools(List.of(
                     "find_references to see all usages (reads and writes)",
                     "get_call_hierarchy_incoming to find callers of methods that modify this field"

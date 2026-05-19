@@ -144,7 +144,7 @@ public class GetDiRegistrationsTool extends AbstractTool {
                 List<SearchMatch> matches = service.getSearchService().findReferences(
                     annotationType,
                     org.javalens.core.search.SearchService.ReferenceKind.ANNOTATION,
-                    maxResults);
+                    maxResults).matches();
                 for (Map<String, Object> match : formatMatches(matches, service)) {
                     match.put("annotation", "@" + label);
                     results.add(match);

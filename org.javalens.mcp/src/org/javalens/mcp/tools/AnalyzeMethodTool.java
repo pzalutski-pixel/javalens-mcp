@@ -207,7 +207,7 @@ public class AnalyzeMethodTool extends AbstractTool {
 
         try {
             List<SearchMatch> references = service.getSearchService()
-                .findAllReferences(method, maxCallers * 2);
+                .findAllReferences(method, maxCallers * 2).matches();
 
             Set<String> seenCallers = new HashSet<>();
 
@@ -363,7 +363,7 @@ public class AnalyzeMethodTool extends AbstractTool {
 
             // Find overriding methods
             List<SearchMatch> overriders = service.getSearchService()
-                .findOverridingMethods(method, 20);
+                .findOverridingMethods(method, 20).matches();
             if (!overriders.isEmpty()) {
                 List<Map<String, Object>> overriderList = new ArrayList<>();
                 for (SearchMatch match : overriders) {

@@ -292,29 +292,30 @@ public class AnalyzeTypeTool extends AbstractTool {
         try {
             org.javalens.core.search.SearchService search = service.getSearchService();
 
-            // Instantiations
-            List<SearchMatch> instantiations = search.findReferences(
-                type, org.javalens.core.search.SearchService.ReferenceKind.INSTANTIATION, maxUsages);
-            usages.put("instantiations", instantiations.size());
-            total += instantiations.size();
+            // Instantiations — use totalEncountered (pre-clip count) so the aggregate
+            // reflects all uses, not just the maxUsages-clipped sample.
+            int instantiations = search.findReferences(
+                type, org.javalens.core.search.SearchService.ReferenceKind.INSTANTIATION, maxUsages).totalEncountered();
+            usages.put("instantiations", instantiations);
+            total += instantiations;
 
             // Casts
-            List<SearchMatch> casts = search.findReferences(
-                type, org.javalens.core.search.SearchService.ReferenceKind.CAST, maxUsages);
-            usages.put("casts", casts.size());
-            total += casts.size();
+            int casts = search.findReferences(
+                type, org.javalens.core.search.SearchService.ReferenceKind.CAST, maxUsages).totalEncountered();
+            usages.put("casts", casts);
+            total += casts;
 
             // Instanceof
-            List<SearchMatch> instanceofs = search.findReferences(
-                type, org.javalens.core.search.SearchService.ReferenceKind.INSTANCEOF, maxUsages);
-            usages.put("instanceofChecks", instanceofs.size());
-            total += instanceofs.size();
+            int instanceofs = search.findReferences(
+                type, org.javalens.core.search.SearchService.ReferenceKind.INSTANCEOF, maxUsages).totalEncountered();
+            usages.put("instanceofChecks", instanceofs);
+            total += instanceofs;
 
             // Type arguments
-            List<SearchMatch> typeArgs = search.findReferences(
-                type, org.javalens.core.search.SearchService.ReferenceKind.TYPE_ARGUMENT, maxUsages);
-            usages.put("typeArguments", typeArgs.size());
-            total += typeArgs.size();
+            int typeArgs = search.findReferences(
+                type, org.javalens.core.search.SearchService.ReferenceKind.TYPE_ARGUMENT, maxUsages).totalEncountered();
+            usages.put("typeArguments", typeArgs);
+            total += typeArgs;
 
             usages.put("total", total);
 

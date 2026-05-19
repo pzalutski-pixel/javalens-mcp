@@ -42,7 +42,7 @@ class IndexRaceTest {
         JdtServiceImpl service = helper.loadProjectCopy("simple-maven");
 
         List<SearchMatch> matches = service.getSearchService()
-            .searchSymbols("Calculator", IJavaSearchConstants.TYPE, 10);
+            .searchSymbols("Calculator", IJavaSearchConstants.TYPE, 10).matches();
 
         // Strict checks. The previous !isEmpty() assertion would pass against a buggy
         // implementation that leaked matches from a prior load, or that returned the wrong

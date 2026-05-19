@@ -11,6 +11,7 @@ import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.IJdtService;
 import org.javalens.core.TypeKindResolver;
+import org.javalens.core.search.SearchResult;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
 import org.slf4j.Logger;
@@ -95,12 +96,12 @@ public class FindReferencesTool extends AbstractTool {
             }
 
             // Use SearchService for indexed reference search
-            List<SearchMatch> matches = service.getSearchService()
+            SearchResult result = service.getSearchService()
                 .findAllReferences(element, maxResults);
 
             // Convert matches to reference info
             List<Map<String, Object>> references = new ArrayList<>();
-            for (SearchMatch match : matches) {
+            for (SearchMatch match : result.matches()) {
                 Map<String, Object> refInfo = createReferenceInfo(match, service);
                 if (refInfo != null) {
                     references.add(refInfo);
@@ -118,13 +119,13 @@ public class FindReferencesTool extends AbstractTool {
                 data.put("containingType", field.getDeclaringType().getElementName());
             }
 
-            data.put("totalCount", references.size());
+            data.put("totalCount", result.totalEncountered());
             data.put("locations", references);
 
             return ToolResponse.success(data, ResponseMeta.builder()
-                .totalCount(references.size())
+                .totalCount(result.totalEncountered())
                 .returnedCount(references.size())
-                .truncated(references.size() >= maxResults)
+                .truncated(result.truncated())
                 .suggestedNextTools(List.of(
                     "go_to_definition to see the symbol definition",
                     "get_type_hierarchy for type symbols"

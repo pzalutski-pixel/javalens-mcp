@@ -101,7 +101,7 @@ public class AnalyzeChangeImpactTool extends AbstractTool {
                     if (visited.contains(key)) continue;
                     visited.add(key);
 
-                    List<SearchMatch> matches = service.getSearchService().findAllReferences(target, 500);
+                    List<SearchMatch> matches = service.getSearchService().findAllReferences(target, 500).matches();
 
                     for (SearchMatch match : matches) {
                         Map<String, Object> callSite = formatMatch(match, service);

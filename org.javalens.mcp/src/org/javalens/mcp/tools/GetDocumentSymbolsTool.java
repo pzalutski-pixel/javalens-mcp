@@ -84,6 +84,12 @@ public class GetDocumentSymbolsTool extends AbstractTool {
                 return ToolResponse.fileNotFound(filePath);
             }
 
+            // Count all eligible symbols up-front so totalCount/truncated reflect the
+            // pre-clip total. The capped build loop below would otherwise stop walking
+            // once it hits maxResults, leaving totalCount equal to returnedCount and
+            // truncated misreporting the exact-equal case.
+            int totalEligible = countAllEligibleSymbols(cu, includePrivate);
+
             List<Map<String, Object>> symbols = new ArrayList<>();
             int[] symbolCount = {0};
 
@@ -100,12 +106,12 @@ public class GetDocumentSymbolsTool extends AbstractTool {
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("file", service.getPathUtils().formatPath(filePath));
             data.put("symbols", symbols);
-            data.put("totalSymbols", symbolCount[0]);
+            data.put("totalSymbols", totalEligible);
 
             return ToolResponse.success(data, ResponseMeta.builder()
-                .totalCount(symbolCount[0])
+                .totalCount(totalEligible)
                 .returnedCount(symbolCount[0])
-                .truncated(symbolCount[0] >= maxResults)
+                .truncated(totalEligible > symbolCount[0])
                 .suggestedNextTools(List.of(
                     "go_to_definition to navigate to a symbol",
                     "find_references to find usages of a symbol",
@@ -117,6 +123,36 @@ public class GetDocumentSymbolsTool extends AbstractTool {
             log.error("Error getting document symbols: {}", e.getMessage(), e);
             return ToolResponse.internalError(e);
         }
+    }
+
+    /**
+     * Walk the CU and count every symbol that would be emitted by the build pass —
+     * unconstrained by maxResults. This is used to populate the pre-clip
+     * totalCount field of the response envelope. Visibility filtering matches the
+     * builder: private-element filtering is gated by {@code includePrivate}.
+     */
+    private int countAllEligibleSymbols(ICompilationUnit cu, boolean includePrivate) throws JavaModelException {
+        int total = 0;
+        for (IType type : cu.getTypes()) {
+            total += countTypeRecursive(type, includePrivate);
+        }
+        return total;
+    }
+
+    private int countTypeRecursive(IType type, boolean includePrivate) throws JavaModelException {
+        int flags = type.getFlags();
+        if (!includePrivate && Flags.isPrivate(flags)) return 0;
+        int count = 1;
+        for (IField field : type.getFields()) {
+            if (includePrivate || !Flags.isPrivate(field.getFlags())) count++;
+        }
+        for (IMethod method : type.getMethods()) {
+            if (includePrivate || !Flags.isPrivate(method.getFlags())) count++;
+        }
+        for (IType nested : type.getTypes()) {
+            count += countTypeRecursive(nested, includePrivate);
+        }
+        return count;
     }
 
     private Map<String, Object> createTypeSymbol(IType type, IJdtService service, ICompilationUnit cu,

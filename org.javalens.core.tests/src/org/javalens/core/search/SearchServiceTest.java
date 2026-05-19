@@ -42,7 +42,7 @@ class SearchServiceTest {
     @Test
     @DisplayName("searchSymbols should find types by pattern")
     void searchSymbols_findsByPattern() throws CoreException {
-        List<SearchMatch> matches = searchService.searchSymbols("Calc*", IJavaSearchConstants.TYPE, 100);
+        List<SearchMatch> matches = searchService.searchSymbols("Calc*", IJavaSearchConstants.TYPE, 100).matches();
 
         assertFalse(matches.isEmpty(), "Should find Calculator class");
         assertTrue(matches.stream()
@@ -53,7 +53,7 @@ class SearchServiceTest {
     @Test
     @DisplayName("searchSymbols should find types with wildcard at start")
     void searchSymbols_findsWithLeadingWildcard() throws CoreException {
-        List<SearchMatch> matches = searchService.searchSymbols("*Service", IJavaSearchConstants.TYPE, 100);
+        List<SearchMatch> matches = searchService.searchSymbols("*Service", IJavaSearchConstants.TYPE, 100).matches();
 
         assertFalse(matches.isEmpty(), "Should find UserService class");
         assertTrue(matches.stream()
@@ -65,7 +65,7 @@ class SearchServiceTest {
     @DisplayName("searchSymbols should filter by kind")
     void searchSymbols_filtersByKind() throws CoreException {
         // Search for methods
-        List<SearchMatch> methodMatches = searchService.searchSymbols("add*", IJavaSearchConstants.METHOD, 100);
+        List<SearchMatch> methodMatches = searchService.searchSymbols("add*", IJavaSearchConstants.METHOD, 100).matches();
 
         // Should find add method in Calculator
         assertFalse(methodMatches.isEmpty(), "Should find add method");
@@ -78,7 +78,7 @@ class SearchServiceTest {
     @DisplayName("searchSymbols should respect maxResults limit")
     void searchSymbols_respectsMaxResults() throws CoreException {
         // Search with very low limit
-        List<SearchMatch> matches = searchService.searchSymbols("*", IJavaSearchConstants.TYPE, 1);
+        List<SearchMatch> matches = searchService.searchSymbols("*", IJavaSearchConstants.TYPE, 1).matches();
 
         assertTrue(matches.size() <= 1, "Should respect maxResults limit of 1");
     }
@@ -86,7 +86,7 @@ class SearchServiceTest {
     @Test
     @DisplayName("searchSymbols should return empty for no matches")
     void searchSymbols_returnsEmptyForNoMatches() throws CoreException {
-        List<SearchMatch> matches = searchService.searchSymbols("NonExistentClass", IJavaSearchConstants.TYPE, 100);
+        List<SearchMatch> matches = searchService.searchSymbols("NonExistentClass", IJavaSearchConstants.TYPE, 100).matches();
 
         assertTrue(matches.isEmpty(), "Should return empty list for non-matching pattern");
     }
@@ -99,7 +99,7 @@ class SearchServiceTest {
         IType calculatorType = jdtService.findType("com.example.Calculator");
         assertNotNull(calculatorType, "Should find Calculator type");
 
-        List<SearchMatch> references = searchService.findAllReferences(calculatorType, 100);
+        List<SearchMatch> references = searchService.findAllReferences(calculatorType, 100).matches();
 
         // Calculator is referenced in UserService
         assertFalse(references.isEmpty(), "Should find references to Calculator");
@@ -111,7 +111,7 @@ class SearchServiceTest {
         IType helloType = jdtService.findType("com.example.HelloWorld");
         assertNotNull(helloType, "Should find HelloWorld type");
 
-        List<SearchMatch> references = searchService.findAllReferences(helloType, 100);
+        List<SearchMatch> references = searchService.findAllReferences(helloType, 100).matches();
         assertNotNull(references);
 
         // Previous assertion was assertNotNull(references) — passed for ANY result
@@ -200,7 +200,7 @@ class SearchServiceTest {
         assertNotNull(calculatorType);
 
         List<SearchMatch> instantiations = searchService.findReferences(
-            calculatorType, SearchService.ReferenceKind.INSTANTIATION, 100);
+            calculatorType, SearchService.ReferenceKind.INSTANTIATION, 100).matches();
 
         assertTrue(instantiations.size() >= 4,
             "Expected at least 4 Calculator instantiations in project sources. Got "
@@ -223,7 +223,7 @@ class SearchServiceTest {
         assertNotNull(lastResult);
         assertTrue(lastResult.exists(), "Calculator.lastResult must exist");
 
-        List<SearchMatch> reads = searchService.findReadAccesses(lastResult, 100);
+        List<SearchMatch> reads = searchService.findReadAccesses(lastResult, 100).matches();
         assertEquals(4, reads.size(),
             "Expected exactly 4 reads of Calculator.lastResult (one per arithmetic method + "
                 + "getLastResult). Got " + reads.size() + ": " + reads);
@@ -245,7 +245,7 @@ class SearchServiceTest {
         var lastResult = calculatorType.getField("lastResult");
         assertNotNull(lastResult);
 
-        List<SearchMatch> writes = searchService.findWriteAccesses(lastResult, 100);
+        List<SearchMatch> writes = searchService.findWriteAccesses(lastResult, 100).matches();
         assertEquals(3, writes.size(),
             "Expected exactly 3 writes of Calculator.lastResult (add/subtract/multiply). Got "
                 + writes.size() + ": " + writes);

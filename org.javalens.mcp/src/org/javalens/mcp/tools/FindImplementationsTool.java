@@ -119,17 +119,26 @@ public class FindImplementationsTool extends AbstractTool {
             // subtypes reached via sub-interface chains or multi-level extension.
             IType[] subtypes = service.getSearchService().getAllSubtypes(targetType);
 
+            // Count eligible candidates separately from the displayed list so truncated
+            // reports accurately. Comparing implementations.size() to maxResults would
+            // fire a false-positive when actual eligible == maxResults exactly.
             List<Map<String, Object>> implementations = new ArrayList<>();
+            int eligibleCount = 0;
             for (IType subtype : subtypes) {
-                if (implementations.size() >= maxResults) break;
                 if (targetMethod != null) {
                     IMethod overrider = findMatchingMethod(subtype, targetMethod);
                     if (overrider == null) continue;
-                    Map<String, Object> implInfo = createMethodImplementationInfo(subtype, overrider, service);
-                    if (implInfo != null) implementations.add(implInfo);
+                    eligibleCount++;
+                    if (implementations.size() < maxResults) {
+                        Map<String, Object> implInfo = createMethodImplementationInfo(subtype, overrider, service);
+                        if (implInfo != null) implementations.add(implInfo);
+                    }
                 } else {
-                    Map<String, Object> implInfo = createTypeImplementationInfo(subtype, service);
-                    if (implInfo != null) implementations.add(implInfo);
+                    eligibleCount++;
+                    if (implementations.size() < maxResults) {
+                        Map<String, Object> implInfo = createTypeImplementationInfo(subtype, service);
+                        if (implInfo != null) implementations.add(implInfo);
+                    }
                 }
             }
 
@@ -146,13 +155,13 @@ public class FindImplementationsTool extends AbstractTool {
                 data.put("method", targetMethod.getElementName());
             }
 
-            data.put("totalImplementations", implementations.size());
+            data.put("totalImplementations", eligibleCount);
             data.put("implementations", implementations);
 
             return ToolResponse.success(data, ResponseMeta.builder()
-                .totalCount(implementations.size())
+                .totalCount(eligibleCount)
                 .returnedCount(implementations.size())
-                .truncated(implementations.size() >= maxResults)
+                .truncated(eligibleCount > maxResults)
                 .suggestedNextTools(List.of(
                     "get_type_hierarchy for full inheritance chain",
                     "find_references to see all usages",

@@ -161,7 +161,7 @@ class GetDocumentSymbolsToolTest {
     }
 
     @Test
-    @DisplayName("maxResults limits total symbols returned")
+    @DisplayName("maxResults caps emitted symbols; totalSymbols still reports pre-clip total")
     void maxResults_limitsSymbols() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", calculatorPath);
@@ -171,8 +171,17 @@ class GetDocumentSymbolsToolTest {
 
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
+        // returnedCount on the meta reflects the post-clip emission, capped at 3.
+        Integer returned = response.getMeta().getReturnedCount();
+        assertNotNull(returned);
+        assertTrue(returned <= 3,
+            "Emitted symbol count must respect maxResults; got returnedCount=" + returned);
+        // totalSymbols (and meta.totalCount) is the pre-clip count; it may exceed
+        // maxResults when the file has more eligible symbols than the cap.
         Integer totalSymbols = (Integer) data.get("totalSymbols");
-        assertTrue(totalSymbols <= 3);
+        assertTrue(totalSymbols >= returned,
+            "totalSymbols must be >= returnedCount (pre-clip vs post-clip); got total="
+                + totalSymbols + " returned=" + returned);
     }
 
     // ========== Semantic-grade tests ==========

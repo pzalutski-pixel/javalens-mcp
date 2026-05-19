@@ -60,7 +60,7 @@ public class SearchService {
      * @param maxResults Maximum results to return
      * @return List of matching elements
      */
-    public List<SearchMatch> searchSymbols(String pattern, Integer searchFor, int maxResults) throws CoreException {
+    public SearchResult searchSymbols(String pattern, Integer searchFor, int maxResults) throws CoreException {
         // JDT's R_PATTERN_MATCH supports `*` natively but not `?`. The tool's contract
         // documents both as wildcards, so for patterns containing `?` we broaden the
         // JDT search (substituting `?` -> `*`) and then narrow client-side with a regex
@@ -88,7 +88,7 @@ public class SearchService {
 
         if (jdtPattern == null) {
             log.warn("Invalid search pattern: {}", pattern);
-            return List.of();
+            return new SearchResult(List.of(), 0);
         }
 
         // If we broadened with `?`->`*`, collect more raw matches than the cap so the
@@ -108,21 +108,30 @@ public class SearchService {
         List<SearchMatch> raw = requestor.getMatches();
         if (clientFilter == null) {
             log.debug("Symbol search '{}' found {} results", pattern, raw.size());
-            return raw;
+            // When `?` was not in the pattern, requestor's totalEncountered reflects
+            // the raw match count and matches.size() is clipped at maxResults — that's
+            // the correct truncation signal.
+            return requestor.toResult();
         }
 
         // Narrow with the proper glob-as-regex against the matched element's simple name.
+        // Track the post-filter total encountered (including any beyond maxResults) so
+        // truncation is reported correctly: the raw search may have returned more
+        // entries than the broadened cap, AND the client-side ?-filter may drop some.
         List<SearchMatch> narrowed = new ArrayList<>();
+        int narrowedTotal = 0;
         for (SearchMatch m : raw) {
             String name = simpleNameOf(m);
             if (name != null && clientFilter.matcher(name).matches()) {
-                narrowed.add(m);
-                if (narrowed.size() >= maxResults) break;
+                narrowedTotal++;
+                if (narrowed.size() < maxResults) {
+                    narrowed.add(m);
+                }
             }
         }
         log.debug("Symbol search '{}' found {} raw, {} after client-side ?-filter",
-            pattern, raw.size(), narrowed.size());
-        return narrowed;
+            pattern, raw.size(), narrowedTotal);
+        return new SearchResult(narrowed, narrowedTotal);
     }
 
     private static String simpleNameOf(SearchMatch m) {
@@ -141,7 +150,7 @@ public class SearchService {
      * @param maxResults Maximum results
      * @return List of reference locations
      */
-    public List<SearchMatch> findReferences(IJavaElement element, int limitTo, int maxResults) throws CoreException {
+    public SearchResult findReferences(IJavaElement element, int limitTo, int maxResults) throws CoreException {
         SearchPattern pattern = SearchPattern.createPattern(
             element,
             limitTo
@@ -149,7 +158,7 @@ public class SearchService {
 
         if (pattern == null) {
             log.warn("Cannot create pattern for element: {}", element);
-            return List.of();
+            return new SearchResult(List.of(), 0);
         }
 
         CollectingSearchRequestor requestor = new CollectingSearchRequestor(maxResults);
@@ -162,14 +171,15 @@ public class SearchService {
             new NullProgressMonitor()
         );
 
-        log.debug("Reference search for {} found {} results", element.getElementName(), requestor.getMatches().size());
-        return requestor.getMatches();
+        log.debug("Reference search for {} found {} results (total encountered={})",
+            element.getElementName(), requestor.getMatches().size(), requestor.getTotalEncountered());
+        return requestor.toResult();
     }
 
     /**
      * Find all references (reads and writes) to an element.
      */
-    public List<SearchMatch> findAllReferences(IJavaElement element, int maxResults) throws CoreException {
+    public SearchResult findAllReferences(IJavaElement element, int maxResults) throws CoreException {
         return findReferences(element, IJavaSearchConstants.REFERENCES, maxResults);
     }
 
@@ -177,7 +187,7 @@ public class SearchService {
      * Find only read accesses to a field.
      * AI-centric: helps identify unused or write-only fields.
      */
-    public List<SearchMatch> findReadAccesses(IJavaElement element, int maxResults) throws CoreException {
+    public SearchResult findReadAccesses(IJavaElement element, int maxResults) throws CoreException {
         return findReferences(element, IJavaSearchConstants.READ_ACCESSES, maxResults);
     }
 
@@ -185,14 +195,14 @@ public class SearchService {
      * Find only write accesses to a field.
      * AI-centric: helps identify read-only fields.
      */
-    public List<SearchMatch> findWriteAccesses(IJavaElement element, int maxResults) throws CoreException {
+    public SearchResult findWriteAccesses(IJavaElement element, int maxResults) throws CoreException {
         return findReferences(element, IJavaSearchConstants.WRITE_ACCESSES, maxResults);
     }
 
     /**
      * Find implementations of an interface or overrides of a method.
      */
-    public List<SearchMatch> findImplementations(IJavaElement element, int maxResults) throws CoreException {
+    public SearchResult findImplementations(IJavaElement element, int maxResults) throws CoreException {
         SearchPattern pattern = SearchPattern.createPattern(
             element,
             IJavaSearchConstants.IMPLEMENTORS
@@ -200,7 +210,7 @@ public class SearchService {
 
         if (pattern == null) {
             log.warn("Cannot create implementors pattern for: {}", element);
-            return List.of();
+            return new SearchResult(List.of(), 0);
         }
 
         CollectingSearchRequestor requestor = new CollectingSearchRequestor(maxResults);
@@ -213,7 +223,7 @@ public class SearchService {
             new NullProgressMonitor()
         );
 
-        return requestor.getMatches();
+        return requestor.toResult();
     }
 
     /**
@@ -243,14 +253,14 @@ public class SearchService {
     /**
      * Search for methods that override a given method.
      */
-    public List<SearchMatch> findOverridingMethods(IMethod method, int maxResults) throws CoreException {
+    public SearchResult findOverridingMethods(IMethod method, int maxResults) throws CoreException {
         SearchPattern pattern = SearchPattern.createPattern(
             method,
             IJavaSearchConstants.DECLARATIONS | IJavaSearchConstants.IGNORE_DECLARING_TYPE
         );
 
         if (pattern == null) {
-            return List.of();
+            return new SearchResult(List.of(), 0);
         }
 
         CollectingSearchRequestor requestor = new CollectingSearchRequestor(maxResults);
@@ -260,7 +270,7 @@ public class SearchService {
         IType[] subtypes = getAllSubtypes(declaringType);
 
         if (subtypes.length == 0) {
-            return List.of();
+            return new SearchResult(List.of(), 0);
         }
 
         IJavaSearchScope subtypeScope = SearchEngine.createJavaSearchScope(subtypes);
@@ -273,7 +283,7 @@ public class SearchService {
             new NullProgressMonitor()
         );
 
-        return requestor.getMatches();
+        return requestor.toResult();
     }
 
     // ========== Fine-Grained Reference Search ==========
@@ -312,7 +322,7 @@ public class SearchService {
      * a JDT {@code IJavaSearchConstants.*_TYPE_REFERENCE} value internally.
      * JDT-unique: LSP cannot distinguish these reference shapes.
      */
-    public List<SearchMatch> findReferences(IType type, ReferenceKind kind, int maxResults) throws CoreException {
+    public SearchResult findReferences(IType type, ReferenceKind kind, int maxResults) throws CoreException {
         return findFineGrainReferences(type, JDT_KIND.get(kind), maxResults);
     }
 
@@ -321,7 +331,7 @@ public class SearchService {
      * JDT-unique: distinct from the type-reference enum above because it
      * searches against an {@link IMethod}, not an {@link IType}.
      */
-    public List<SearchMatch> findMethodReferences(IMethod method, int maxResults) throws CoreException {
+    public SearchResult findMethodReferences(IMethod method, int maxResults) throws CoreException {
         return findReferences(method, IJavaSearchConstants.METHOD_REFERENCE_EXPRESSION, maxResults);
     }
 
@@ -329,7 +339,7 @@ public class SearchService {
      * Helper method for fine-grain type reference searches.
      * Uses string-based pattern for better match info in fine-grain searches.
      */
-    private List<SearchMatch> findFineGrainReferences(IType type, int referenceType, int maxResults) throws CoreException {
+    private SearchResult findFineGrainReferences(IType type, int referenceType, int maxResults) throws CoreException {
         // Use $-qualified name for nested types so JDT's string-based pattern matcher
         // resolves the correct IType. Top-level types are unaffected (no $).
         String typeName = type.getFullyQualifiedName('$');
@@ -343,17 +353,19 @@ public class SearchService {
 
         if (pattern == null) {
             log.warn("Cannot create fine-grain pattern for type: {} with reference type: {}", typeName, referenceType);
-            return List.of();
+            return new SearchResult(List.of(), 0);
         }
 
         // Inline filtering requestor: drop matches whose resource isn't a .java IFile
-        // (linked-folder roots, binary entries, JDK jars) and stop once we have maxResults
-        // useful matches. The previous post-collect filter approach could fill the buffer
-        // with JDK matches before project ones arrived.
-        // Use sourceScope (project sources only) — for fine-grain searches against common
-        // JDK types like java.lang.String, the broad scope would scan the entire JDK
-        // index and stall.
+        // (linked-folder roots, binary entries, JDK jars). Use sourceScope (project
+        // sources only) so common JDK types don't pull every JDK match through.
+        //
+        // Track the total .java matches separately from the (clipped-at-maxResults)
+        // visible list so callers can detect truncation accurately. Comparing the
+        // post-clip list size to maxResults misreports the false-positive case where
+        // actual matches == maxResults exactly.
         List<SearchMatch> filtered = new ArrayList<>();
+        int[] totalEncountered = { 0 };
         engine.search(
             pattern,
             new SearchParticipant[] { SearchEngine.getDefaultSearchParticipant() },
@@ -361,19 +373,21 @@ public class SearchService {
             new SearchRequestor() {
                 @Override
                 public void acceptSearchMatch(SearchMatch match) {
-                    if (filtered.size() >= maxResults) return;
                     if (match.getResource() instanceof org.eclipse.core.resources.IFile f
                         && "java".equalsIgnoreCase(f.getFileExtension())) {
-                        filtered.add(match);
+                        totalEncountered[0]++;
+                        if (filtered.size() < maxResults) {
+                            filtered.add(match);
+                        }
                     }
                 }
             },
             new NullProgressMonitor()
         );
 
-        log.debug("Fine-grain search for {} (type={}) found {} after .java filter",
-            type.getFullyQualifiedName(), referenceType, filtered.size());
-        return filtered;
+        log.debug("Fine-grain search for {} (type={}) found {} after .java filter (total={})",
+            type.getFullyQualifiedName(), referenceType, filtered.size(), totalEncountered[0]);
+        return new SearchResult(filtered, totalEncountered[0]);
     }
 
     /**
@@ -417,11 +431,15 @@ public class SearchService {
     }
 
     /**
-     * SearchRequestor that collects matches into a list.
+     * SearchRequestor that collects matches into a list AND counts the total number of
+     * encountered matches (including those beyond the cap). The total enables correct
+     * truncation semantics: comparing the post-clip list size to maxResults misreports
+     * truncation when the actual count exactly equals the cap.
      */
     private static class CollectingSearchRequestor extends SearchRequestor {
         private final List<SearchMatch> matches = new ArrayList<>();
         private final int maxResults;
+        private int totalEncountered = 0;
 
         CollectingSearchRequestor(int maxResults) {
             this.maxResults = maxResults;
@@ -429,6 +447,7 @@ public class SearchService {
 
         @Override
         public void acceptSearchMatch(SearchMatch match) {
+            totalEncountered++;
             if (matches.size() < maxResults) {
                 matches.add(match);
             }
@@ -436,6 +455,14 @@ public class SearchService {
 
         List<SearchMatch> getMatches() {
             return matches;
+        }
+
+        int getTotalEncountered() {
+            return totalEncountered;
+        }
+
+        SearchResult toResult() {
+            return new SearchResult(matches, totalEncountered);
         }
     }
 }

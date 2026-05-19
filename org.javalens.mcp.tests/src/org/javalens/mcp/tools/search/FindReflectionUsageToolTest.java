@@ -216,14 +216,24 @@ class FindReflectionUsageToolTest {
     }
 
     @Test
-    @DisplayName("totalCalls == reflectionCalls.size()")
+    @DisplayName("totalCalls is the pre-clip total; reflectionCalls.size() is post-clip and equals meta.returnedCount")
     void totalCallsEqualsListSize() {
         ObjectNode args = objectMapper.createObjectNode();
 
         ToolResponse r = tool.execute(args);
         assertTrue(r.isSuccess());
         int total = ((Number) getData(r).get("totalCalls")).intValue();
-        assertEquals(total, callsOf(r).size());
+        int listSize = callsOf(r).size();
+        // totalCalls (== meta.totalCount) reflects the pre-clip total across all reflection
+        // method labels — this can exceed the post-clip list size when the per-label cap
+        // truncates calls. reflectionCalls.size() == meta.returnedCount.
+        Integer returned = r.getMeta().getReturnedCount();
+        assertEquals(listSize, returned,
+            "reflectionCalls.size() must equal meta.returnedCount; got list=" + listSize
+                + " returned=" + returned);
+        assertTrue(total >= listSize,
+            "totalCalls (pre-clip) must be >= reflectionCalls.size() (post-clip); got total="
+                + total + " list=" + listSize);
     }
 
     @Test

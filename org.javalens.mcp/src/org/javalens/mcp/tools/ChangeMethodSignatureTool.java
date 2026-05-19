@@ -193,7 +193,7 @@ public class ChangeMethodSignatureTool extends AbstractTool {
 
             // Get all references to this method
             List<SearchMatch> references = service.getSearchService().findReferences(
-                method, IJavaSearchConstants.REFERENCES, 1000);
+                method, IJavaSearchConstants.REFERENCES, 1000).matches();
 
             // Collect all edits
             Map<String, List<Map<String, Object>>> editsByFile = new LinkedHashMap<>();

@@ -5,6 +5,7 @@ import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IMethod;
 import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.IJdtService;
+import org.javalens.core.search.SearchResult;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
 
@@ -88,19 +89,19 @@ public class FindMethodReferencesTool extends AbstractTool {
                 return ToolResponse.invalidParameter("position", "Element at position is not a method");
             }
 
-            List<SearchMatch> matches = service.getSearchService().findMethodReferences(method, maxResults);
-            List<Map<String, Object>> methodRefs = formatMatches(matches, service);
+            SearchResult result = service.getSearchService().findMethodReferences(method, maxResults);
+            List<Map<String, Object>> methodRefs = formatMatches(result.matches(), service);
 
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("methodName", method.getElementName());
             data.put("declaringType", method.getDeclaringType().getFullyQualifiedName());
-            data.put("totalCount", methodRefs.size());
+            data.put("totalCount", result.totalEncountered());
             data.put("locations", methodRefs);
 
             return ToolResponse.success(data, ResponseMeta.builder()
-                .totalCount(methodRefs.size())
+                .totalCount(result.totalEncountered())
                 .returnedCount(methodRefs.size())
-                .truncated(matches.size() >= maxResults)
+                .truncated(result.truncated())
                 .suggestedNextTools(List.of(
                     "find_references for all references including regular calls",
                     "get_call_hierarchy_incoming to see all callers"

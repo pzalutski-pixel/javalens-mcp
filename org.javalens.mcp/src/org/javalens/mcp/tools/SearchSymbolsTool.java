@@ -13,6 +13,7 @@ import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.IJdtService;
 import org.javalens.core.JdtServiceImpl;
 import org.javalens.core.TypeKindResolver;
+import org.javalens.core.search.SearchResult;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
 import org.slf4j.Logger;
@@ -90,33 +91,38 @@ public class SearchSymbolsTool extends AbstractTool {
             // Convert kind to search type
             Integer searchFor = getSearchType(kind);
 
-            // Use SearchService for indexed search
-            List<SearchMatch> matches = service.getSearchService()
+            // Use SearchService for indexed search. Fetch offset + maxResults extra
+            // headroom so the kind filter has candidates to draw from.
+            SearchResult searchResult = service.getSearchService()
                 .searchSymbols(query, searchFor, offset + maxResults + 10);
+            List<SearchMatch> matches = searchResult.matches();
 
-            // Convert matches to result format
+            // Count post-offset, post-kind-filter passing candidates separately from
+            // the displayed list so truncated is accurate. Comparing results.size() to
+            // maxResults misreports the case where actual matches == maxResults exactly.
             List<Map<String, Object>> results = new ArrayList<>();
             int skipped = 0;
-            int added = 0;
+            int totalPassing = 0;
 
             for (SearchMatch match : matches) {
-                if (added >= maxResults) break;
+                Map<String, Object> symbolInfo = createSymbolInfo(match, service);
+                if (symbolInfo == null) continue;
+                if (kind != null && !matchesKind(symbolInfo, kind)) continue;
 
                 if (skipped < offset) {
                     skipped++;
                     continue;
                 }
 
-                Map<String, Object> symbolInfo = createSymbolInfo(match, service);
-                if (symbolInfo != null) {
-                    // Filter by kind if specified
-                    if (kind != null && !matchesKind(symbolInfo, kind)) {
-                        continue;
-                    }
+                totalPassing++;
+                if (results.size() < maxResults) {
                     results.add(symbolInfo);
-                    added++;
                 }
             }
+
+            // If the underlying search itself was clipped, more matches may exist that
+            // we didn't see — fold that into truncated.
+            boolean truncated = totalPassing > maxResults || searchResult.truncated();
 
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("query", query);
@@ -125,13 +131,13 @@ public class SearchSymbolsTool extends AbstractTool {
             data.put("pagination", Map.of(
                 "offset", offset,
                 "returned", results.size(),
-                "hasMore", matches.size() > offset + results.size()
+                "hasMore", truncated
             ));
 
             return ToolResponse.success(data, ResponseMeta.builder()
-                .totalCount(results.size())
+                .totalCount(totalPassing)
                 .returnedCount(results.size())
-                .truncated(results.size() == maxResults)
+                .truncated(truncated)
                 .suggestedNextTools(List.of(
                     "get_symbol_info at a result location for detailed info",
                     "get_type_members for type results",
