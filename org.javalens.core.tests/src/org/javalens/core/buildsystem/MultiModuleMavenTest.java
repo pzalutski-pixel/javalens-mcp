@@ -113,7 +113,7 @@ class MultiModuleMavenTest {
                 "Expected to resolve com.example.api.Greeter (declared in :api module)");
 
             List<SearchMatch> refs = service.getSearchService()
-                .findReferences(greeter, IJavaSearchConstants.REFERENCES, 100);
+                .findReferences(greeter, IJavaSearchConstants.REFERENCES, 100).matches();
             List<String> refFiles = refs.stream()
                 .map(m -> m.getResource() != null ? m.getResource().getFullPath().toString() : "")
                 .toList();

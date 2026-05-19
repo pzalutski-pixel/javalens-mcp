@@ -162,7 +162,7 @@ class EndToEndIntegrationTest {
             // call `new UserService()`). An anyMatch-only check would silently pass even
             // if stale-index regressions leaked extras.
             List<SearchMatch> userRefs = service.getSearchService()
-                .findReferences(user, IJavaSearchConstants.REFERENCES, 100);
+                .findReferences(user, IJavaSearchConstants.REFERENCES, 100).matches();
             List<String> userRefFiles = userRefs.stream()
                 .map(m -> m.getResource() != null ? m.getResource().getFullPath().toString() : "")
                 .toList();
@@ -180,7 +180,7 @@ class EndToEndIntegrationTest {
             //  - 3 in UserController.java: import + field type + `new UserService()`
             // The self-reference is real and should be reported; the test pins both counts.
             List<SearchMatch> svcRefs = service.getSearchService()
-                .findReferences(userService, IJavaSearchConstants.REFERENCES, 100);
+                .findReferences(userService, IJavaSearchConstants.REFERENCES, 100).matches();
             List<String> svcRefFiles = svcRefs.stream()
                 .map(m -> m.getResource() != null ? m.getResource().getFullPath().toString() : "")
                 .toList();

@@ -134,7 +134,7 @@ class EndToEndBazelIntegrationTest {
 
         // === Cross-target find_references resolves =====================================
         List<SearchMatch> userRefs = service.getSearchService()
-            .findReferences(user, IJavaSearchConstants.REFERENCES, 100);
+            .findReferences(user, IJavaSearchConstants.REFERENCES, 100).matches();
         boolean serviceUsesUser = userRefs.stream().anyMatch(m -> {
             String path = m.getResource() != null ? m.getResource().getFullPath().toString() : "";
             return path.contains("UserService");

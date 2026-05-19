@@ -136,7 +136,7 @@ class EndToEndGradleIntegrationTest {
             // where a search regression leaks stale matches (e.g., index from a previous
             // load) — an anyMatch-only check would still pass with extras present.
             List<SearchMatch> userRefs = service.getSearchService()
-                .findReferences(user, IJavaSearchConstants.REFERENCES, 100);
+                .findReferences(user, IJavaSearchConstants.REFERENCES, 100).matches();
             List<String> userRefFiles = userRefs.stream()
                 .map(m -> m.getResource() != null ? m.getResource().getFullPath().toString() : "")
                 .toList();
