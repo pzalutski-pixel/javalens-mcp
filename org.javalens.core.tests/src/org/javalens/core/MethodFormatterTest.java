@@ -126,4 +126,40 @@ class MethodFormatterTest {
         assertEquals("removeUser(String username): boolean", MethodFormatter.signature(removeUser));
         assertEquals("boolean", MethodFormatter.returnTypeSimpleName(removeUser));
     }
+
+    @Test
+    @DisplayName("void return type renders as `: void`")
+    void voidReturnType() throws Exception {
+        // Animal.speak() returns void with zero args. Previously not tested — the
+        // void path in signature() builds `: void` via Signature.getSimpleName which
+        // returns the literal "void" for the void signature `V`. A regression that
+        // emitted "Void" or "" or null would slip through prior tests since they
+        // covered only int/boolean/String/List<String>.
+        IMethod speak = findMethod("com.example.Animal", "speak");
+        assertEquals("speak(): void", MethodFormatter.signature(speak));
+        assertEquals("void", MethodFormatter.returnTypeSimpleName(speak));
+    }
+
+    @Test
+    @DisplayName("primitive array parameter renders with `[]` suffix")
+    void primitiveArrayParameter() throws Exception {
+        // ControlFlowPatterns.enhancedForArray(int[] values) — primitive array param.
+        // Signature.getSimpleName on `[I` (`int[]`) returns `int[]`. Tested separately
+        // from reference-typed arrays because the JDT signature encoding differs.
+        IMethod enhancedFor = findMethod("com.example.ControlFlowPatterns", "enhancedForArray");
+        assertEquals("enhancedForArray(int[] values): int", MethodFormatter.signature(enhancedFor),
+            "int[] param must render as `int[]`, not `int` or `[I`; got: "
+                + MethodFormatter.signature(enhancedFor));
+    }
+
+    @Test
+    @DisplayName("reference-typed array parameter renders with simple name + `[]` (String[], not java.lang.String[])")
+    void referenceArrayParameter() throws Exception {
+        // HelloWorld.main(String[] args) — reference array param. Signature.getSimpleName
+        // on `[Ljava.lang.String;` must produce `String[]`, dropping the package prefix.
+        IMethod main = findMethod("com.example.HelloWorld", "main");
+        assertEquals("main(String[] args): void", MethodFormatter.signature(main),
+            "String[] param must render as `String[]`, not `java.lang.String[]`; got: "
+                + MethodFormatter.signature(main));
+    }
 }
