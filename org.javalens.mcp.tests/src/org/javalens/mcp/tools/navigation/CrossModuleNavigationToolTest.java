@@ -84,15 +84,24 @@ class CrossModuleNavigationToolTest {
             List<Map<String, Object>> references = (List<Map<String, Object>>) data.get("locations");
             assertNotNull(references, "Response must include a 'locations' array");
 
-            // The MCP boundary serializes file paths as strings — assert a cross-module
-            // hit lands. GreeterImpl lives in :impl and references Greeter from :api.
-            boolean foundCrossModule = references.stream().anyMatch(ref -> {
-                Object fp = ref.get("filePath");
-                return fp != null && fp.toString().contains("GreeterImpl");
-            });
-            assertTrue(foundCrossModule,
-                "Expected GreeterImpl in :impl to be returned as a cross-module reference " +
-                "to Greeter declared in :api. Got: " + references);
+            // Greeter has exactly 2 type references in GreeterImpl.java:
+            //   line 3: `import com.example.api.Greeter;`
+            //   line 6: `implements Greeter`
+            // GreeterController uses GreeterImpl directly, NOT Greeter, so no refs there.
+            // Pinning exact count catches stale-match regressions that anyMatch would hide
+            // while still proving the cross-module path works.
+            List<String> refFiles = references.stream()
+                .map(ref -> {
+                    Object fp = ref.get("filePath");
+                    return fp == null ? "" : fp.toString().replace('\\', '/');
+                })
+                .toList();
+            assertTrue(refFiles.size() == 2,
+                "Expected exactly 2 Greeter references (import + implements in "
+                    + "GreeterImpl.java). Got " + refFiles.size() + ": " + refFiles);
+            assertTrue(refFiles.stream().allMatch(f -> f.contains("GreeterImpl")),
+                "All Greeter references must be in GreeterImpl.java (cross-module "
+                    + "from :api to :impl); got: " + refFiles);
         } finally {
             if (previous == null) System.clearProperty("javalens.maven.binary");
             else System.setProperty("javalens.maven.binary", previous);
