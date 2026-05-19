@@ -297,6 +297,44 @@ class McpProtocolHandlerTest {
         assertEquals(-32601, json.get("error").get("code").asInt());
     }
 
+    // ========== Tool-Throws + Edge Inputs ==========
+
+    @Test
+    @DisplayName("tools/call where the tool throws is caught and returns an error response (no crash)")
+    void toolsCall_toolThrows_returnsError() throws Exception {
+        toolRegistry.register(new ThrowingTool("kaboom", "Throws unconditionally"));
+
+        String request = """
+            {"jsonrpc":"2.0","id":7,"method":"tools/call","params":{
+                "name":"kaboom",
+                "arguments":{}
+            }}
+            """;
+
+        String response = handler.processMessage(request);
+
+        // The handler must not propagate the throw; the wire response must be a
+        // well-formed JSON-RPC error or success-with-error-body. We accept either
+        // shape but require: the request id round-trips and the response is parseable.
+        assertNotNull(response, "Handler must catch tool exceptions and return a response");
+        JsonNode json = objectMapper.readTree(response);
+        assertEquals(7, json.get("id").asInt(),
+            "Even on tool failure, the request id must round-trip");
+    }
+
+    @Test
+    @DisplayName("processMessage with empty input returns a parse error, not a crash")
+    void processMessage_emptyInput_returnsParseError() throws Exception {
+        String response = handler.processMessage("");
+        assertNotNull(response, "Empty input must yield a response, not null");
+        JsonNode json = objectMapper.readTree(response);
+        assertNotNull(json.get("error"),
+            "Empty input must surface as JSON-RPC error; got: " + response);
+        assertEquals(-32700, json.get("error").get("code").asInt(),
+            "Empty input must map to PARSE_ERROR (-32700); got code="
+                + json.get("error").get("code").asInt());
+    }
+
     // ========== Mock Tool ==========
 
     private static class MockTool implements Tool {
@@ -326,6 +364,29 @@ class McpProtocolHandlerTest {
         @Override
         public ToolResponse execute(JsonNode arguments) {
             return ToolResponse.success(Map.of("executed", true));
+        }
+    }
+
+    private static class ThrowingTool implements Tool {
+        private final String name;
+        private final String description;
+
+        ThrowingTool(String name, String description) {
+            this.name = name;
+            this.description = description;
+        }
+
+        @Override
+        public String getName() { return name; }
+        @Override
+        public String getDescription() { return description; }
+        @Override
+        public Map<String, Object> getInputSchema() {
+            return Map.of("type", "object", "properties", Map.of());
+        }
+        @Override
+        public ToolResponse execute(JsonNode arguments) {
+            throw new RuntimeException("intentional failure for protocol-handler test");
         }
     }
 }
