@@ -46,4 +46,30 @@ class ModifierFormatterTest {
         int flags = Flags.AccProtected | Flags.AccAbstract;
         assertEquals(List.of("protected", "abstract"), ModifierFormatter.format(flags));
     }
+
+    @Test
+    @DisplayName("strictfp emitted in its documented position (after default, before transient)")
+    void strictfp_inOrder() {
+        // The only one of the 12 modifiers not covered by the existing tests. Source
+        // orders: ... default, strictfp, transient, volatile. Combine strictfp with
+        // surrounding-position modifiers to pin the ordering.
+        int flags = Flags.AccPublic | Flags.AccStrictfp | Flags.AccFinal;
+        assertEquals(List.of("public", "final", "strictfp"), ModifierFormatter.format(flags));
+    }
+
+    @Test
+    @DisplayName("all 12 modifiers together emit in documented declaration order")
+    void allTwelveModifiers_inDocumentedOrder() {
+        // Combining every modifier the source recognizes catches any ordering regression
+        // in a single assertion. JDT's Flags constants are independent bits, so the OR
+        // is well-defined even though no real Java element would carry all 12.
+        int flags = Flags.AccPublic | Flags.AccProtected | Flags.AccPrivate
+            | Flags.AccStatic | Flags.AccFinal | Flags.AccAbstract
+            | Flags.AccSynchronized | Flags.AccNative | Flags.AccDefaultMethod
+            | Flags.AccStrictfp | Flags.AccTransient | Flags.AccVolatile;
+        assertEquals(
+            List.of("public", "protected", "private", "static", "final", "abstract",
+                "synchronized", "native", "default", "strictfp", "transient", "volatile"),
+            ModifierFormatter.format(flags));
+    }
 }
