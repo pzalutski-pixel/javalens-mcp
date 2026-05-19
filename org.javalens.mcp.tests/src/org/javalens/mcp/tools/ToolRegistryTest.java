@@ -197,7 +197,7 @@ class ToolRegistryTest {
     }
 
     @Test
-    @DisplayName("callTool should handle tool exceptions gracefully")
+    @DisplayName("callTool should handle tool exceptions gracefully and report INTERNAL_ERROR")
     void callTool_handlesExceptions() throws Exception {
         Tool failingTool = new FailingTool();
         registry.register(failingTool);
@@ -207,6 +207,48 @@ class ToolRegistryTest {
 
         assertFalse(response.isSuccess());
         assertNotNull(response.getError());
+        // Pin the specific error code. Previously the test only verified non-null error,
+        // which would pass even if the registry emitted a different code. The source
+        // explicitly wraps via ToolResponse.internalError(e), giving INTERNAL_ERROR.
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INTERNAL_ERROR,
+            response.getError().getCode(),
+            "Unhandled tool exception must be wrapped as INTERNAL_ERROR; got: "
+                + response.getError().getCode());
+        // Original exception's message should bubble up into the error message.
+        assertTrue(response.getError().getMessage().contains("Intentional failure"),
+            "Wrapped error must surface the original exception message; got: "
+                + response.getError().getMessage());
+    }
+
+    @Test
+    @DisplayName("getToolNames returns an unmodifiable view (mutation throws)")
+    void getToolNames_unmodifiable() {
+        registry.register(new MockTool("alpha", "A"));
+
+        Set<String> names = registry.getToolNames();
+        assertEquals(Set.of("alpha"), names);
+        assertThrows(UnsupportedOperationException.class,
+            () -> names.add("forbidden"),
+            "getToolNames must return an unmodifiable view per the source's "
+                + "Collections.unmodifiableSet wrapping");
+    }
+
+    @Test
+    @DisplayName("getToolDefinitions preserves registration order (LinkedHashMap)")
+    void getToolDefinitions_preservesOrder() {
+        registry.register(new MockTool("zeta", "Z"));
+        registry.register(new MockTool("alpha", "A"));
+        registry.register(new MockTool("mu", "M"));
+
+        List<Map<String, Object>> defs = registry.getToolDefinitions();
+        // The source uses LinkedHashMap → iteration is insertion order. Pinning so an
+        // optimization to HashMap (alphabetical or random) would surface as a test
+        // failure rather than silently shuffling the tools/list response.
+        List<String> orderedNames = defs.stream()
+            .map(d -> (String) d.get("name"))
+            .toList();
+        assertEquals(List.of("zeta", "alpha", "mu"), orderedNames,
+            "Tool definitions must come out in registration order; got: " + orderedNames);
     }
 
     // ========== Mock Tool Implementation ==========
