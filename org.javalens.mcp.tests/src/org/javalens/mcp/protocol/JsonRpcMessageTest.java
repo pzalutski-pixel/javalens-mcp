@@ -224,4 +224,57 @@ class JsonRpcMessageTest {
 
         assertNotNull(msg.getParams());
     }
+
+    // ========== JSON Serialization (Wire Format) Tests ==========
+
+    @Test
+    @DisplayName("request serializes to JSON with jsonrpc/id/method/params, omits result/error")
+    void request_serializesToJsonRpc20Shape() throws Exception {
+        // JSON-RPC 2.0 wire format: { "jsonrpc":"2.0", "id":..., "method":..., "params":... }
+        // result and error fields must be ABSENT (NON_NULL inclusion). Verifying via
+        // re-parse to JsonNode rather than string-matching to be JSON-formatting agnostic.
+        JsonRpcMessage msg = JsonRpcMessage.request(1, "tools/list",
+            objectMapper.createObjectNode().put("foo", "bar"));
+        String json = objectMapper.writeValueAsString(msg);
+        JsonNode parsed = objectMapper.readTree(json);
+
+        assertEquals("2.0", parsed.get("jsonrpc").asText());
+        assertEquals(1, parsed.get("id").asInt());
+        assertEquals("tools/list", parsed.get("method").asText());
+        assertEquals("bar", parsed.get("params").get("foo").asText());
+        assertTrue(!parsed.has("result"),
+            "Request must not include 'result' field; got: " + json);
+        assertTrue(!parsed.has("error"),
+            "Request must not include 'error' field; got: " + json);
+    }
+
+    @Test
+    @DisplayName("notification serializes with no 'id' field per JSON-RPC 2.0")
+    void notification_serializesWithoutIdField() throws Exception {
+        // Per JSON-RPC 2.0, a notification has no id. Our @JsonInclude(NON_NULL) at class
+        // level must cause the field to be omitted entirely, NOT serialized as
+        // "id": null. Otherwise the wire form is ambiguous (some servers reject null id).
+        JsonRpcMessage msg = JsonRpcMessage.notification("notifications/initialized", null);
+        String json = objectMapper.writeValueAsString(msg);
+        JsonNode parsed = objectMapper.readTree(json);
+
+        assertTrue(!parsed.has("id"),
+            "Notification must omit 'id' field entirely (not serialize as null); got: " + json);
+        assertEquals("notifications/initialized", parsed.get("method").asText());
+    }
+
+    @Test
+    @DisplayName("successResponse omits 'method' and 'error' fields")
+    void successResponse_omitsMethodAndError() throws Exception {
+        JsonRpcMessage msg = JsonRpcMessage.successResponse(42, Map.of("ok", true));
+        String json = objectMapper.writeValueAsString(msg);
+        JsonNode parsed = objectMapper.readTree(json);
+
+        assertEquals(42, parsed.get("id").asInt());
+        assertTrue(parsed.has("result"), "Success response must carry 'result'");
+        assertTrue(!parsed.has("method"),
+            "Success response must not carry 'method'; got: " + json);
+        assertTrue(!parsed.has("error"),
+            "Success response must not carry 'error'; got: " + json);
+    }
 }
