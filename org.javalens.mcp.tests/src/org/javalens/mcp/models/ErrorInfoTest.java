@@ -170,6 +170,45 @@ class ErrorInfoTest {
             "Message must include status message; got: " + error.getMessage());
     }
 
+    // Note: ErrorInfo.fromThrowable has two defensive branches that are unreachable
+    // through the public Eclipse API:
+    //   (a) `if (status != null)` — CoreException's constructor itself NPEs on null
+    //       status, so a CoreException with null status can't be constructed.
+    //   (b) `status.getPlugin() == null ? "<unknown>" : ...` — Status's constructor
+    //       throws IllegalArgumentException on null plugin id.
+    // Both source-level guards are belt-and-suspenders; testing them would need
+    // reflection or a future Eclipse API breakage. Documented dead-code-defense.
+
+    @Test
+    @DisplayName("fromThrowable surfaces WARNING and CANCEL severities by name")
+    void fromThrowable_warningAndCancelSeverity_emittedByName() {
+        // severityName's switch covers OK/INFO/WARNING/ERROR/CANCEL + default. Only ERROR
+        // was tested. Pin WARNING + CANCEL to cover two more branches.
+        org.eclipse.core.runtime.Status warningStatus = new org.eclipse.core.runtime.Status(
+            org.eclipse.core.runtime.IStatus.WARNING, "test.plugin", 0, "warned", null);
+        ErrorInfo warningError = ErrorInfo.fromThrowable(
+            new org.eclipse.core.runtime.CoreException(warningStatus));
+        assertTrue(warningError.getMessage().contains("WARNING"),
+            "WARNING severity must surface by name; got: " + warningError.getMessage());
+
+        org.eclipse.core.runtime.Status cancelStatus = new org.eclipse.core.runtime.Status(
+            org.eclipse.core.runtime.IStatus.CANCEL, "test.plugin", 0, "cancelled", null);
+        ErrorInfo cancelError = ErrorInfo.fromThrowable(
+            new org.eclipse.core.runtime.CoreException(cancelStatus));
+        assertTrue(cancelError.getMessage().contains("CANCEL"),
+            "CANCEL severity must surface by name; got: " + cancelError.getMessage());
+    }
+
+    @Test
+    @DisplayName("invalidParameter factory builds with null hint (documented behavior)")
+    void invalidParameter_nullHint() {
+        // Source line 82 sets hint=null for invalidParameter. Tools relying on hint!=null
+        // for OTHER codes must NOT depend on it here. Pinning the null-hint behavior.
+        ErrorInfo error = ErrorInfo.invalidParameter("p", "reason");
+        assertNull(error.getHint(),
+            "invalidParameter factory must produce null hint per its documented contract");
+    }
+
     // ========== Error Code Constants Tests ==========
 
     @Test
