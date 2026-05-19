@@ -74,6 +74,10 @@ public class SuggestImportsTool extends AbstractTool {
         if (typeName == null || typeName.isBlank()) {
             return ToolResponse.invalidParameter("typeName", "Required");
         }
+        if (maxResults < 0) {
+            return ToolResponse.invalidParameter("maxResults",
+                "Must be >= 0; got: " + maxResults);
+        }
 
         try {
             List<Map<String, Object>> candidates = new ArrayList<>();

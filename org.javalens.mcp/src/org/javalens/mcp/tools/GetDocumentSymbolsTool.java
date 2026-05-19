@@ -74,7 +74,12 @@ public class GetDocumentSymbolsTool extends AbstractTool {
 
         boolean includePrivate = getBooleanParam(arguments, "includePrivate", true);
         int maxResults = getIntParam(arguments, "maxResults", 500);
-        maxResults = Math.min(Math.max(maxResults, 1), 2000);
+        if (maxResults < 0) {
+            return ToolResponse.invalidParameter("maxResults",
+                "Must be >= 0; got: " + maxResults);
+        }
+        // Honor maxResults=0 literally; upper bound is a safety cap.
+        maxResults = Math.min(maxResults, 2000);
 
         try {
             Path path = Path.of(filePath);

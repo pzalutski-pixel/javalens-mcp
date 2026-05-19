@@ -87,6 +87,11 @@ public class FindReflectionUsageTool extends AbstractTool {
     protected ToolResponse executeWithService(IJdtService service, JsonNode arguments) {
         int maxResults = getIntParam(arguments, "maxResults", 100);
 
+        if (maxResults < 0) {
+            return ToolResponse.invalidParameter("maxResults",
+                "Must be >= 0; got: " + maxResults);
+        }
+
         try {
             List<Map<String, Object>> allCalls = new ArrayList<>();
             Map<String, Integer> summary = new LinkedHashMap<>();

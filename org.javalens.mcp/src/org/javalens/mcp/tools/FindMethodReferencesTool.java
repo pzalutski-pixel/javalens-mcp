@@ -76,6 +76,10 @@ public class FindMethodReferencesTool extends AbstractTool {
         if (line < 0 || column < 0) {
             return ToolResponse.invalidParameter("position", "Line and column are required (zero-based)");
         }
+        if (maxResults < 0) {
+            return ToolResponse.invalidParameter("maxResults",
+                "Must be >= 0; got: " + maxResults);
+        }
 
         try {
             Path path = Path.of(filePath);

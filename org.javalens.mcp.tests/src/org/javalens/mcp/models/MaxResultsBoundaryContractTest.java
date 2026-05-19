@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
 import org.javalens.mcp.fixtures.TestProjectHelper;
+import org.javalens.mcp.models.ErrorInfo;
 import org.javalens.mcp.tools.FindAnnotationUsagesTool;
 import org.javalens.mcp.tools.FindCastsTool;
 import org.javalens.mcp.tools.FindCatchBlocksTool;
@@ -81,33 +82,33 @@ class MaxResultsBoundaryContractTest {
     static Stream<Arguments> provideToolArgs() {
         // row(name, argsBuilder, toolBuilder, minResultsAtZero, scale)
         // minResultsAtZero: how many results the tool returns when maxResults=0
-        //   (most tools: 0; tools that clamp to [1,N]: 1 — captured as B-11)
+        //   — post-B-11 fix all tools honor maxResults=0 literally and return 0.
         // scale: per-maxResults multiplier — most tools: 1; per-category tools higher
         //   (find_reflection_usage caps per reflection method, 18 methods → scale 18)
         return Stream.of(
             row("search_symbols",
                 ctx -> ctx.args().put("query", "Calculator"),
-                ctx -> new SearchSymbolsTool(() -> ctx.service),  1, 1),
+                ctx -> new SearchSymbolsTool(() -> ctx.service),  0, 1),
             row("find_implementations",
                 ctx -> argsAt(ctx, "src/main/java/com/example/IShape.java", 2, 17),
-                ctx -> new FindImplementationsTool(() -> ctx.service),  1, 1),
+                ctx -> new FindImplementationsTool(() -> ctx.service),  0, 1),
             row("get_document_symbols",
                 ctx -> ctx.args().put("filePath",
                     ctx.projectPath.resolve("src/main/java/com/example/Calculator.java").toString()),
-                ctx -> new GetDocumentSymbolsTool(() -> ctx.service),  1, 1),
+                ctx -> new GetDocumentSymbolsTool(() -> ctx.service),  0, 1),
             row("get_diagnostics",
                 ctx -> ctx.args().put("filePath",
                     ctx.projectPath.resolve("src/main/java/com/example/Calculator.java").toString()),
                 ctx -> new GetDiagnosticsTool(() -> ctx.service),  0, 1),
             row("find_references",
                 ctx -> argsAt(ctx, "src/main/java/com/example/Calculator.java", 5, 13),
-                ctx -> new FindReferencesTool(() -> ctx.service),  1, 1),
+                ctx -> new FindReferencesTool(() -> ctx.service),  0, 1),
             row("find_field_writes",
                 ctx -> argsAt(ctx, "src/main/java/com/example/Calculator.java", 6, 16),
-                ctx -> new FindFieldWritesTool(() -> ctx.service),  1, 1),
+                ctx -> new FindFieldWritesTool(() -> ctx.service),  0, 1),
             row("get_call_hierarchy_incoming",
                 ctx -> argsAt(ctx, "src/main/java/com/example/Calculator.java", 14, 15),
-                ctx -> new GetCallHierarchyIncomingTool(() -> ctx.service),  1, 1),
+                ctx -> new GetCallHierarchyIncomingTool(() -> ctx.service),  0, 1),
             row("find_method_references",
                 ctx -> argsAt(ctx, "src/main/java/com/example/Calculator.java", 14, 15),
                 ctx -> new FindMethodReferencesTool(() -> ctx.service),  0, 1),
@@ -162,6 +163,26 @@ class MaxResultsBoundaryContractTest {
         assertTrue(returned <= minResultsAtZero,
             toolName + ": maxResults=0 must return at most " + minResultsAtZero
                 + " results; got returnedCount=" + returned);
+    }
+
+    @ParameterizedTest(name = "{0}: maxResults=-1 → INVALID_PARAMETER")
+    @MethodSource("provideToolArgs")
+    @DisplayName("Negative maxResults is rejected with INVALID_PARAMETER (B-11)")
+    void negative_isRejected(String toolName,
+                              Function<TestContext, ObjectNode> argsBuilder,
+                              Function<TestContext, Tool> toolBuilder,
+                              int minResultsAtZero, int scale) {
+        TestContext ctx = new TestContext(service, projectPath, objectMapper);
+        ObjectNode args = argsBuilder.apply(ctx).put("maxResults", -1);
+        Tool tool = toolBuilder.apply(ctx);
+        var response = tool.execute(args);
+        assertTrue(!response.isSuccess(),
+            toolName + ": maxResults=-1 must fail (not silently clamp); got: " + describe(response));
+        ErrorInfo err = response.getError();
+        assertNotNull(err, toolName + ": negative maxResults must produce an error");
+        assertTrue(ErrorInfo.INVALID_PARAMETER.equals(err.getCode()),
+            toolName + ": negative maxResults must report INVALID_PARAMETER; got code: "
+                + err.getCode() + " message: " + err.getMessage());
     }
 
     @ParameterizedTest(name = "{0}: maxResults=1 → returnedCount<={4} (scale)")

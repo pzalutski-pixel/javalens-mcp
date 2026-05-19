@@ -86,6 +86,11 @@ public class GetDiRegistrationsTool extends AbstractTool {
     protected ToolResponse executeWithService(IJdtService service, JsonNode arguments) {
         int maxResults = getIntParam(arguments, "maxResults", 200);
 
+        if (maxResults < 0) {
+            return ToolResponse.invalidParameter("maxResults",
+                "Must be >= 0; got: " + maxResults);
+        }
+
         try {
             List<Map<String, Object>> components = scanAnnotations(service, COMPONENT_ANNOTATIONS, maxResults);
             List<Map<String, Object>> configurations = scanAnnotations(service, CONFIG_ANNOTATIONS, maxResults);

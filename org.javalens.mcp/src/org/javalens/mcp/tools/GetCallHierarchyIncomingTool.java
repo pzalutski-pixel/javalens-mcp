@@ -85,8 +85,12 @@ public class GetCallHierarchyIncomingTool extends AbstractTool {
         if (column < 0) {
             return ToolResponse.invalidParameter("column", "Must be >= 0 (zero-based)");
         }
-
-        maxResults = Math.min(Math.max(maxResults, 1), 500);
+        if (maxResults < 0) {
+            return ToolResponse.invalidParameter("maxResults",
+                "Must be >= 0; got: " + maxResults);
+        }
+        // Honor maxResults=0 literally; upper bound is a safety cap.
+        maxResults = Math.min(maxResults, 500);
 
         try {
             Path path = Path.of(filePath);

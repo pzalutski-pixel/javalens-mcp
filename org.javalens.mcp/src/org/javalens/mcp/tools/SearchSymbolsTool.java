@@ -83,9 +83,16 @@ public class SearchSymbolsTool extends AbstractTool {
         int maxResults = getIntParam(arguments, "maxResults", 50);
         int offset = getIntParam(arguments, "offset", 0);
 
-        // Validate and cap values
-        maxResults = Math.min(Math.max(maxResults, 1), 1000);
-        offset = Math.max(offset, 0);
+        if (maxResults < 0) {
+            return ToolResponse.invalidParameter("maxResults",
+                "Must be >= 0; got: " + maxResults);
+        }
+        if (offset < 0) {
+            return ToolResponse.invalidParameter("offset",
+                "Must be >= 0; got: " + offset);
+        }
+        // Honor maxResults=0 literally; upper bound is a safety cap.
+        maxResults = Math.min(maxResults, 1000);
 
         try {
             // Convert kind to search type

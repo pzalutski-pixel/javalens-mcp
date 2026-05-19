@@ -75,6 +75,10 @@ public abstract class AbstractFineGrainReferenceTool extends AbstractTool {
         if (typeName == null || typeName.isBlank()) {
             return ToolResponse.invalidParameter("typeName", "Type name is required");
         }
+        if (maxResults < 0) {
+            return ToolResponse.invalidParameter("maxResults",
+                "Must be >= 0; got: " + maxResults);
+        }
 
         try {
             IType type = service.findType(typeName);

@@ -70,6 +70,11 @@ public class GetDiagnosticsTool extends AbstractTool {
         String severity = getStringParam(arguments, "severity", "all");
         int maxResults = getIntParam(arguments, "maxResults", 100);
 
+        if (maxResults < 0) {
+            return ToolResponse.invalidParameter("maxResults",
+                "Must be >= 0; got: " + maxResults);
+        }
+
         try {
             List<Map<String, Object>> diagnostics = new ArrayList<>();
             int errorCount = 0;
