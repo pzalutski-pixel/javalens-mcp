@@ -134,7 +134,7 @@ class SchemaBuilderTest {
     }
 
     @Test
-    @DisplayName("build is single-use: building twice would produce stale required list")
+    @DisplayName("build is single-use: required list is independently copied per build")
     void buildIsSingleUse() {
         SchemaBuilder b = SchemaBuilder.object()
             .required("a", "string", "A");
@@ -146,5 +146,43 @@ class SchemaBuilderTest {
         List<String> firstReq = (List<String>) first.get("required");
         assertEquals(List.of("a"), firstReq);
         assertEquals(List.of("a"), second.get("required"));
+    }
+
+    @Test
+    @DisplayName("properties Map IS shared between consecutive build() calls (documented limitation)")
+    @SuppressWarnings("unchecked")
+    void buildSharesPropertiesMapAcrossBuilds() {
+        // Source: build() inserts the builder's `properties` field reference directly,
+        // not a copy. Two consecutive builds therefore share the same properties Map.
+        // The Javadoc says "the builder is single-use", which mostly applies to the
+        // `required` list (which IS copied). For `properties`, callers must not assume
+        // independence.
+        //
+        // Pin this so a future change that makes properties a defensive copy would
+        // fail intentionally (signaling an API-shape change to callers).
+        SchemaBuilder b = SchemaBuilder.object()
+            .required("a", "string", "A");
+        Map<String, Object> first = b.build();
+        Map<String, Object> second = b.build();
+
+        assertTrue(first.get("properties") == second.get("properties"),
+            "Current behavior: both built schemas share the same properties Map reference. "
+                + "If this fails, the builder now does a defensive copy — update the Javadoc.");
+    }
+
+    @Test
+    @DisplayName("requiredEnum with empty values list produces empty enum array")
+    @SuppressWarnings("unchecked")
+    void requiredEnum_emptyValues_emptyEnumArray() {
+        // Edge case: an empty enum list is well-defined (JSON Schema spec accepts it,
+        // though it makes no logical value pass validation). Pin the behavior: build()
+        // doesn't reject this, just emits an empty `enum` array.
+        Map<String, Object> schema = SchemaBuilder.object()
+            .requiredEnum("k", "kind", List.of())
+            .build();
+        Map<String, Object> props = (Map<String, Object>) schema.get("properties");
+        Map<String, Object> kProp = (Map<String, Object>) props.get("k");
+        assertEquals(List.of(), kProp.get("enum"),
+            "Empty values list must be preserved as an empty enum array");
     }
 }
