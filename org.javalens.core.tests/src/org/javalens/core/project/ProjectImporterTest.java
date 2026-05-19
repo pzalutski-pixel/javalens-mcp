@@ -184,8 +184,11 @@ class ProjectImporterTest {
     void countSourceFiles_countsJavaFiles() {
         int count = importer.countSourceFiles(mavenFixturePath);
 
-        assertTrue(count >= 3,
-            "Should find at least 3 Java files (Calculator, HelloWorld, UserService): " + count);
+        // Tightened floor (was >= 3). simple-maven currently ships 45 .java files; >= 30
+        // catches the "module walk dropped most files" regression while leaving headroom
+        // for fixture additions.
+        assertTrue(count >= 30,
+            "Expected at least 30 Java files in simple-maven; got: " + count);
     }
 
     @Test
@@ -213,23 +216,31 @@ class ProjectImporterTest {
     // ========== Package Finding Tests ==========
 
     @Test
-    @DisplayName("findPackages should find all packages in project")
+    @DisplayName("findPackages should find all packages in project (exact-name pins)")
     void findPackages_findsAllPackages() {
         List<String> packages = importer.findPackages(mavenFixturePath);
 
-        assertFalse(packages.isEmpty(), "Should find at least one package");
-        assertTrue(packages.stream().anyMatch(p -> p.contains("com.example")),
-            "Should find com.example package");
+        // Previously asserted "anyMatch contains com.example" — that's true for
+        // com.example.X.Y too, so a regression that DROPPED the top-level com.example
+        // but kept subpackages would still pass. Pin exact equality.
+        assertTrue(packages.contains("com.example"),
+            "Expected exact 'com.example' package; got: " + packages);
     }
 
     @Test
-    @DisplayName("findPackages should find nested packages")
+    @DisplayName("findPackages should find nested packages (exact subpackage names)")
     void findPackages_findsNestedPackages() {
         List<String> packages = importer.findPackages(mavenFixturePath);
 
-        // Should find both com.example and com.example.service
-        assertTrue(packages.stream().anyMatch(p -> p.contains("service")),
-            "Should find service subpackage");
+        // Previously asserted contains("service") — would pass for any package whose
+        // name contains "service" anywhere. Pin exact name. Cover BOTH known nested
+        // packages so a regression dropping one of them surfaces.
+        assertTrue(packages.contains("com.example.service"),
+            "Expected exact 'com.example.service' package; got: " + packages);
+        assertTrue(packages.contains("com.example.cycledemo.a"),
+            "Expected exact 'com.example.cycledemo.a' package; got: " + packages);
+        assertTrue(packages.contains("com.example.cycledemo.b"),
+            "Expected exact 'com.example.cycledemo.b' package; got: " + packages);
     }
 
     @Test
