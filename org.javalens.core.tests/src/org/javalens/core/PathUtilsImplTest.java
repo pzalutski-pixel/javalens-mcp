@@ -137,16 +137,24 @@ class PathUtilsImplTest {
     }
 
     @Test
-    @DisplayName("isWithinProject should handle relative paths")
+    @DisplayName("isWithinProject normalizes a relative path to absolute before the check")
     void isWithinProject_handlesRelativePaths() {
-        // Even a relative path, when normalized, should be checked properly
+        // The source normalizes relative paths via toAbsolutePath(), so the relative
+        // path is resolved against the JVM's working directory. We don't control CWD
+        // in a JUnit run, so we can't pin the boolean result. What WE pin is:
+        //  (a) the call returns without throwing
+        //  (b) the result equals what we'd compute by manually normalizing the path
+        // Previous assertion `assertNotNull(Boolean.valueOf(result))` was tautological —
+        // Boolean.valueOf(boolean) returns a non-null wrapper unconditionally; the
+        // assertion could never fail.
         Path relativePath = Path.of("some/relative/path.java");
-
-        // This will be made absolute and normalized, then checked
-        // The result depends on the current working directory
-        boolean result = pathUtils.isWithinProject(relativePath);
-        // Just verify it doesn't throw - result depends on CWD
-        assertNotNull(Boolean.valueOf(result));
+        Path manuallyNormalized = relativePath.toAbsolutePath().normalize();
+        boolean expected = manuallyNormalized.startsWith(projectRoot);
+        boolean actual = pathUtils.isWithinProject(relativePath);
+        assertEquals(expected, actual,
+            "isWithinProject must equal startsWith on the absolute-normalized path; "
+                + "relativePath=" + relativePath + ", normalized=" + manuallyNormalized
+                + ", projectRoot=" + projectRoot);
     }
 
     // ========== isWindows Tests ==========
@@ -180,4 +188,43 @@ class PathUtilsImplTest {
             assertFalse(usesAbsolute);
         }
     }
+
+    @Test
+    @DisplayName("formatPath against an unrelated absolute path produces an absolute string with forward slashes")
+    void formatPath_unrelatedAbsolutePath() {
+        // Project-relative branch is covered above; this test covers the
+        // "absolute path outside project" branch with a stricter check than the existing
+        // formatPath_returnsAbsoluteWhenOutsideProject (which only verified the format).
+        Path absoluteOutside = Path.of(System.getProperty("java.io.tmpdir")).toAbsolutePath()
+            .resolve("javalens-pathutils-marker.java");
+        String formatted = pathUtils.formatPath(absoluteOutside);
+        // The unrelated absolute path normalizes to itself (forward-slashed). Comparing
+        // textually because no relativization should occur.
+        String expected = absoluteOutside.toAbsolutePath().normalize().toString()
+            .replace('\\', '/');
+        assertEquals(expected, formatted,
+            "Unrelated absolute path must format as the absolute normalized form with "
+                + "forward slashes; got: " + formatted);
+    }
+
+    @Test
+    @DisplayName("getProjectRoot returns the constructor's normalized argument (idempotence)")
+    void getProjectRoot_returnsConstructorArgument() {
+        // The constructor calls toAbsolutePath().normalize() on its input. A second
+        // PathUtilsImpl built with the SAME projectRoot must report the same getProjectRoot,
+        // bit-for-bit. Pinning this avoids a regression that e.g. accidentally double-
+        // normalizes through a different code path.
+        PathUtilsImpl another = new PathUtilsImpl(projectRoot);
+        assertEquals(pathUtils.getProjectRoot(), another.getProjectRoot(),
+            "Two PathUtilsImpl built from the same root must report equal roots");
+        assertEquals(projectRoot.toAbsolutePath().normalize(), pathUtils.getProjectRoot(),
+            "getProjectRoot must equal constructor argument after toAbsolutePath().normalize()");
+    }
+
+    // Note: the `useAbsolutePaths=true` branch of formatPath is not exercised here. The
+    // setting is set at construction time from the JAVALENS_ABSOLUTE_PATHS env var; env
+    // vars can't be toggled per-test in-process. Covering that branch requires either
+    // (a) a refactor making the boolean a constructor parameter (production surface
+    // change rejected as too costly for one test), or (b) a subprocess test (over-
+    // engineered for one branch). Documented gap.
 }
