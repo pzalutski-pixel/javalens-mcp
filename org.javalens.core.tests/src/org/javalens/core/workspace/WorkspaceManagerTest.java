@@ -166,7 +166,7 @@ class WorkspaceManagerTest {
     // ========== Linked Folder Tests ==========
 
     @Test
-    @DisplayName("createLinkedFolder should create link to external directory")
+    @DisplayName("createLinkedFolder creates a link pointing at the requested external directory")
     void createLinkedFolder_createsLink() throws CoreException {
         IProject project = workspaceManager.createLinkedProject("folder-test", fixturePath);
         Path srcPath = fixturePath.resolve("src/main/java");
@@ -176,6 +176,15 @@ class WorkspaceManagerTest {
         var folder = project.getFolder("linked-src");
         assertTrue(folder.exists(), "Linked folder should exist");
         assertTrue(folder.isLinked(), "Folder should be linked");
+        // Pin the link target — previously only existence + isLinked were checked; a
+        // regression that linked to the wrong path (e.g. project root, or a sibling
+        // directory) would have passed silently.
+        Path actualTarget = Path.of(folder.getLocation().toOSString())
+            .toAbsolutePath().normalize();
+        Path expectedTarget = srcPath.toAbsolutePath().normalize();
+        assertEquals(expectedTarget, actualTarget,
+            "Linked folder's location must equal the requested external directory; "
+                + "expected=" + expectedTarget + ", actual=" + actualTarget);
     }
 
     @Test
