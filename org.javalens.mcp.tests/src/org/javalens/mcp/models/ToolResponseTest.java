@@ -162,4 +162,44 @@ class ToolResponseTest {
         assertEquals(ErrorInfo.SECURITY_VIOLATION, response.getError().getCode());
         assertTrue(response.getError().getMessage().contains("path traversal attempt"));
     }
+
+    @Test
+    @DisplayName("projectLoading returns PROJECT_LOADING with health_check hint")
+    void projectLoading_returnsLoadingError() {
+        ToolResponse response = ToolResponse.projectLoading();
+
+        assertFalse(response.isSuccess());
+        assertEquals("PROJECT_LOADING", response.getError().getCode());
+        // Hint must mention health_check so the AI consumer knows how to poll.
+        assertTrue(response.getError().getHint().contains("health_check"),
+            "projectLoading hint must reference health_check for polling; got: "
+                + response.getError().getHint());
+    }
+
+    @Test
+    @DisplayName("projectLoadFailed returns PROJECT_LOAD_FAILED with the underlying error message")
+    void projectLoadFailed_includesMessage() {
+        ToolResponse response = ToolResponse.projectLoadFailed("compiler crashed");
+
+        assertFalse(response.isSuccess());
+        assertEquals("PROJECT_LOAD_FAILED", response.getError().getCode());
+        assertTrue(response.getError().getMessage().contains("compiler crashed"),
+            "projectLoadFailed message must include the underlying error; got: "
+                + response.getError().getMessage());
+    }
+
+    @Test
+    @DisplayName("internalError(String) wraps the message in an INTERNAL_ERROR response")
+    void internalError_fromString_wrapsMessage() {
+        // Distinct from internalError(Throwable) — there's a plain-String overload that
+        // doesn't go through fromThrowable. Pin it so a regression that removed the
+        // overload (or changed it to wrap in a generic exception) surfaces.
+        ToolResponse response = ToolResponse.internalError("explicit string error");
+
+        assertFalse(response.isSuccess());
+        assertEquals(ErrorInfo.INTERNAL_ERROR, response.getError().getCode());
+        assertTrue(response.getError().getMessage().contains("explicit string error"),
+            "internalError(String) must surface the message verbatim; got: "
+                + response.getError().getMessage());
+    }
 }
