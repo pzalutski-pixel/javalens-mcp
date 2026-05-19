@@ -12,8 +12,17 @@ public class PathUtilsImpl implements IPathUtils {
     private final boolean useAbsolutePaths;
 
     public PathUtilsImpl(Path projectRoot) {
+        this(projectRoot, "true".equalsIgnoreCase(System.getenv("JAVALENS_ABSOLUTE_PATHS")));
+    }
+
+    /**
+     * Test-friendly constructor: bypasses the env-var read so the
+     * {@code useAbsolutePaths=true} branch can be exercised in unit tests.
+     * Production callers use the single-argument constructor.
+     */
+    PathUtilsImpl(Path projectRoot, boolean useAbsolutePaths) {
         this.projectRoot = projectRoot.toAbsolutePath().normalize();
-        this.useAbsolutePaths = "true".equalsIgnoreCase(System.getenv("JAVALENS_ABSOLUTE_PATHS"));
+        this.useAbsolutePaths = useAbsolutePaths;
     }
 
     @Override

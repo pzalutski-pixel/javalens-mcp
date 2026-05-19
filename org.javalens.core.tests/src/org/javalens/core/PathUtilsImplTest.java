@@ -221,10 +221,32 @@ class PathUtilsImplTest {
             "getProjectRoot must equal constructor argument after toAbsolutePath().normalize()");
     }
 
-    // Note: the `useAbsolutePaths=true` branch of formatPath is not exercised here. The
-    // setting is set at construction time from the JAVALENS_ABSOLUTE_PATHS env var; env
-    // vars can't be toggled per-test in-process. Covering that branch requires either
-    // (a) a refactor making the boolean a constructor parameter (production surface
-    // change rejected as too costly for one test), or (b) a subprocess test (over-
-    // engineered for one branch). Documented gap.
+    @Test
+    @DisplayName("formatPath returns absolute path when useAbsolutePaths=true, even for paths under the project root")
+    void formatPath_absoluteBranch_pathUnderProject() {
+        // useAbsolutePaths=true short-circuits the project-relative branch.
+        // A path that WOULD have been relativized (because it's under projectRoot) stays
+        // absolute. Exercised via the package-private test constructor that bypasses
+        // the env-var read.
+        PathUtilsImpl absolute = new PathUtilsImpl(projectRoot, true);
+        Path under = projectRoot.resolve("src/main/java/com/example/Calculator.java");
+        String formatted = absolute.formatPath(under);
+
+        String expected = under.toAbsolutePath().normalize().toString().replace('\\', '/');
+        assertEquals(expected, formatted,
+            "useAbsolutePaths=true must NOT relativize a path under projectRoot; got: " + formatted);
+        assertTrue(absolute.isUsingAbsolutePaths());
+    }
+
+    @Test
+    @DisplayName("formatPath always uses forward slashes regardless of useAbsolutePaths setting")
+    void formatPath_forwardSlashes_independentOfBranch() {
+        // Both branches replace backslashes — pin that the forward-slash invariant
+        // holds in the absolute branch too. Previous coverage only verified it for the
+        // relative branch.
+        PathUtilsImpl absolute = new PathUtilsImpl(projectRoot, true);
+        Path under = projectRoot.resolve("src/main/java/com/example/Calculator.java");
+        assertFalse(absolute.formatPath(under).contains("\\"),
+            "Even with useAbsolutePaths=true the formatter must produce forward slashes");
+    }
 }
