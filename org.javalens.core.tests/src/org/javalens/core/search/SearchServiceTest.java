@@ -106,15 +106,25 @@ class SearchServiceTest {
     }
 
     @Test
-    @DisplayName("findAllReferences should handle types with no external references")
+    @DisplayName("findAllReferences for HelloWorld: only self-references inside HelloWorld.java")
     void findAllReferences_handlesUnreferencedTypes() throws CoreException {
         IType helloType = jdtService.findType("com.example.HelloWorld");
         assertNotNull(helloType, "Should find HelloWorld type");
 
         List<SearchMatch> references = searchService.findAllReferences(helloType, 100);
+        assertNotNull(references);
 
-        // Just verify the method works - HelloWorld may have internal/compilation references
-        assertNotNull(references, "Should return a list (possibly empty)");
+        // Previous assertion was assertNotNull(references) — passed for ANY result
+        // including stale-index leaks. HelloWorld is only referenced inside HelloWorld.java
+        // itself (line 52: `HelloWorld hello = new HelloWorld()`). Pin that every match
+        // resolves to HelloWorld.java; a regression that returned matches from other files
+        // would surface.
+        for (SearchMatch m : references) {
+            String resourcePath = m.getResource() != null
+                ? m.getResource().getFullPath().toString() : "";
+            assertTrue(resourcePath.endsWith("HelloWorld.java"),
+                "All HelloWorld references must be in HelloWorld.java; got: " + resourcePath);
+        }
     }
 
     // ========== Type Hierarchy Tests ==========
@@ -177,41 +187,73 @@ class SearchServiceTest {
     // ========== Fine-Grained Search Tests ==========
 
     @Test
-    @DisplayName("findTypeInstantiations should find new expressions")
+    @DisplayName("findReferences(INSTANTIATION) on Calculator finds the known new-expressions in project sources")
     void findTypeInstantiations_findsNewExpressions() throws CoreException {
-        IType arrayListType = javaProject.findType("java.util.ArrayList");
-        if (arrayListType != null) {
-            List<SearchMatch> instantiations = searchService.findReferences(
-                arrayListType, SearchService.ReferenceKind.INSTANTIATION, 100);
-            // ArrayList is instantiated in UserService
-            assertNotNull(instantiations, "Should return instantiation list");
-        }
+        // Use Calculator (a project source type) rather than ArrayList (JRE-binary):
+        // JDT's fine-grain INSTANTIATION rule doesn't index JRE binaries, so the
+        // ArrayList variant returned 0 even though the source has many `new ArrayList<>()`
+        // sites. Calculator is instantiated in 4 known project-source sites:
+        //   SearchPatterns.java:58, SearchPatterns.java:212, SearchPatterns.java:227,
+        //   UserService.java:20 (and SampleTest.java:22 in test sources).
+        // Pin floor (>= 4) so a regression returning 0 fails.
+        IType calculatorType = jdtService.findType("com.example.Calculator");
+        assertNotNull(calculatorType);
+
+        List<SearchMatch> instantiations = searchService.findReferences(
+            calculatorType, SearchService.ReferenceKind.INSTANTIATION, 100);
+
+        assertTrue(instantiations.size() >= 4,
+            "Expected at least 4 Calculator instantiations in project sources. Got "
+                + instantiations.size() + ": " + instantiations);
     }
 
     @Test
-    @DisplayName("findReadAccesses should find field reads")
+    @DisplayName("findReadAccesses on Calculator.lastResult finds exactly 4 reads (one per getter + 3 return-self in add/subtract/multiply)")
     void findReadAccesses_findsFieldReads() throws CoreException {
+        // Calculator.lastResult is read in 4 places:
+        //   add: `return lastResult;`
+        //   subtract: `return lastResult;`
+        //   multiply: `return lastResult;`
+        //   getLastResult: `return lastResult;`
+        // Previously assertNotNull-only; would pass with empty list (regression making
+        // findReadAccesses return [] silently). Pin the exact count.
         IType calculatorType = jdtService.findType("com.example.Calculator");
-        assertNotNull(calculatorType, "Should find Calculator type");
+        assertNotNull(calculatorType);
+        var lastResult = calculatorType.getField("lastResult");
+        assertNotNull(lastResult);
+        assertTrue(lastResult.exists(), "Calculator.lastResult must exist");
 
-        var fields = calculatorType.getFields();
-        if (fields.length > 0) {
-            List<SearchMatch> reads = searchService.findReadAccesses(fields[0], 100);
-            assertNotNull(reads, "Should return read accesses list");
+        List<SearchMatch> reads = searchService.findReadAccesses(lastResult, 100);
+        assertEquals(4, reads.size(),
+            "Expected exactly 4 reads of Calculator.lastResult (one per arithmetic method + "
+                + "getLastResult). Got " + reads.size() + ": " + reads);
+        for (SearchMatch m : reads) {
+            String resourcePath = m.getResource() != null
+                ? m.getResource().getFullPath().toString() : "";
+            assertTrue(resourcePath.endsWith("Calculator.java"),
+                "All lastResult reads must be in Calculator.java; got: " + resourcePath);
         }
     }
 
     @Test
-    @DisplayName("findWriteAccesses should find field writes")
+    @DisplayName("findWriteAccesses on Calculator.lastResult finds exactly 3 writes (add/subtract/multiply)")
     void findWriteAccesses_findsFieldWrites() throws CoreException {
+        // Calculator.lastResult is written in 3 places: add, subtract, multiply.
+        // Previously assertNotNull-only.
         IType calculatorType = jdtService.findType("com.example.Calculator");
-        assertNotNull(calculatorType, "Should find Calculator type");
+        assertNotNull(calculatorType);
+        var lastResult = calculatorType.getField("lastResult");
+        assertNotNull(lastResult);
 
-        var fields = calculatorType.getFields();
-        if (fields.length > 0) {
-            List<SearchMatch> writes = searchService.findWriteAccesses(fields[0], 100);
-            assertNotNull(writes, "Should return write accesses list");
-            // lastResult field is written in add, subtract, multiply methods
+        List<SearchMatch> writes = searchService.findWriteAccesses(lastResult, 100);
+        assertEquals(3, writes.size(),
+            "Expected exactly 3 writes of Calculator.lastResult (add/subtract/multiply). Got "
+                + writes.size() + ": " + writes);
+        for (SearchMatch m : writes) {
+            String resourcePath = m.getResource() != null
+                ? m.getResource().getFullPath().toString() : "";
+            assertTrue(resourcePath.endsWith("Calculator.java"),
+                "All lastResult writes must be in Calculator.java; got: " + resourcePath);
         }
     }
 }
