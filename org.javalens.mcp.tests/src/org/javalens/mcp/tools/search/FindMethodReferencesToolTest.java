@@ -245,4 +245,25 @@ class FindMethodReferencesToolTest {
         assertTrue(((Number) ref.get("line")).intValue() >= 0, "line >= 0; got: " + ref);
         assertTrue(((Number) ref.get("column")).intValue() >= 0, "column >= 0; got: " + ref);
     }
+
+    @Test
+    @DisplayName("Position on a field (non-method element) is rejected with invalidParameter")
+    void positionOnField_rejectedAsNonMethod() {
+        // Source line 92-94 rejects when the resolved element is not an IMethod.
+        // Calculator.lastResult is a field at 0-based line 6 col 16.
+        String calcPath = helper.getFixturePath("simple-maven")
+            .resolve("src/main/java/com/example/Calculator.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calcPath);
+        args.put("line", 6);
+        args.put("column", 16);
+
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess(),
+            "Field position must be rejected as 'not a method'; got success");
+        assertNotNull(r.getError());
+        String msg = r.getError().getMessage();
+        assertTrue(msg.toLowerCase().contains("method"),
+            "Error message must mention method; got: " + msg);
+    }
 }
