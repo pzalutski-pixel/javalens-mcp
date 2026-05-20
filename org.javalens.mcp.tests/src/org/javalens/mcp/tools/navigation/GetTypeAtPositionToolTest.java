@@ -89,6 +89,18 @@ class GetTypeAtPositionToolTest {
         // Flags
         assertEquals(false, data.get("isAnonymous"));
         assertEquals(false, data.get("isLocal"));
+
+        // Absence assertions — Calculator is top-level, non-generic, implements no
+        // interfaces. Each createTypeInfo branch is gated on a non-empty/non-null
+        // check; the corresponding key must NOT be present when its branch is skipped.
+        assertFalse(data.containsKey("interfaces"),
+            "Calculator implements nothing — `interfaces` key must be absent; got: " + data);
+        assertFalse(data.containsKey("typeParameters"),
+            "Calculator is non-generic — `typeParameters` key must be absent; got: " + data);
+        assertFalse(data.containsKey("declaringType"),
+            "Calculator is top-level — `declaringType` key must be absent; got: " + data);
+        assertFalse(data.containsKey("isNested"),
+            "Top-level types must omit `isNested` (only nested types set it); got: " + data);
     }
 
     @Test
@@ -152,16 +164,24 @@ class GetTypeAtPositionToolTest {
     // ========== Edge Case Tests ==========
 
     @Test
-    @DisplayName("Position with no type handles gracefully")
-    void positionWithNoType_handlesGracefully() {
+    @DisplayName("Position with no resolvable type returns SYMBOL_NOT_FOUND")
+    void positionWithNoType_returnsSymbolNotFound() {
+        // Line 0 col 0 lands on `package com.example;` — no type at that position
+        // and the ancestor walk has no enclosing IType either (package decl is not
+        // inside any type). Pin the documented failure mode: error code
+        // SYMBOL_NOT_FOUND, not a silent success or generic INTERNAL_ERROR.
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", calculatorPath);
         args.put("line", 0);
         args.put("column", 0);
 
         ToolResponse response = tool.execute(args);
-
-        assertNotNull(response);
+        assertFalse(response.isSuccess(),
+            "No type at package-decl position must fail; got success.");
+        assertEquals(org.javalens.mcp.models.ErrorInfo.SYMBOL_NOT_FOUND,
+            response.getError().getCode(),
+            "Expected SYMBOL_NOT_FOUND for position with no resolvable type; got: "
+                + response.getError().getCode());
     }
 
     // ========== Behavior-matrix coverage ==========
@@ -175,7 +195,7 @@ class GetTypeAtPositionToolTest {
     }
 
     @Test
-    @DisplayName("Interface (IShape) returns kind='interface'")
+    @DisplayName("Interface (IShape) returns kind='interface' and omits superclass key")
     void interface_returnsKindInterface() {
         String path = projectPath.resolve("src/main/java/com/example/IShape.java").toString();
         ToolResponse r = tool.execute(argsAt(path, 2, 17));
@@ -184,6 +204,12 @@ class GetTypeAtPositionToolTest {
         assertEquals("IShape", data.get("name"));
         assertEquals("interface", data.get("kind"));
         assertEquals("com.example.IShape", data.get("qualifiedName"));
+        // type.getSuperclassName() returns null for interfaces — the
+        // `if (superclass != null)` guard in createTypeInfo means the `superclass`
+        // key is absent. Pin that contract; otherwise an LLM seeing the key on
+        // some interfaces would draw the wrong conclusion.
+        assertFalse(data.containsKey("superclass"),
+            "Interfaces have no superclass — key must be absent; got: " + data);
     }
 
     @Test
