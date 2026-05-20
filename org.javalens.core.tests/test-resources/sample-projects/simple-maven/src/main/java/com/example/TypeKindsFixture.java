@@ -147,4 +147,8 @@ public class TypeKindsFixture {
     public String labelWithSuper() {
         return super.toString() + ":fixture";
     }
+
+    /** Single-line Javadoc summary with no terminating period intentionally so that the get_signature_help truncation fallback inside createSignatureInfo kicks in beyond the two-hundred-character internal threshold and the result must end with an explicit ellipsis exactly as documented in the source code */
+    public void longJavadocNoEarlyPeriod() {
+    }
 }

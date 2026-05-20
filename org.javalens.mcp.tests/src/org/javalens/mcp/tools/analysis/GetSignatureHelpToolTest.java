@@ -101,17 +101,50 @@ class GetSignatureHelpToolTest {
                 + signatures);
     }
 
-    @Test @DisplayName("requires filePath, line, column parameters")
+    @Test @DisplayName("requires filePath, line, column parameters (each rejected as INVALID_PARAMETER)")
     void requiresParameters() {
+        // Missing filePath -> INVALID_PARAMETER naming filePath.
         ObjectNode noFile = objectMapper.createObjectNode();
         noFile.put("line", 14);
         noFile.put("column", 15);
-        assertFalse(tool.execute(noFile).isSuccess());
+        ToolResponse rNoFile = tool.execute(noFile);
+        assertFalse(rNoFile.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER,
+            rNoFile.getError().getCode());
 
+        // Missing line (defaults to -1, fails the >=0 check) -> INVALID_PARAMETER.
         ObjectNode noLine = objectMapper.createObjectNode();
         noLine.put("filePath", calculatorPath);
         noLine.put("column", 15);
-        assertFalse(tool.execute(noLine).isSuccess());
+        ToolResponse rNoLine = tool.execute(noLine);
+        assertFalse(rNoLine.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER,
+            rNoLine.getError().getCode());
+        assertTrue(rNoLine.getError().getMessage().contains("line"),
+            "Error must name `line`; got: " + rNoLine.getError().getMessage());
+
+        // Missing column (defaults to -1) -> INVALID_PARAMETER naming column.
+        // Independent guard from line — must surface its own validation, not be
+        // shadowed by the earlier line check.
+        ObjectNode noColumn = objectMapper.createObjectNode();
+        noColumn.put("filePath", calculatorPath);
+        noColumn.put("line", 14);
+        ToolResponse rNoColumn = tool.execute(noColumn);
+        assertFalse(rNoColumn.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER,
+            rNoColumn.getError().getCode());
+        assertTrue(rNoColumn.getError().getMessage().contains("column"),
+            "Error must name `column`; got: " + rNoColumn.getError().getMessage());
+
+        // Blank filePath separate from null.
+        ObjectNode blankFp = objectMapper.createObjectNode();
+        blankFp.put("filePath", "");
+        blankFp.put("line", 14);
+        blankFp.put("column", 15);
+        ToolResponse rBlank = tool.execute(blankFp);
+        assertFalse(rBlank.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER,
+            rBlank.getError().getCode());
     }
 
     @Test @DisplayName("handles non-method position gracefully")
@@ -207,6 +240,39 @@ class GetSignatureHelpToolTest {
             assertNull(sig.get("documentation"),
                 "greet overload without Javadoc must omit documentation field; got: " + sig);
         }
+    }
+
+    @Test
+    @DisplayName("Long Javadoc with no early period truncates to 200 chars + '...'")
+    @SuppressWarnings("unchecked")
+    void longJavadocNoEarlyPeriod_truncatesAt200WithEllipsis() throws Exception {
+        // TypeKindsFixture.longJavadocNoEarlyPeriod carries a single-line Javadoc with
+        // no period and length > 200 characters. createSignatureInfo's
+        // `else if (doc.length() > 200)` branch returns substring(0, 200) + "...".
+        // Without this test the 200-char truncation contract is uncovered.
+        java.nio.file.Path projectPath = helper.getFixturePath("simple-maven");
+        String tkf = projectPath.resolve("src/main/java/com/example/TypeKindsFixture.java").toString();
+        ObjectNode pos = argsAtIdentifier(tkf, "longJavadocNoEarlyPeriod");
+        ToolResponse r = tool.execute(pos);
+        assertTrue(r.isSuccess(),
+            "longJavadocNoEarlyPeriod must resolve; got: " +
+                (r.getError() != null ? r.getError().getMessage() : "ok"));
+        List<Map<String, Object>> signatures = (List<Map<String, Object>>) getData(r).get("signatures");
+        Map<String, Object> sig = signatures.stream()
+            .filter(s -> "longJavadocNoEarlyPeriod(): void".equals(s.get("label")))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError(
+                "Expected longJavadocNoEarlyPeriod() signature; got: " + signatures));
+        String doc = (String) sig.get("documentation");
+        assertNotNull(doc, "documentation must be populated; got sig: " + sig);
+        // Exact contract: 200 chars + "..." = 203 chars total. Ends with "...".
+        assertEquals(203, doc.length(),
+            "Truncation must produce exactly 200 + 3 chars; got length " + doc.length()
+                + " for: " + doc);
+        assertTrue(doc.endsWith("..."),
+            "Truncated documentation must end with '...'; got: " + doc);
+        assertTrue(doc.startsWith("Single-line Javadoc summary"),
+            "Truncated documentation must preserve the start of the Javadoc; got: " + doc);
     }
 
     @Test
