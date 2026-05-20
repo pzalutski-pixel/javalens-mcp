@@ -301,4 +301,25 @@ class ProjectImporterTest {
         assertTrue(javaProject.exists(), "Java project should exist");
         assertEquals(project, javaProject.getProject(), "Should wrap the same IProject");
     }
+
+    // ========== getWarnings contract ==========
+
+    @Test
+    @DisplayName("getWarnings on a fresh importer (no load yet) returns an empty list")
+    void getWarnings_freshImporter_isEmpty() {
+        ProjectImporter fresh = new ProjectImporter();
+        assertNotNull(fresh.getWarnings());
+        assertTrue(fresh.getWarnings().isEmpty(),
+            "Fresh importer must have no warnings until a load runs");
+    }
+
+    @Test
+    @DisplayName("getWarnings returns an unmodifiable view (mutation throws)")
+    void getWarnings_unmodifiableView() {
+        ProjectImporter fresh = new ProjectImporter();
+        List<org.javalens.core.project.model.LoadWarning> view = fresh.getWarnings();
+        assertThrows(UnsupportedOperationException.class,
+            () -> view.add(new org.javalens.core.project.model.LoadWarning("X", "y", "z")),
+            "getWarnings must return an unmodifiable view per the source's Collections.unmodifiableList");
+    }
 }
