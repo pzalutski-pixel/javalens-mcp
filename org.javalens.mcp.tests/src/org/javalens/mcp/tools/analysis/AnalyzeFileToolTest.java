@@ -223,4 +223,28 @@ class AnalyzeFileToolTest {
                 + "top-level types in the file); aggregate=" + aggregateTypes.size()
                 + " detail=" + detailSymbols.size());
     }
+
+    @Test
+    @DisplayName("Default-package file: file.package reports '(default package)' literal")
+    @SuppressWarnings("unchecked")
+    void defaultPackageFile_reportsParenthesizedLabel() throws Exception {
+        // Source line 104 has the branch for cu.getPackageDeclarations().length == 0:
+        // emits the literal string "(default package)". Use the default-package fixture
+        // (NoPackage.java with no package statement) to exercise that branch.
+        org.javalens.core.JdtServiceImpl defaultPkgService =
+            helper.loadProject("default-package");
+        AnalyzeFileTool defaultPkgTool = new AnalyzeFileTool(() -> defaultPkgService);
+        String noPackagePath = helper.getFixturePath("default-package")
+            .resolve("src/main/java/NoPackage.java").toString();
+
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", noPackagePath);
+        ToolResponse r = defaultPkgTool.execute(args);
+        assertTrue(r.isSuccess(),
+            "Default-package file must analyze without error; got: " +
+                (r.getError() != null ? r.getError().getMessage() : "n/a"));
+        Map<String, Object> file = (Map<String, Object>) getData(r).get("file");
+        assertEquals("(default package)", file.get("package"),
+            "Default-package file must report file.package='(default package)'; got: " + file);
+    }
 }
