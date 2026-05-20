@@ -272,4 +272,142 @@ class GetQuickFixesToolTest {
         assertEquals(0, ((Number) data.get("problemCount")).intValue());
         assertTrue(getFixes(data).isEmpty());
     }
+
+    // ========== Problem-trigger coverage (broken-symbols fixture) ==========
+
+    @Test
+    @DisplayName("UNDEFINED_TYPE (Date without import) -> add_import:java.util.Date fix is proposed")
+    void undefinedType_offersAddImportFix() throws Exception {
+        // BrokenSymbols line 30 (1-based) `Date d = null;` -> 0-based 29. JDT reports
+        // IProblem.UndefinedType (ID 16777218); the tool's generateFixes(UNDEFINED_TYPE)
+        // path must produce one or more `add_import:fqn` fixes via suggestImportFixes.
+        JdtServiceImpl svc = helper.loadProject("broken-symbols");
+        GetQuickFixesTool localTool = new GetQuickFixesTool(() -> svc);
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", helper.getFixturePath("broken-symbols")
+            .resolve("src/main/java/com/example/BrokenSymbols.java").toString());
+        args.put("line", 29);
+
+        ToolResponse r = localTool.execute(args);
+        assertTrue(r.isSuccess(),
+            "Tool must succeed on a file with a known UndefinedType; got error: " +
+                (r.getError() != null ? r.getError().getMessage() : "ok"));
+        Map<String, Object> data = getData(r);
+        assertTrue(((Number) data.get("problemCount")).intValue() > 0,
+            "BrokenSymbols line 29 must surface at least one IProblem; data: " + data);
+
+        List<Map<String, Object>> fixes = getFixes(data);
+        boolean offersDateImport = fixes.stream().anyMatch(f ->
+            "add_import:java.util.Date".equals(f.get("fixId")));
+        assertTrue(offersDateImport,
+            "UNDEFINED_TYPE for `Date` must propose add_import:java.util.Date; got fixes: "
+                + fixes);
+
+        // The add_import fix carries the IMPORT category and a sensible label/relevance.
+        Map<String, Object> addImportFix = fixes.stream()
+            .filter(f -> "add_import:java.util.Date".equals(f.get("fixId")))
+            .findFirst()
+            .orElseThrow();
+        assertEquals("IMPORT", addImportFix.get("category"),
+            "add_import must be categorized as IMPORT; got: " + addImportFix);
+        String label = (String) addImportFix.get("label");
+        assertTrue(label != null && label.contains("Date"),
+            "add_import label must include the unresolved type; got: " + label);
+        // java.util gets relevance 100 from calculateRelevance.
+        assertEquals(100, ((Number) addImportFix.get("relevance")).intValue(),
+            "java.util package must score relevance=100; got: " + addImportFix);
+    }
+
+    @Test
+    @DisplayName("UNHANDLED_EXCEPTION (FileInputStream w/o throws or try) -> add_throws + surround_try_catch fixes")
+    void unhandledException_offersAddThrowsAndSurroundTryCatchFixes() throws Exception {
+        // BrokenSymbols line 35 (1-based) `new FileInputStream("missing.txt");` -> 0-based 34.
+        // JDT reports IProblem.UnhandledException (ID 16777384); the tool's
+        // generateFixes(UNHANDLED_EXCEPTION) path must produce exactly two fixes:
+        // add_throws:<exception> (relevance 80) and surround_try_catch:<exception> (75).
+        JdtServiceImpl svc = helper.loadProject("broken-symbols");
+        GetQuickFixesTool localTool = new GetQuickFixesTool(() -> svc);
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", helper.getFixturePath("broken-symbols")
+            .resolve("src/main/java/com/example/BrokenSymbols.java").toString());
+        args.put("line", 34);
+
+        ToolResponse r = localTool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertTrue(((Number) data.get("problemCount")).intValue() > 0,
+            "BrokenSymbols line 34 must surface IProblem.UnhandledException; data: " + data);
+
+        List<Map<String, Object>> fixes = getFixes(data);
+        boolean offersAddThrows = fixes.stream().anyMatch(f -> {
+            String id = (String) f.get("fixId");
+            return id != null && id.startsWith("add_throws:");
+        });
+        boolean offersSurroundTryCatch = fixes.stream().anyMatch(f -> {
+            String id = (String) f.get("fixId");
+            return id != null && id.startsWith("surround_try_catch:");
+        });
+        assertTrue(offersAddThrows,
+            "UNHANDLED_EXCEPTION must propose an add_throws:<exception> fix; got: " + fixes);
+        assertTrue(offersSurroundTryCatch,
+            "UNHANDLED_EXCEPTION must propose a surround_try_catch:<exception> fix; got: " + fixes);
+
+        // Both fixes carry the EXCEPTION category.
+        Map<String, Object> addThrows = fixes.stream()
+            .filter(f -> ((String) f.get("fixId")).startsWith("add_throws:"))
+            .findFirst()
+            .orElseThrow();
+        Map<String, Object> tryCatch = fixes.stream()
+            .filter(f -> ((String) f.get("fixId")).startsWith("surround_try_catch:"))
+            .findFirst()
+            .orElseThrow();
+        assertEquals("EXCEPTION", addThrows.get("category"),
+            "add_throws category must be EXCEPTION; got: " + addThrows);
+        assertEquals("EXCEPTION", tryCatch.get("category"),
+            "surround_try_catch category must be EXCEPTION; got: " + tryCatch);
+        // Relevance ranking add_throws (80) > surround_try_catch (75) so descending
+        // sort places add_throws first when both exist for the same problem.
+        assertEquals(80, ((Number) addThrows.get("relevance")).intValue(),
+            "add_throws relevance must be 80; got: " + addThrows);
+        assertEquals(75, ((Number) tryCatch.get("relevance")).intValue(),
+            "surround_try_catch relevance must be 75; got: " + tryCatch);
+    }
+
+    @Test
+    @DisplayName("IMPORT_NOT_FOUND (import com.nonexistent.Banana) -> remove_import fix is proposed")
+    void importNotFound_offersRemoveImportFix() throws Exception {
+        // BrokenSymbols line 3 (1-based) `import com.nonexistent.Banana;` -> 0-based 2.
+        // JDT reports IProblem.ImportNotFound (ID 268435846); the tool's
+        // generateFixes(IMPORT_NOT_FOUND) path must produce a single remove_import:<index>
+        // fix labeled "Remove unresolved import" with relevance 85.
+        JdtServiceImpl svc = helper.loadProject("broken-symbols");
+        GetQuickFixesTool localTool = new GetQuickFixesTool(() -> svc);
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", helper.getFixturePath("broken-symbols")
+            .resolve("src/main/java/com/example/BrokenSymbols.java").toString());
+        args.put("line", 2);
+
+        ToolResponse r = localTool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertTrue(((Number) data.get("problemCount")).intValue() > 0,
+            "BrokenSymbols line 2 must surface IProblem.ImportNotFound; data: " + data);
+
+        List<Map<String, Object>> fixes = getFixes(data);
+        Map<String, Object> removeImport = fixes.stream()
+            .filter(f -> {
+                String id = (String) f.get("fixId");
+                return id != null && id.startsWith("remove_import:");
+            })
+            .findFirst()
+            .orElseThrow(() -> new AssertionError(
+                "IMPORT_NOT_FOUND must propose a remove_import:<index> fix; got: " + fixes));
+        assertEquals("IMPORT", removeImport.get("category"),
+            "remove_import (for IMPORT_NOT_FOUND) category must be IMPORT; got: " + removeImport);
+        assertEquals("Remove unresolved import", removeImport.get("label"),
+            "IMPORT_NOT_FOUND label must be 'Remove unresolved import' "
+                + "(distinct from UNUSED_IMPORT's 'Remove unused import'); got: " + removeImport);
+        assertEquals(85, ((Number) removeImport.get("relevance")).intValue(),
+            "IMPORT_NOT_FOUND remove_import relevance must be 85; got: " + removeImport);
+    }
 }
