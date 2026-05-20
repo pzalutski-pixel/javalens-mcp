@@ -267,4 +267,94 @@ class InlineVariableToolTest {
         args.put("filePath", "/nonexistent/Path.java");
         assertFalse(tool.execute(args).isSuccess());
     }
+
+    @Test
+    @DisplayName("Field position is rejected as INVALID_PARAMETER (`Can only inline local variables, not fields`)")
+    void fieldPosition_rejectedAsField() {
+        // RefactoringTarget.userName is a field at 1-based line 16 -> 0-based 15.
+        // "userName" identifier starts at column 19 (4 indent + "private String " = 19).
+        // Source path: variableBinding.isField()==true → invalidParameter("variable", ...).
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", refactoringTargetPath);
+        args.put("line", 15);
+        args.put("column", 19);
+
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess(),
+            "Field position must be rejected; got success: " + r.getData());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER,
+            r.getError().getCode());
+        assertTrue(r.getError().getMessage().toLowerCase().contains("field"),
+            "Error message must mention the field-vs-local distinction; got: "
+                + r.getError().getMessage());
+    }
+
+    @Test
+    @DisplayName("Method parameter position is rejected (`Cannot inline method parameters`)")
+    void parameterPosition_rejectedAsParameter() throws Exception {
+        // RefactoringTarget.processData(String input) — `input` parameter declaration.
+        // Locate exactly via source-text scan so column drift in the fixture doesn't break
+        // the test. Source: variableBinding.isParameter()==true → invalidParameter.
+        String source = java.nio.file.Files.readString(java.nio.file.Path.of(refactoringTargetPath));
+        int idx = source.indexOf("processData(String input)");
+        idx = source.indexOf("input", idx);
+        int line = (int) source.substring(0, idx).chars().filter(c -> c == '\n').count();
+        int col = idx - (source.lastIndexOf('\n', idx) + 1);
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", refactoringTargetPath);
+        args.put("line", line);
+        args.put("column", col);
+
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess(),
+            "Parameter position must be rejected; got success: " + r.getData());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER,
+            r.getError().getCode());
+        assertTrue(r.getError().getMessage().toLowerCase().contains("parameter"),
+            "Error message must mention `parameter`; got: " + r.getError().getMessage());
+    }
+
+    @Test
+    @DisplayName("INFIX initializer (`input.length() * 2 + 10`): replace edits paren-wrap when used inside another expression")
+    @SuppressWarnings("unchecked")
+    void infixInitializer_parenWrapsInComplexContext() throws Exception {
+        // RefactoringTarget.processData declares `int result = input.length() * 2 + 10;`.
+        // The initializer is an INFIX_EXPRESSION → needsParentheses returns true for
+        // ANY non-literal, non-name, non-method-invocation initializer. The replace
+        // edit must wrap the inlined text in `(...)` so operator precedence is preserved.
+        // Locate via source-text scan so column drift in the fixture doesn't break this.
+        String source = java.nio.file.Files.readString(java.nio.file.Path.of(refactoringTargetPath));
+        int idx = source.indexOf("int result = input.length()");
+        idx = source.indexOf("result", idx);
+        int line = (int) source.substring(0, idx).chars().filter(c -> c == '\n').count();
+        int col = idx - (source.lastIndexOf('\n', idx) + 1);
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", refactoringTargetPath);
+        args.put("line", line);
+        args.put("column", col);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess(),
+            "Position on `result` must inline successfully; got: " +
+                (r.getError() != null ? r.getError().getMessage() : "ok"));
+        Map<String, Object> data = getData(r);
+        assertEquals("result", data.get("variableName"));
+
+        List<Map<String, Object>> edits = getEdits(data);
+        Map<String, Object> replace = edits.stream()
+            .filter(e -> "replace".equals(e.get("type")))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("Expected at least one replace edit; got: " + edits));
+        String newText = (String) replace.get("newText");
+        assertTrue(newText.startsWith("("),
+            "Complex (INFIX) initializer must be paren-wrapped in replace.newText; got: " + newText);
+        assertTrue(newText.endsWith(")"),
+            "Paren-wrap must close; got: " + newText);
+        assertTrue(newText.contains("input.length()"),
+            "Wrapped text must include the initializer body; got: " + newText);
+        assertTrue(newText.contains("* 2"),
+            "Wrapped text must include the multiplication; got: " + newText);
+        assertTrue(newText.contains("+ 10"),
+            "Wrapped text must include the addition; got: " + newText);
+    }
 }
