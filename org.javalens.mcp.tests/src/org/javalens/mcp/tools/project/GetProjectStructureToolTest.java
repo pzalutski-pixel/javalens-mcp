@@ -244,7 +244,7 @@ class GetProjectStructureToolTest {
     }
 
     @Test
-    @DisplayName("default-package fixture: top-level NoPackage.java is reported in '(default package)'")
+    @DisplayName("default-package fixture: top-level NoPackage.java is reported in '(default package)' with fileCount=1 and files=[NoPackage.java]")
     @SuppressWarnings("unchecked")
     void defaultPackage_renderedAsParenthesizedLabel() throws Exception {
         // Load the default-package fixture which has a single top-level .java file with
@@ -259,12 +259,51 @@ class GetProjectStructureToolTest {
 
         List<Map<String, Object>> sourceRoots =
             (List<Map<String, Object>>) getData(r).get("sourceRoots");
-        boolean foundDefault = sourceRoots.stream()
+        Map<String, Object> defaultPkg = sourceRoots.stream()
             .flatMap(rt -> ((List<Map<String, Object>>) rt.get("packages")).stream())
-            .anyMatch(pkg -> "(default package)".equals(pkg.get("name")));
-        assertTrue(foundDefault,
-            "Default package must be reported as '(default package)'; got source roots: "
-                + sourceRoots);
+            .filter(pkg -> "(default package)".equals(pkg.get("name")))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError(
+                "Default package must be reported as '(default package)'; got: " + sourceRoots));
+        // Pin the payload: fileCount=1 and files=[NoPackage.java].
+        assertEquals(1, defaultPkg.get("fileCount"),
+            "Default package must report fileCount=1; got: " + defaultPkg);
+        assertEquals(List.of("NoPackage.java"), defaultPkg.get("files"),
+            "Default package files=[NoPackage.java]; got: " + defaultPkg);
+    }
+
+    @Test
+    @DisplayName("Parent package with subpackages but no direct .java files surfaces with fileCount=0 and no 'files' key even when includeFiles=true")
+    @SuppressWarnings("unchecked")
+    void parentPackageWithSubpackagesNoFiles_omitsFilesKey() throws Exception {
+        // many-packages has 21 leaf packages com.example.pkg00..pkg20, each with one
+        // Marker.java. The intermediate packages "com" and "com.example" have NO direct
+        // .java files but DO have subpackages — they survive the skip-empty check (line
+        // 83-85) because hasSubpackages()=true. Inside createPackageInfo, the
+        // `if (includeFiles && units.length > 0)` guard means the `files` key is NOT
+        // added for these — pinning the units.length==0 branch with includeFiles=true.
+        JdtServiceImpl svc = helper.loadProject("many-packages");
+        GetProjectStructureTool localTool = new GetProjectStructureTool(() -> svc);
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("includeFiles", true);
+
+        ToolResponse r = localTool.execute(args);
+        assertTrue(r.isSuccess());
+
+        List<Map<String, Object>> sourceRoots =
+            (List<Map<String, Object>>) getData(r).get("sourceRoots");
+        Map<String, Object> comExample = sourceRoots.stream()
+            .flatMap(rt -> ((List<Map<String, Object>>) rt.get("packages")).stream())
+            .filter(pkg -> "com.example".equals(pkg.get("name")))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError(
+                "com.example parent must surface (has subpackages, no direct files); got: "
+                    + sourceRoots));
+        assertEquals(0, comExample.get("fileCount"),
+            "Parent com.example must report fileCount=0; got: " + comExample);
+        assertFalse(comExample.containsKey("files"),
+            "includeFiles=true with units.length==0 must NOT add `files` key; got: "
+                + comExample);
     }
 
     @Test
