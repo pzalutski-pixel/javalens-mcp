@@ -133,21 +133,49 @@ class GetMethodAtPositionToolTest {
     // ========== Parameter Validation Tests ==========
 
     @Test
-    @DisplayName("Missing or invalid parameters return error")
+    @DisplayName("Missing filePath, negative line, and negative column each return INVALID_PARAMETER")
     void parameterValidation_returnsErrors() {
         // Missing filePath
         ObjectNode args1 = objectMapper.createObjectNode();
         args1.put("line", 14);
         args1.put("column", 15);
-        assertFalse(tool.execute(args1).isSuccess());
-        assertNotNull(tool.execute(args1).getError());
+        ToolResponse r1 = tool.execute(args1);
+        assertFalse(r1.isSuccess());
+        assertNotNull(r1.getError());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r1.getError().getCode());
+        assertTrue(r1.getError().getMessage().contains("filePath"),
+            "Error message must name the missing parameter; got: " + r1.getError().getMessage());
 
         // Negative line
         ObjectNode args2 = objectMapper.createObjectNode();
         args2.put("filePath", calculatorPath);
         args2.put("line", -1);
         args2.put("column", 15);
-        assertFalse(tool.execute(args2).isSuccess());
+        ToolResponse r2 = tool.execute(args2);
+        assertFalse(r2.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r2.getError().getCode());
+        assertTrue(r2.getError().getMessage().contains("line"),
+            "Error message must name the failing parameter (line); got: " + r2.getError().getMessage());
+
+        // Negative column — independent validation branch from `line`.
+        ObjectNode args3 = objectMapper.createObjectNode();
+        args3.put("filePath", calculatorPath);
+        args3.put("line", 14);
+        args3.put("column", -1);
+        ToolResponse r3 = tool.execute(args3);
+        assertFalse(r3.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r3.getError().getCode());
+        assertTrue(r3.getError().getMessage().contains("column"),
+            "Error message must name the failing parameter (column); got: " + r3.getError().getMessage());
+
+        // Blank filePath ("") — separate guard branch from null filePath.
+        ObjectNode args4 = objectMapper.createObjectNode();
+        args4.put("filePath", "");
+        args4.put("line", 14);
+        args4.put("column", 15);
+        ToolResponse r4 = tool.execute(args4);
+        assertFalse(r4.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r4.getError().getCode());
     }
 
     // ========== Edge Case Tests ==========
@@ -300,6 +328,47 @@ class GetMethodAtPositionToolTest {
         Map<String, Object> data = getData(response);
         assertEquals("add(int a, int b): int", data.get("signature"),
             "Signature must format as name(type name, ...): returnType; got: " + data.get("signature"));
+    }
+
+    @Test
+    @DisplayName("No-arg method (Calculator.getLastResult) reports parameterCount=0 and empty parameters list")
+    @SuppressWarnings("unchecked")
+    void noArgMethod_emptyParameters() {
+        // Calculator.getLastResult — 1-based line 46 `public int getLastResult() {` -> 0-based 45;
+        // "getLastResult" starts at column 15 (4-space indent + "public int " = 15 chars).
+        // Pins the paramTypes.length == 0 branch in createMethodInfo: parameters list is
+        // empty (not absent, not null), parameterCount is 0 (not absent).
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        args.put("line", 45);
+        args.put("column", 15);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess(),
+            "Position on Calculator.getLastResult must resolve; got: " +
+                (r.getError() != null ? r.getError().getMessage() : "ok"));
+        Map<String, Object> data = getData(r);
+        assertEquals("getLastResult", data.get("name"));
+        assertEquals(0, data.get("parameterCount"),
+            "No-arg method must report parameterCount=0; got: " + data.get("parameterCount"));
+        List<Map<String, String>> params = (List<Map<String, String>>) data.get("parameters");
+        assertNotNull(params, "parameters key must be present even when empty; got: " + data);
+        assertTrue(params.isEmpty(),
+            "No-arg method must report empty parameters list; got: " + params);
+        // Optional shape keys must be ABSENT (not present-with-null) for a no-arg, no-throws,
+        // non-generic method — pins the `if (length > 0)` guards in createMethodInfo.
+        assertFalse(data.containsKey("typeParameters"),
+            "typeParameters must be absent for a non-generic method; got: " + data);
+        assertFalse(data.containsKey("exceptions"),
+            "exceptions must be absent for a method declaring no throws; got: " + data);
+        // Return type IS present (non-constructor branch).
+        assertEquals("int", data.get("returnType"));
+        // isMainMethod is FALSE for getLastResult — pins the false-arm of the isMainMethod flag.
+        assertEquals(false, data.get("isMainMethod"),
+            "Non-main method must report isMainMethod=false; got: " + data.get("isMainMethod"));
+        // Signature with zero params is "name(): returnType".
+        assertEquals("getLastResult(): int", data.get("signature"),
+            "No-arg signature must be `name(): returnType`; got: " + data.get("signature"));
     }
 
     @Test
