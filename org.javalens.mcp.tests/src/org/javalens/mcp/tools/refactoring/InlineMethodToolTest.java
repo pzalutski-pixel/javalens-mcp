@@ -81,7 +81,7 @@ class InlineMethodToolTest {
     // ========== Semantic-grade tests ==========
 
     @Test
-    @DisplayName("inlining doubleValue at processValue: edit text contains body `x * 2`")
+    @DisplayName("inlining doubleValue at processValue: edit text is `(x * 2)` — paren-wrapped for complex (INFIX) expression")
     void inline_doubleValue_emitsExpectedExpression() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", refactoringTargetPath);
@@ -95,10 +95,14 @@ class InlineMethodToolTest {
         assertFalse(edits.isEmpty());
 
         String newText = (String) edits.get(0).get("newText");
-        // doubleValue body is `return value * 2;` — with arg `x` substituted: `x * 2`.
-        assertTrue(newText.contains("x"), "Inlined text must reference the call argument `x`; got: " + newText);
-        assertTrue(newText.contains("*"), "Inlined text must contain the `*` operator from body; got: " + newText);
-        assertTrue(newText.contains("2"), "Inlined text must contain literal `2` from body; got: " + newText);
+        // doubleValue body is `return value * 2;` — `value * 2` is an INFIX_EXPRESSION
+        // which triggers the isComplexExpression paren-wrap branch in buildInlinedCode.
+        // With param `value` substituted for arg `x`, the inlined text must be `(x * 2)`.
+        // Pin exact text (not just `contains`) so a regression that drops the paren-wrap
+        // and emits `x * 2` would break operator precedence at the call site and surface
+        // here.
+        assertEquals("(x * 2)", newText,
+            "Complex (INFIX) return expression must be paren-wrapped; got: " + newText);
     }
 
     // ========== Required Parameter Tests ==========
