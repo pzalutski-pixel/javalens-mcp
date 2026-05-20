@@ -282,4 +282,50 @@ class AnalyzeMethodToolTest {
             "analyze_method.callers.list.size() must equal get_call_hierarchy_incoming.callers.size(); "
                 + "aggregate=" + aggregateList.size() + " detail=" + detailCallers.size());
     }
+
+    @Test
+    @DisplayName("Method with throws clause: exceptions list is present with the declared exception types")
+    @SuppressWarnings("unchecked")
+    void methodWithThrows_exceptionsBlockPresent() {
+        // SearchPatterns.riskyOperation declares `throws IOException, IllegalArgumentException`.
+        // Source line 131-137: emits the `exceptions` list only when exceptions.length > 0.
+        // Position on the method name `riskyOperation` (0-based line 123, col 16 for the name).
+        String searchPatternsPath = helper.getFixturePath("simple-maven")
+            .resolve("src/main/java/com/example/SearchPatterns.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", searchPatternsPath);
+        args.put("line", 123);
+        args.put("column", 16);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess(),
+            "riskyOperation analyze must succeed; got: " +
+                (r.getError() != null ? r.getError().getMessage() : "n/a"));
+        List<String> exceptions = (List<String>) getData(r).get("exceptions");
+        assertNotNull(exceptions,
+            "exceptions list must be present for a method declaring throws; got null");
+        assertTrue(exceptions.contains("IOException"),
+            "exceptions list must include IOException; got: " + exceptions);
+        assertTrue(exceptions.contains("IllegalArgumentException"),
+            "exceptions list must include IllegalArgumentException; got: " + exceptions);
+    }
+
+    @Test
+    @DisplayName("Method without throws clause: exceptions list is omitted (not emitted as empty)")
+    @SuppressWarnings("unchecked")
+    void methodWithoutThrows_exceptionsBlockOmitted() {
+        // Calculator.add() declares no throws clause. Source line 131-137 emits the
+        // `exceptions` field ONLY when exceptions.length > 0. Pin the omission contract.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        args.put("line", 14);
+        args.put("column", 15);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertFalse(data.containsKey("exceptions"),
+            "Methods without throws must omit the exceptions field entirely (not emit []); got: "
+                + data.get("exceptions"));
+    }
 }
