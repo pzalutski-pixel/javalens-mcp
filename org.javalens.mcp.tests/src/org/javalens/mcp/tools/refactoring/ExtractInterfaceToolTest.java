@@ -377,4 +377,43 @@ class ExtractInterfaceToolTest {
         assertFalse(r.isSuccess(),
             "Filtering to a non-existent method yields zero eligible methods and must error");
     }
+
+    @Test
+    @DisplayName("Extraction from an enum source is rejected with INVALID_PARAMETER")
+    void positionOnEnum_isRejected() {
+        // Source line 135-137: type.isEnum() short-circuits with
+        // "Cannot extract interface from an enum". Use TypeKindsFixture.Color (a nested
+        // enum) — but position must resolve to the enum type itself, so try the top-level
+        // enum dimension via the nested Color enum's source range. Simpler: use any
+        // top-level enum if one exists. Looking at fixtures: no top-level enum, but
+        // Color is nested. The tool calls service.getTypeAtPosition which walks
+        // ancestors, so positioning on a Color member should surface Color.
+        String tkf = projectPath.resolve("src/main/java/com/example/TypeKindsFixture.java").toString();
+        // Read source to find the line of the Color enum declaration.
+        String source;
+        try {
+            source = java.nio.file.Files.readString(java.nio.file.Path.of(tkf));
+        } catch (java.io.IOException ex) {
+            throw new RuntimeException(ex);
+        }
+        int idx = source.indexOf("enum Color");
+        assertTrue(idx > 0, "TypeKindsFixture must declare nested enum Color");
+        int colorNameIdx = source.indexOf("Color", idx);
+        int line = (int) source.substring(0, colorNameIdx).chars().filter(c -> c == '\n').count();
+        int lineStart = source.lastIndexOf('\n', colorNameIdx) + 1;
+        int column = colorNameIdx - lineStart;
+
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", tkf);
+        args.put("line", line);
+        args.put("column", column);
+        args.put("interfaceName", "IColor");
+
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess(),
+            "Extraction from enum type must fail with invalidParameter; got success");
+        String msg = r.getError() != null ? r.getError().getMessage() : "";
+        assertTrue(msg.toLowerCase().contains("enum"),
+            "Error message must mention enum; got: " + msg);
+    }
 }
