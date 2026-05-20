@@ -321,6 +321,64 @@ class SearchSymbolsToolTest {
     }
 
     @Test
+    @DisplayName("Negative maxResults returns INVALID_PARAMETER naming maxResults")
+    void negativeMaxResults_returnsInvalidParameter() {
+        // Source: `if (maxResults < 0) return invalidParameter("maxResults", ...)`.
+        // This is the strict B-11-fix branch — silent clamping is a regression.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("query", "Calculator");
+        args.put("maxResults", -1);
+
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER,
+            r.getError().getCode());
+        assertTrue(r.getError().getMessage().contains("maxResults"),
+            "Error must name `maxResults`; got: " + r.getError().getMessage());
+    }
+
+    @Test
+    @DisplayName("Negative offset returns INVALID_PARAMETER naming offset (independent from maxResults)")
+    void negativeOffset_returnsInvalidParameter() {
+        // Independent guard after maxResults — pin the dedicated branch so a reorder
+        // that shadowed the offset check would surface here.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("query", "Calculator");
+        args.put("offset", -1);
+
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER,
+            r.getError().getCode());
+        assertTrue(r.getError().getMessage().contains("offset"),
+            "Error must name `offset`; got: " + r.getError().getMessage());
+    }
+
+    @Test
+    @DisplayName("kind='enum' filter returns only enum results (Color appears, no class/interface/method)")
+    @SuppressWarnings("unchecked")
+    void kindEnum_filterReturnsOnlyEnums() {
+        // Source's getSearchType switch handles "enum" → IJavaSearchConstants.ENUM.
+        // Earlier coverage tests class/interface/method/field but not enum.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("query", "Color");
+        args.put("kind", "enum");
+        args.put("maxResults", 1000);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        List<Map<String, Object>> results = getResults(getData(r));
+        assertFalse(results.isEmpty(),
+            "`Color` with kind=enum should match TypeKindsFixture.Color; got empty");
+        assertTrue(results.stream().anyMatch(rr -> "Color".equals(rr.get("name"))),
+            "TypeKindsFixture.Color must appear; got: " + results);
+        for (Map<String, Object> result : results) {
+            assertEquals("enum", result.get("kind"),
+                "Every kind=enum result must have kind='enum'; offending: " + result);
+        }
+    }
+
+    @Test
     @DisplayName("Pagination offset skips first N results")
     @SuppressWarnings("unchecked")
     void pagination_offsetSkipsResults() {
