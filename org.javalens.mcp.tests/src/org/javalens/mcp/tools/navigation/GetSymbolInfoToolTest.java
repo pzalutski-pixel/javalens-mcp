@@ -398,6 +398,37 @@ class GetSymbolInfoToolTest {
     }
 
     @Test
+    @DisplayName("No-arg method (Calculator.getLastResult) omits the `parameters` key entirely")
+    void noArgMethod_omitsParametersKey() {
+        // Calculator.getLastResult takes no parameters. addMethodInfo guards
+        // `if (!params.isEmpty()) info.put("parameters", params)` — so a no-arg method
+        // must NOT include the `parameters` key (vs. including an empty list). This
+        // pins the shape contract for the LLM consumer.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        args.put("line", 45);
+        args.put("column", 15);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess(),
+            "Position on Calculator.getLastResult must succeed; got: " +
+                (r.getError() != null ? r.getError().getMessage() : "ok"));
+        Map<String, Object> data = getData(r);
+        assertEquals("getLastResult", data.get("name"));
+        assertEquals("method", data.get("kind"));
+        assertEquals("int", data.get("returnType"));
+        assertFalse(data.containsKey("parameters"),
+            "No-arg method must NOT carry the `parameters` key; got: " + data);
+        // exceptions key must also be absent (no throws clause) — pins the
+        // parallel `if (exceptions.length > 0)` guard.
+        assertFalse(data.containsKey("exceptions"),
+            "Method with no throws clause must NOT carry the `exceptions` key; got: " + data);
+        // signature follows MethodFormatter convention: `name(): returnType`.
+        assertEquals("getLastResult(): int", data.get("signature"),
+            "No-arg signature must be `name(): returnType`; got: " + data.get("signature"));
+    }
+
+    @Test
     @DisplayName("Bounded type parameter (BoundedBox<N extends Number>) reports bounds=[Number]")
     @SuppressWarnings("unchecked")
     void boundedTypeParameter_reportsBounds() throws Exception {
