@@ -1,5 +1,64 @@
 # Changelog
 
+## 1.3.2 - 2026-05-19
+
+### Output shape — unified across reference-search tools
+
+JavaLens output is consumed only by LLMs that re-read each tool's schema on call. The 1.3.x reference-search tools previously returned the same conceptual list under different field names per tool, forcing the consumer to remember three conventions. Renamed for consistency:
+
+- `find_references` now returns `locations` (was `references`) and `totalCount` (was `totalReferences`).
+- All fine-grain reference tools — `find_casts`, `find_instanceof_checks`, `find_type_instantiations`, `find_throws_declarations`, `find_catch_blocks`, `find_type_arguments`, `find_annotation_usages`, `find_method_references` — now return `locations` / `totalCount` / `advice` under those exact names. Previously each tool used a different result-list field (`casts`, `instanceofChecks`, `instantiations`, `throwsDeclarations`, `catchBlocks`, `typeArgumentUsages`, `usages`) and a different count field.
+- `analyze_change_impact.affectedFiles[]` entries now use `filePath` (was `file`) to match every other tool's path field.
+
+### Input parameter — unified for `find_*` tools
+
+- `find_throws_declarations` and `find_catch_blocks` now accept `typeName` (was `exceptionType`).
+- `find_annotation_usages` now accepts `typeName` (was `annotation`).
+
+### Bug fixes
+
+- **`change_method_signature` on constructors** no longer emits a syntactically-invalid `void Foo(...)` signature. The return-type prefix is now omitted for constructors, and the response's `oldReturnType` / `newReturnType` keys are omitted entirely (rather than reported as `"void"`).
+- **`rename_symbol` of a method** now propagates the rename to overriding methods in subtypes and overridden methods in supertypes. Previously, renaming an interface method would edit only the declaration and leave implementors uncompilable.
+- **`analyze_type` of an annotation type** now includes the `annotationUsages` counter alongside `instantiations`, `casts`, `instanceofChecks`, `typeArguments`. Missing in 1.3.1.
+- **`get_type_members` nested `@interface`** now reports `kind: annotation`, matching the top-level case. Previously reported `Interface` because the nested-type branch checked `isInterface()` before `isAnnotation()`.
+
+### Validation — strict `maxResults`
+
+Six tools — `search_symbols`, `find_implementations`, `find_references`, `find_field_writes`, `get_call_hierarchy_incoming`, `get_document_symbols` — previously silently clamped `maxResults` to `[1, N]`, so a caller passing `0` got `1` result with no signal. All `maxResults`-accepting tools now reject negative values with `INVALID_PARAMETER` and honor `0` literally (return zero results). The `INVALID_PARAMETER` message names the offending parameter.
+
+`search_symbols.offset` gets the same treatment: negative offset rejected explicitly.
+
+### Type kind strings unified to lowercase
+
+Every tool that reports a type kind now emits one of `class`, `interface`, `enum`, `record`, `annotation` (lowercase). 1.3.1 mixed capitalization across tools — `get_dependency_graph` emitted lowercase while others emitted `Class` / `Interface` / etc. The mixed shape made it harder for AI consumers to write robust filters.
+
+### Response envelope on paginated tools
+
+All 18 tools that accept `maxResults` now populate `meta.truncated`, `meta.totalCount`, and `meta.returnedCount` on every successful response. The four that were missing one or more of these fields — `search_symbols`, `suggest_imports`, `get_di_registrations`, `find_reflection_usage` — have been fixed. `truncated` is now driven by the actual pre-cap count compared to the returned-list size, so it is accurate when matches exactly equal `maxResults`.
+
+### Suggest imports — filter internal packages
+
+`suggest_imports` now omits candidates from packages matching `sun.*`, `com.sun.*`, `*.internal.*`, or `*.impl.*`. Previously the LLM could be handed implementation-detail types as if they were legitimate import targets.
+
+### Test infrastructure
+
+- 1.3.2 ships the source-side coverage audit across all 60+ MCP tools. Every documented branch now has at least one assertion that would fail if the branch broke, including absence-of-key contracts (when an optional field is documented to be omitted in a given case).
+- New `JdtContractTest` pins the JDT-API behaviors JavaLens depends on (dotted-vs-$-form `findType`, `@interface` ordering quirk on `isAnnotation` / `isInterface`, search-match subclass per kind, `R_REGEXP_MATCH` unimplemented). A future JDT upgrade surfaces "JDT changed" cleanly vs "our wrapper broke".
+- New `ResponseEnvelopeContractTest` and `MaxResultsBoundaryContractTest` enforce the envelope + maxResults contracts across every paginated tool — no per-tool drift.
+- New `ErrorCodeContractTest` enforces the documented `INVALID_PARAMETER` failure path on every tool with required params.
+- New fixtures (`broken-symbols`, `OrganizeImportsFixture`, `Java21Modern`, additions to `TypeKindsFixture`) cover problem-trigger paths, static/on-demand imports, modern Java syntax, and the 200-character Javadoc truncation contract.
+
+### Internal refactors
+
+These do not change behavior but reduce surface area for future regressions:
+
+- `ProjectImporter` split from a 1484-LOC god class into a 416-LOC orchestrator plus `MavenImporter`, `GradleImporter`, `BazelImporter`, `LinkedFolderConfigurator`, and a `BuildSystemImporter` strategy interface. Adding a new build system is now an interface implementation plus a single map entry.
+- `SearchService` collapses 8 named fine-grain methods into one `findReferences(IType, ReferenceKind, int)` entry point.
+- 8 fine-grain `find_*` tools collapse onto a shared `AbstractFineGrainReferenceTool` base.
+- `TypeKindResolver` and `ElementKindResolver` centralize kind-string emission so capitalization and ordering quirks are fixed in one place.
+- `ModifierFormatter`, `MethodFormatter`, `MatchResolver`, `SchemaBuilder` consolidate previously-duplicated patterns.
+- `ErrorInfo.fromThrowable` unwraps JDT `CoreException` into structured error info (plugin id, status code, severity) on every tool's catch-all.
+
 ## 1.3.1 - 2026-05-15
 
 ### Tool output fixes
