@@ -294,4 +294,86 @@ class OrganizeImportsToolTest {
         assertNull(data.get("textEdit"),
             "textEdit must be absent when no changes are needed; got: " + data.get("textEdit"));
     }
+
+    @Test
+    @DisplayName("Static imports survive verbatim (NOT pruned by usage check) and land at the end of the block")
+    void staticImports_preservedVerbatimAtEnd() {
+        // OrganizeImportsFixture imports two static methods:
+        //   import static java.lang.Math.PI;   (used in usePi())
+        //   import static java.lang.Math.max;  (unused)
+        // The source's `if (imp.isStatic())` branch collects all static imports
+        // unconditionally — `max` survives despite being unused, and they appear
+        // at the END of the organized block (after regular + on-demand).
+        String fixturePath = projectPath
+            .resolve("src/main/java/com/example/OrganizeImportsFixture.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", fixturePath);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        String block = (String) getData(r).get("organizedImportBlock");
+        assertNotNull(block);
+        assertTrue(block.contains("import static java.lang.Math.PI"),
+            "Used static import must appear; got: " + block);
+        assertTrue(block.contains("import static java.lang.Math.max"),
+            "Unused static import survives (organize_imports does NOT prune static); got: " + block);
+
+        // Static-imports-at-end ordering: every static import line must come AFTER every
+        // non-static import line in the organized output.
+        int firstStatic = block.indexOf("import static");
+        int lastNonStatic = -1;
+        for (String line : block.split("\n")) {
+            if (line.startsWith("import ") && !line.startsWith("import static")) {
+                int pos = block.indexOf(line);
+                if (pos > lastNonStatic) lastNonStatic = pos;
+            }
+        }
+        assertTrue(firstStatic > lastNonStatic,
+            "Static imports must appear AFTER all non-static imports in the block; got: " + block);
+    }
+
+    @Test
+    @DisplayName("On-demand (wildcard) imports survive verbatim and are not pruned by usage check")
+    void onDemandImports_preservedVerbatim() {
+        // OrganizeImportsFixture has `import java.util.concurrent.*` (used via Executor).
+        // The source's `else if (imp.isOnDemand())` branch collects it as `name + ".*"`
+        // and emits without usage checking. Pin both presence and the `.*` suffix.
+        String fixturePath = projectPath
+            .resolve("src/main/java/com/example/OrganizeImportsFixture.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", fixturePath);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        String block = (String) getData(r).get("organizedImportBlock");
+        assertNotNull(block);
+        assertTrue(block.contains("import java.util.concurrent.*"),
+            "On-demand import must appear with explicit `.*` suffix; got: " + block);
+    }
+
+    @Test
+    @DisplayName("Regular usage discrimination on the fixture: ArrayList is unused, List is used")
+    void regularImports_filteredByUsage() {
+        // OrganizeImportsFixture imports java.util.List (used as return type) AND
+        // java.util.ArrayList (never referenced). The `referencedTypes.contains(...)`
+        // check must mark only ArrayList as unused.
+        String fixturePath = projectPath
+            .resolve("src/main/java/com/example/OrganizeImportsFixture.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", fixturePath);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        List<String> unused = getUnusedImports(data);
+        assertTrue(unused.contains("java.util.ArrayList"),
+            "ArrayList is never referenced — must be flagged unused; got: " + unused);
+        assertFalse(unused.contains("java.util.List"),
+            "List is used as a return type — must NOT be flagged unused; got: " + unused);
+        // Static and on-demand are NOT subject to unused filtering.
+        assertFalse(unused.stream().anyMatch(u -> u.contains("Math")),
+            "Static imports are never in unusedImports; got: " + unused);
+        assertFalse(unused.stream().anyMatch(u -> u.contains("java.util.concurrent")),
+            "On-demand imports are never in unusedImports; got: " + unused);
+    }
 }
