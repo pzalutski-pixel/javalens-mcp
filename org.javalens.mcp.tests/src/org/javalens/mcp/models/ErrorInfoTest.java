@@ -209,6 +209,53 @@ class ErrorInfoTest {
             "invalidParameter factory must produce null hint per its documented contract");
     }
 
+    @Test
+    @DisplayName("fromThrowable surfaces OK and INFO severities by name (completing the switch)")
+    void fromThrowable_okAndInfoSeverity_emittedByName() {
+        // severityName's switch has 5 named branches + 1 default. ERROR/WARNING/CANCEL
+        // were already pinned; OK + INFO are the remaining named branches that complete
+        // coverage of the documented severity vocabulary.
+        org.eclipse.core.runtime.Status okStatus = new org.eclipse.core.runtime.Status(
+            org.eclipse.core.runtime.IStatus.OK, "t", 0, "ok-detail", null);
+        ErrorInfo okError = ErrorInfo.fromThrowable(
+            new org.eclipse.core.runtime.CoreException(okStatus));
+        assertTrue(okError.getMessage().contains("OK"),
+            "OK severity must surface by name; got: " + okError.getMessage());
+
+        org.eclipse.core.runtime.Status infoStatus = new org.eclipse.core.runtime.Status(
+            org.eclipse.core.runtime.IStatus.INFO, "t", 0, "info-detail", null);
+        ErrorInfo infoError = ErrorInfo.fromThrowable(
+            new org.eclipse.core.runtime.CoreException(infoStatus));
+        assertTrue(infoError.getMessage().contains("INFO"),
+            "INFO severity must surface by name; got: " + infoError.getMessage());
+    }
+
+    @Test
+    @DisplayName("fromThrowable default-branch severity emits 'SEVERITY(N)' format")
+    void fromThrowable_unknownSeverity_emitsNumeric() {
+        // severityName's default branch produces "SEVERITY(N)" for unknown numeric
+        // severities. Eclipse defines OK=0/INFO=1/WARNING=2/ERROR=4/CANCEL=8 — any
+        // other value falls through to the default. Use a custom Status subclass
+        // (IStatus is an interface) to fake severity=99.
+        org.eclipse.core.runtime.IStatus weird = new org.eclipse.core.runtime.IStatus() {
+            @Override public int getSeverity() { return 99; }
+            @Override public boolean isOK() { return false; }
+            @Override public boolean matches(int severityMask) { return false; }
+            @Override public boolean isMultiStatus() { return false; }
+            @Override public org.eclipse.core.runtime.IStatus[] getChildren() {
+                return new org.eclipse.core.runtime.IStatus[0];
+            }
+            @Override public String getPlugin() { return "t"; }
+            @Override public int getCode() { return 0; }
+            @Override public String getMessage() { return "weird"; }
+            @Override public Throwable getException() { return null; }
+        };
+        ErrorInfo error = ErrorInfo.fromThrowable(
+            new org.eclipse.core.runtime.CoreException(weird));
+        assertTrue(error.getMessage().contains("SEVERITY(99)"),
+            "Unknown severity must surface as 'SEVERITY(99)'; got: " + error.getMessage());
+    }
+
     // ========== Error Code Constants Tests ==========
 
     @Test
