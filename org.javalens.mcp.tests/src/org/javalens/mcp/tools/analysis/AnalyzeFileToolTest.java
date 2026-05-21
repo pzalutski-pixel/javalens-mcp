@@ -247,4 +247,31 @@ class AnalyzeFileToolTest {
         assertEquals("(default package)", file.get("package"),
             "Default-package file must report file.package='(default package)'; got: " + file);
     }
+
+    @Test
+    @DisplayName("typeCount counts TOP-LEVEL types only; nestedTypeCount on each type reports nested members")
+    @SuppressWarnings("unchecked")
+    void typeCount_isTopLevelOnly_nestedTypesCountedSeparately() {
+        // TypeKindsFixture.java has one top-level public class (TypeKindsFixture)
+        // with five nested types: Color, GenericContainer, Inner, DefaultMethodHolder,
+        // BoundedBox. The tool's contract returns top-level types only at the top
+        // level; nested types are surfaced via the per-type nestedTypeCount field.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", helper.getFixturePath("simple-maven")
+            .resolve("src/main/java/com/example/TypeKindsFixture.java").toString());
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertEquals(1, ((Number) data.get("typeCount")).intValue(),
+            "TypeKindsFixture.java declares exactly one top-level type; got: " + data.get("typeCount"));
+
+        List<Map<String, Object>> types = (List<Map<String, Object>>) data.get("types");
+        Map<String, Object> top = types.get(0);
+        assertEquals("TypeKindsFixture", top.get("name"));
+        int nestedCount = ((Number) top.get("nestedTypeCount")).intValue();
+        assertEquals(5, nestedCount,
+            "TypeKindsFixture has 5 nested types (Color, GenericContainer, Inner, " +
+                "DefaultMethodHolder, BoundedBox); got: " + nestedCount);
+    }
 }
