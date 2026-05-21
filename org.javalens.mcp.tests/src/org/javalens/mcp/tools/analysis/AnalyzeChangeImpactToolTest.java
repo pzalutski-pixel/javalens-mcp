@@ -247,4 +247,40 @@ class AnalyzeChangeImpactToolTest {
             "analyze_change_impact.affectedFiles must cover every file find_references reports; "
                 + "affectedFiles=" + affectedPaths + " references=" + referencePaths);
     }
+
+    @Test
+    @DisplayName("analyze_change_impact on a method consumed via method reference (Foo::formatId) surfaces the reference file in affectedFiles")
+    @SuppressWarnings("unchecked")
+    void methodReferenceCallSite_surfacesAsAffectedFile() {
+        // MethodRefTarget.formatId is consumed only via MethodRefTarget::formatId
+        // in MethodRefUser.use(int). No direct invocation. SearchService.findAllReferences
+        // includes method-reference sites, and the tool extracts the enclosing
+        // IJavaElement.METHOD via getAncestor — which works for SimpleName nodes
+        // inside method references. The change-impact analysis must therefore
+        // surface MethodRefUser as an affected file.
+        java.nio.file.Path projectPath = helper.getFixturePath("simple-maven");
+        String targetPath = projectPath
+            .resolve("src/main/java/com/example/MethodRefTarget.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", targetPath);
+        args.put("line", 8);    // 0-based: `public static String formatId(int id)`
+        args.put("column", 25); // on "formatId" identifier
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess(),
+            "Position on MethodRefTarget.formatId must resolve; got: " +
+                (r.getError() != null ? r.getError().getMessage() : "n/a"));
+        Map<String, Object> data = getData(r);
+        List<Map<String, Object>> affectedFiles =
+            (List<Map<String, Object>>) data.get("affectedFiles");
+        assertNotNull(affectedFiles);
+        boolean hasMethodRefUser = affectedFiles.stream()
+            .map(f -> (String) f.get("filePath"))
+            .filter(java.util.Objects::nonNull)
+            .map(p -> p.replace('\\', '/'))
+            .anyMatch(p -> p.endsWith("MethodRefUser.java"));
+        assertTrue(hasMethodRefUser,
+            "MethodRefUser.java holds MethodRefTarget::formatId — must appear in affectedFiles; "
+                + "got: " + affectedFiles);
+    }
 }
