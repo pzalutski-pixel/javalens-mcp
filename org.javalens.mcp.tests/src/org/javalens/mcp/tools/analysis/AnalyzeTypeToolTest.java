@@ -308,4 +308,37 @@ class AnalyzeTypeToolTest {
         assertFalse(lastResult.containsKey("enumConstant"),
             "Regular field must omit enumConstant; got: " + lastResult);
     }
+
+    @Test
+    @DisplayName("TypeKindsFixture nested types: each is classified by kind (enum/class/interface)")
+    @SuppressWarnings("unchecked")
+    void nestedTypes_kindsReportedPerType() {
+        // TypeKindsFixture has nested types of different kinds — at minimum:
+        //   Color (enum), GenericContainer (class), Inner (class),
+        //   DefaultMethodHolder (interface), BoundedBox (class).
+        // The members.nestedTypes list must classify each correctly via TypeKindResolver
+        // so a regression in TypeKindResolver or the per-kind branches would surface here.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("typeName", "com.example.TypeKindsFixture");
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> members = (Map<String, Object>) getData(r).get("members");
+        List<Map<String, Object>> nested = (List<Map<String, Object>>) members.get("nestedTypes");
+        assertNotNull(nested);
+        Map<String, String> kindByName = new java.util.HashMap<>();
+        for (Map<String, Object> n : nested) {
+            kindByName.put((String) n.get("name"), (String) n.get("kind"));
+        }
+        assertEquals("enum", kindByName.get("Color"),
+            "Color must be classified as enum; got: " + kindByName);
+        assertEquals("class", kindByName.get("GenericContainer"),
+            "GenericContainer must be classified as class; got: " + kindByName);
+        assertEquals("class", kindByName.get("Inner"),
+            "Inner must be classified as class; got: " + kindByName);
+        assertEquals("interface", kindByName.get("DefaultMethodHolder"),
+            "DefaultMethodHolder must be classified as interface; got: " + kindByName);
+        assertEquals("class", kindByName.get("BoundedBox"),
+            "BoundedBox must be classified as class; got: " + kindByName);
+    }
 }
