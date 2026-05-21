@@ -366,6 +366,102 @@ class ChangeMethodSignatureToolTest {
             "oldReturnType must be absent on a constructor signature change; got: " + data);
     }
 
+    @Test
+    @DisplayName("adding a parameter to ConstructorTarget(String, int) propagates to the this(name, 0) delegation site in the same file")
+    void addParam_propagatesToThisConstructorDelegation() {
+        // ConstructorTarget.java declares two constructors. The 1-arg constructor at
+        // line 8 (0-based) delegates via `this(name, 0)` at line 9. When the 2-arg
+        // constructor gets a third parameter, that this() site must be updated to
+        // `this(name, 0, "");` or it breaks compilation. The this(...) form is a
+        // `ConstructorInvocation` AST node — distinct from MethodInvocation and
+        // ClassInstanceCreation. JDT models it as a Statement (not an Expression),
+        // so the edit covers the full statement including the trailing semicolon.
+        String constructorTargetPath = projectPath
+            .resolve("src/main/java/com/example/ConstructorTarget.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", constructorTargetPath);
+        // 2-arg constructor at 0-based line 11.
+        args.put("line", 11);
+        args.put("column", 11);
+
+        ArrayNode params = objectMapper.createArrayNode();
+        ObjectNode p1 = objectMapper.createObjectNode();
+        p1.put("name", "name");
+        p1.put("type", "String");
+        params.add(p1);
+        ObjectNode p2 = objectMapper.createObjectNode();
+        p2.put("name", "count");
+        p2.put("type", "int");
+        params.add(p2);
+        ObjectNode p3 = objectMapper.createObjectNode();
+        p3.put("name", "tag");
+        p3.put("type", "String");
+        p3.put("defaultValue", "\"\"");
+        params.add(p3);
+        args.set("newParameters", params);
+
+        ToolResponse response = tool.execute(args);
+        assertTrue(response.isSuccess(),
+            "Constructor signature change must succeed; got error: " +
+                (response.getError() != null ? response.getError().getMessage() : "n/a"));
+
+        @SuppressWarnings("unchecked")
+        Map<String, List<Map<String, Object>>> editsByFile =
+            (Map<String, List<Map<String, Object>>>) getData(response).get("editsByFile");
+
+        List<Map<String, Object>> targetEdits = editsByFile.entrySet().stream()
+            .filter(e -> e.getKey().replace('\\', '/').endsWith("ConstructorTarget.java"))
+            .map(Map.Entry::getValue)
+            .findFirst()
+            .orElseThrow(() -> new AssertionError(
+                "ConstructorTarget.java must appear in edits; got files: " + editsByFile.keySet()));
+
+        // The declaration edit (isDeclaration=true) covers line 11 (the 2-arg ctor).
+        // The this() delegation at line 8 (1-arg ctor body) must produce a separate
+        // non-declaration edit that includes the new `""` argument.
+        List<Map<String, Object>> nonDeclarationEdits = targetEdits.stream()
+            .filter(e -> !Boolean.TRUE.equals(e.get("isDeclaration")))
+            .toList();
+        assertFalse(nonDeclarationEdits.isEmpty(),
+            "Expected a non-declaration edit in ConstructorTarget.java for the this(name, 0) " +
+                "delegation site; got only declaration edits: " + targetEdits);
+
+        // The this() edit's newText must include the defaulted `""` value for the new param.
+        Map<String, Object> thisEdit = nonDeclarationEdits.stream()
+            .filter(e -> {
+                String oldText = (String) e.get("oldText");
+                return oldText != null && oldText.startsWith("this(");
+            })
+            .findFirst()
+            .orElseThrow(() -> new AssertionError(
+                "Expected an edit whose oldText starts with `this(` in ConstructorTarget.java; " +
+                    "got non-declaration edits: " + nonDeclarationEdits));
+        String newText = (String) thisEdit.get("newText");
+        assertNotNull(newText, "this() edit newText must be present; got: " + thisEdit);
+        assertEquals("this(name, 0, \"\");", newText,
+            "this() delegation edit must include the defaulted new arg AND the trailing " +
+                "semicolon (the edit replaces the full Statement); got: " + newText);
+        // oldText reflects JDT's ASTNode.toString() canonical format (e.g., spaces inside
+        // parens may differ from the original source). The load-bearing part of the edit
+        // is the (startOffset, endOffset) range + newText; the consumer applies the edit
+        // by offset, not by literal oldText match. So we only assert that the oldText
+        // names the this() form, not its exact whitespace.
+        String oldText = (String) thisEdit.get("oldText");
+        assertNotNull(oldText);
+        // JDT's ASTNode.toString() on a Statement appends a trailing newline and
+        // strips inter-argument whitespace; trim before shape checks.
+        String oldTrimmed = oldText.trim();
+        assertTrue(oldTrimmed.startsWith("this("),
+            "Old text must be the this() delegation form; got: " + oldText);
+        assertTrue(oldTrimmed.endsWith(";"),
+            "Old text covers the full Statement, must end with `;`; got: " + oldText);
+        // Offsets must be non-negative and end > start.
+        int startOffset = ((Number) thisEdit.get("startOffset")).intValue();
+        int endOffset = ((Number) thisEdit.get("endOffset")).intValue();
+        assertTrue(startOffset >= 0 && endOffset > startOffset,
+            "Offsets must form a valid range; got start=" + startOffset + " end=" + endOffset);
+    }
+
     // ========== Behavior-matrix coverage ==========
 
     @Test
