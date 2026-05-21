@@ -247,6 +247,38 @@ class FindMethodReferencesToolTest {
     }
 
     @Test
+    @DisplayName("SuperMethodReference (super::method) is found by find_method_references")
+    @SuppressWarnings("unchecked")
+    void superMethodReference_isFound() {
+        // SuperMethodChild.greetReference returns `super::greet` — a SuperMethodReference,
+        // distinct from ExpressionMethodReference / TypeMethodReference / CreationReference.
+        // Calling find_method_references on SuperMethodParent.greet must surface this site.
+        String parentPath = helper.getFixturePath("simple-maven")
+            .resolve("src/main/java/com/example/SuperMethodParent.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", parentPath);
+        // 0-based line 8: `    public String greet(String name) {` — `greet` at column 18.
+        args.put("line", 8);
+        args.put("column", 18);
+        args.put("maxResults", 100);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess(),
+            "Position on SuperMethodParent.greet must resolve; got: " +
+                (r.getError() != null ? r.getError().getMessage() : "n/a"));
+        List<Map<String, Object>> refs = (List<Map<String, Object>>) getData(r).get("locations");
+        assertNotNull(refs);
+        boolean hasChildSite = refs.stream()
+            .map(ref -> (String) ref.get("filePath"))
+            .filter(java.util.Objects::nonNull)
+            .map(p -> p.replace('\\', '/'))
+            .anyMatch(p -> p.endsWith("SuperMethodChild.java"));
+        assertTrue(hasChildSite,
+            "super::greet in SuperMethodChild.greetReference must be reported as a method " +
+                "reference of SuperMethodParent.greet; got: " + refs);
+    }
+
+    @Test
     @DisplayName("Position on a field (non-method element) is rejected with invalidParameter")
     void positionOnField_rejectedAsNonMethod() {
         // Source line 92-94 rejects when the resolved element is not an IMethod.
