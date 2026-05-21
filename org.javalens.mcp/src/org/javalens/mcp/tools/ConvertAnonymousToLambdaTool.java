@@ -21,6 +21,9 @@ import org.eclipse.jdt.core.dom.ReturnStatement;
 import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
 import org.eclipse.jdt.core.dom.Statement;
+import org.eclipse.jdt.core.dom.SuperFieldAccess;
+import org.eclipse.jdt.core.dom.SuperMethodInvocation;
+import org.eclipse.jdt.core.dom.SuperMethodReference;
 import org.eclipse.jdt.core.dom.ThisExpression;
 import org.javalens.core.IJdtService;
 import org.javalens.mcp.models.ResponseMeta;
@@ -155,6 +158,14 @@ public class ConvertAnonymousToLambdaTool extends AbstractTool {
                             "Anonymous class has multiple methods, cannot convert to lambda");
                     }
                     methodDecl = md;
+                } else {
+                    // Fields, initializers, and nested type declarations cannot be
+                    // carried over to a lambda. Converting would drop the member
+                    // and break any references to it from the SAM body.
+                    return ToolResponse.invalidParameter("anonymousClass",
+                        "Anonymous class declares non-method members (field, initializer, or "
+                            + "nested type) that cannot be represented in a lambda. "
+                            + "Manual review required.");
                 }
             }
 
@@ -163,11 +174,15 @@ public class ConvertAnonymousToLambdaTool extends AbstractTool {
                     "Anonymous class has no method implementation");
             }
 
-            // Check for 'this' references which have different semantics in lambdas
-            if (usesThisExpression(methodDecl)) {
+            // Check for references whose binding context differs between an
+            // anonymous class and a lambda. Bare `this` and any `super` form
+            // bind to the anonymous instance; a lambda body rebinds them to
+            // the enclosing class. Qualified Outer.this resolves identically
+            // in both contexts and is safe to leave in.
+            if (usesAnonymousInstanceBinding(methodDecl)) {
                 return ToolResponse.invalidParameter("anonymousClass",
-                    "Method uses 'this' keyword which has different semantics in lambda. " +
-                    "Manual review required.");
+                    "Method uses bare `this` or a `super` reference whose binding "
+                        + "differs in a lambda body. Manual review required.");
             }
 
             // Build the lambda expression
@@ -295,18 +310,41 @@ public class ConvertAnonymousToLambdaTool extends AbstractTool {
         return true;
     }
 
-    private boolean usesThisExpression(MethodDeclaration method) {
-        final boolean[] usesThis = {false};
+    private boolean usesAnonymousInstanceBinding(MethodDeclaration method) {
+        final boolean[] flag = {false};
 
         method.accept(new ASTVisitor() {
             @Override
             public boolean visit(ThisExpression node) {
-                usesThis[0] = true;
+                // Qualified Outer.this resolves to the enclosing instance in
+                // both anonymous-class and lambda contexts. Only bare `this`
+                // rebinds across the conversion.
+                if (node.getQualifier() == null) {
+                    flag[0] = true;
+                }
+                return false;
+            }
+
+            @Override
+            public boolean visit(SuperMethodInvocation node) {
+                flag[0] = true;
+                return false;
+            }
+
+            @Override
+            public boolean visit(SuperFieldAccess node) {
+                flag[0] = true;
+                return false;
+            }
+
+            @Override
+            public boolean visit(SuperMethodReference node) {
+                flag[0] = true;
                 return false;
             }
         });
 
-        return usesThis[0];
+        return flag[0];
     }
 
     private String buildLambdaExpression(MethodDeclaration method, ICompilationUnit cu) {

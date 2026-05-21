@@ -132,4 +132,37 @@ public class AnonymousClassExamples {
             }
         };
     }
+
+    /**
+     * SAM body invokes super.toString(). In the anonymous class, super refers to
+     * the SAM interface's superclass (Object) as viewed from the anonymous instance.
+     * In a lambda body, super refers to the enclosing class's superclass —
+     * a different runtime target. Conversion must refuse.
+     */
+    public String withSuperMethodInvocation() {
+        java.util.function.Supplier<String> supplier = new java.util.function.Supplier<String>() {
+            @Override
+            public String get() {
+                return super.toString();
+            }
+        };
+        return supplier.get();
+    }
+
+    /**
+     * SAM body declares a field alongside the abstract method.
+     * Lambdas cannot carry per-instance state; conversion would drop the field
+     * and the references to it. Conversion must refuse.
+     */
+    public void withFieldDeclaredInBody() {
+        Runnable runnable = new Runnable() {
+            private int counter = 0;
+            @Override
+            public void run() {
+                counter++;
+                System.out.println(counter);
+            }
+        };
+        runnable.run();
+    }
 }

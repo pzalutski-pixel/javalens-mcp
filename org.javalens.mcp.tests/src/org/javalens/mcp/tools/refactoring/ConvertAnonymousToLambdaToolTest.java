@@ -350,4 +350,58 @@ class ConvertAnonymousToLambdaToolTest {
         ToolResponse r = tool.execute(args);
         assertFalse(r.isSuccess());
     }
+
+    // ========== Refusal-decision completeness ==========
+
+    @Test
+    @DisplayName("SAM body using super.method(): refuses conversion")
+    void superMethodInvocationInBody_isRefused() {
+        // super in an anonymous class binds to the SAM interface's super
+        // (Object) as viewed from the anonymous instance. After conversion the
+        // same `super` would bind to the enclosing class's super — a different
+        // runtime target. The tool must refuse.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", anonymousExamplesPath);
+        args.put("line", 142);   // new java.util.function.Supplier<String>() in withSuperMethodInvocation()
+        args.put("column", 55);
+
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess(),
+            "Anonymous class whose SAM body invokes super.toString() must be refused; got success: " + r.getData());
+    }
+
+    @Test
+    @DisplayName("Qualified Outer.this in body: converts successfully (qualified this has identical meaning in lambda)")
+    void qualifiedOuterThisInBody_isConverted() {
+        // Bare `this` rebinds when converting anonymous → lambda. But
+        // EnclosingClass.this resolves to the enclosing instance in both
+        // contexts and is therefore safe to leave in the converted body.
+        // The fixture's withOuterThis() method exercises this case.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", anonymousExamplesPath);
+        args.put("line", 71);    // new Runnable() in withOuterThis()
+        args.put("column", 28);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess(),
+            "Anonymous class using only qualified Outer.this must convert successfully; got refusal: " +
+                (r.getError() != null ? r.getError().getMessage() : "n/a"));
+    }
+
+    @Test
+    @DisplayName("SAM body has a field declared alongside the method: refuses conversion")
+    void fieldDeclaredInAnonymousBody_isRefused() {
+        // Lambdas cannot carry per-instance state. An anonymous class that
+        // declares fields (or initializers, or nested types) alongside its
+        // SAM cannot be losslessly converted — the state would be dropped
+        // and references to it would no longer compile.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", anonymousExamplesPath);
+        args.put("line", 157);   // new Runnable() in withFieldDeclaredInBody()
+        args.put("column", 28);
+
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess(),
+            "Anonymous class with a field declared alongside the SAM must be refused; got success: " + r.getData());
+    }
 }
