@@ -349,6 +349,58 @@ class GetHoverInfoToolTest {
     }
 
     @Test
+    @DisplayName("Generic class hover: signature includes the bounded type parameter list")
+    void genericClass_signatureIncludesTypeParameters() throws Exception {
+        // GenericInterfaceExtractTarget<T extends Number> — hover on the class
+        // name must report the class with its bounded type parameter list.
+        // Without `<T extends Number>` the signature is incomplete and a tool
+        // consuming it would think the class is non-generic.
+        String generic = projectPath.resolve("src/main/java/com/example/GenericInterfaceExtractTarget.java").toString();
+        String source = java.nio.file.Files.readString(java.nio.file.Path.of(generic));
+        int idx = source.indexOf("class GenericInterfaceExtractTarget");
+        idx = source.indexOf("GenericInterfaceExtractTarget", idx);
+        int line = (int) source.substring(0, idx).chars().filter(c -> c == '\n').count();
+        int lineStart = source.lastIndexOf('\n', idx) + 1;
+        int column = idx - lineStart;
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", generic);
+        args.put("line", line);
+        args.put("column", column);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        String sig = (String) getData(r).get("signature");
+        assertNotNull(sig);
+        assertTrue(sig.contains("<T extends Number>"),
+            "Generic class signature must include `<T extends Number>`; got: " + sig);
+    }
+
+    @Test
+    @DisplayName("Generic method hover: signature includes the method-level type parameter clause")
+    void genericMethod_signatureIncludesTypeParameters() throws Exception {
+        // identity declared as `public <U extends Comparable<U>> U identity(U input)`.
+        // Hover signature must include `<U` so the consumer knows the method
+        // declares its own type variable.
+        String generic = projectPath.resolve("src/main/java/com/example/GenericInterfaceExtractTarget.java").toString();
+        String source = java.nio.file.Files.readString(java.nio.file.Path.of(generic));
+        int idx = source.indexOf("identity(");
+        int line = (int) source.substring(0, idx).chars().filter(c -> c == '\n').count();
+        int lineStart = source.lastIndexOf('\n', idx) + 1;
+        int column = idx - lineStart;
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", generic);
+        args.put("line", line);
+        args.put("column", column);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        String sig = (String) getData(r).get("signature");
+        assertNotNull(sig);
+        assertTrue(sig.contains("<U"),
+            "Generic method signature must include `<U` (method type parameter clause); got: " + sig);
+    }
+
+    @Test
     @DisplayName("Class with implements: Rectangle signature contains 'implements IShape'")
     void classWithImplements_signatureContainsImplements() throws Exception {
         String rect = projectPath.resolve("src/main/java/com/example/Rectangle.java").toString();
