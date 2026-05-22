@@ -276,6 +276,36 @@ class GetDocumentSymbolsToolTest {
     }
 
     @Test
+    @DisplayName("Record components (x, y of Point) appear as field-kind children")
+    @SuppressWarnings("unchecked")
+    void recordComponents_appearAsChildren() {
+        // Point(int x, int y) declares two record components. They are members
+        // of the record and should appear as children of the Point symbol,
+        // alongside any explicit methods. JDT models them as IRecordComponent
+        // (not as IField), so a tool iterating type.getFields() only would
+        // omit them.
+        String point = projectPath.resolve("src/main/java/com/example/Point.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", point);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+
+        Map<String, Object> pointSym = getSymbols(getData(r)).stream()
+            .filter(s -> "Point".equals(s.get("name")))
+            .findFirst().orElseThrow();
+
+        List<Map<String, Object>> children = getChildren(pointSym);
+        assertNotNull(children, "Point must have children (components + methods)");
+        java.util.Set<String> childNames = children.stream()
+            .map(c -> (String) c.get("name"))
+            .collect(java.util.stream.Collectors.toSet());
+        assertTrue(childNames.contains("x"),
+            "x is a Point record component and must appear as a child symbol; got: " + childNames);
+        assertTrue(childNames.contains("y"),
+            "y is a Point record component and must appear as a child symbol; got: " + childNames);
+    }
+
+    @Test
     @DisplayName("Method signature for Calculator.add: `add(int a, int b): int`")
     @SuppressWarnings("unchecked")
     void methodSignature_isExactlyFormatted() {
