@@ -9,11 +9,16 @@ import org.eclipse.jdt.core.dom.ASTParser;
 import org.eclipse.jdt.core.dom.Block;
 import org.eclipse.jdt.core.dom.ClassInstanceCreation;
 import org.eclipse.jdt.core.dom.CompilationUnit;
+import org.eclipse.jdt.core.dom.ConditionalExpression;
+import org.eclipse.jdt.core.dom.DoStatement;
 import org.eclipse.jdt.core.dom.Expression;
+import org.eclipse.jdt.core.dom.ForStatement;
 import org.eclipse.jdt.core.dom.ITypeBinding;
+import org.eclipse.jdt.core.dom.InfixExpression;
 import org.eclipse.jdt.core.dom.MethodInvocation;
 import org.eclipse.jdt.core.dom.NodeFinder;
 import org.eclipse.jdt.core.dom.Statement;
+import org.eclipse.jdt.core.dom.WhileStatement;
 import org.javalens.core.IJdtService;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
@@ -157,6 +162,17 @@ public class ExtractVariableTool extends AbstractTool {
                 return ToolResponse.invalidParameter("selection", "Cannot find containing statement");
             }
 
+            // Refuse extraction when the expression sits in a position that
+            // would be re-evaluated each iteration (loop conditions/updaters)
+            // or conditionally (short-circuit `&&`/`||` non-left operands,
+            // ternary then/else branches). Hoisting to a single declaration
+            // before the containing statement changes runtime behavior.
+            String semanticsViolation = describeEvaluationContextViolation(expression, containingStatement);
+            if (semanticsViolation != null) {
+                return ToolResponse.invalidParameter("selection",
+                    "Extracting this expression would change evaluation semantics: " + semanticsViolation);
+            }
+
             // Get expression text
             String expressionText = expression.toString();
 
@@ -214,6 +230,56 @@ public class ExtractVariableTool extends AbstractTool {
             log.error("Error extracting variable: {}", e.getMessage(), e);
             return ToolResponse.internalError(e);
         }
+    }
+
+    /**
+     * Walks from {@code expression} up to (but not including) {@code containingStatement},
+     * checking each parent for a position where the child is re-evaluated
+     * (loop conditions/updaters) or conditionally evaluated (short-circuit
+     * operators, ternary branches). Returns a short reason string on the
+     * first violation, or null when extraction is safe.
+     */
+    private String describeEvaluationContextViolation(Expression expression, Statement containingStatement) {
+        ASTNode current = expression;
+        while (current != null && current != containingStatement) {
+            ASTNode parent = current.getParent();
+            if (parent == null) break;
+
+            if (parent instanceof ForStatement fs) {
+                if (current == fs.getExpression()) {
+                    return "expression is a for-loop condition (re-evaluated each iteration)";
+                }
+                if (fs.updaters().contains(current)) {
+                    return "expression is a for-loop updater (re-evaluated each iteration)";
+                }
+            } else if (parent instanceof WhileStatement ws) {
+                if (current == ws.getExpression()) {
+                    return "expression is a while-loop condition (re-evaluated each iteration)";
+                }
+            } else if (parent instanceof DoStatement ds) {
+                if (current == ds.getExpression()) {
+                    return "expression is a do-while condition (re-evaluated each iteration)";
+                }
+            } else if (parent instanceof InfixExpression ie) {
+                InfixExpression.Operator op = ie.getOperator();
+                if (op == InfixExpression.Operator.CONDITIONAL_AND
+                        || op == InfixExpression.Operator.CONDITIONAL_OR) {
+                    // The left operand is always evaluated; the right and any
+                    // extended operands are short-circuited.
+                    if (current != ie.getLeftOperand()) {
+                        return "expression sits on the conditional side of `"
+                            + op.toString() + "` (would lose short-circuit guard)";
+                    }
+                }
+            } else if (parent instanceof ConditionalExpression ce) {
+                if (current == ce.getThenExpression() || current == ce.getElseExpression()) {
+                    return "expression is a then/else branch of a ternary (conditionally evaluated)";
+                }
+            }
+
+            current = parent;
+        }
+        return null;
     }
 
     private Statement findContainingStatement(ASTNode node) {

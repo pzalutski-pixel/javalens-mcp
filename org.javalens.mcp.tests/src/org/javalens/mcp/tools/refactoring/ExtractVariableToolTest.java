@@ -288,6 +288,65 @@ class ExtractVariableToolTest {
             "Replace edit must substitute the variable name");
     }
 
+    // ========== Evaluation-context safety ==========
+
+    private String semanticsFixturePath() {
+        return projectPath.resolve("src/main/java/com/example/ExtractVariableSemantics.java").toString();
+    }
+
+    @Test
+    @DisplayName("Refuses extraction of a for-loop condition (would change re-evaluation semantics)")
+    void refusesExtractionFromForLoopCondition() {
+        // `for (int i = 0; i < 10; i++)` re-evaluates `i < 10` each iteration.
+        // A declaration placed before the for runs once and captures only
+        // the initial value, turning the loop into an infinite or no-op
+        // loop. Also `i` is not declared before the for, so the lifted
+        // declaration wouldn't even compile.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", semanticsFixturePath());
+        args.put("startLine", 19);
+        args.put("startColumn", 24);
+        args.put("endLine", 19);
+        args.put("endColumn", 30);
+        args.put("variableName", "cond");
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess(),
+            "Extraction from a for-loop condition must be refused; got: " + r.getData());
+    }
+
+    @Test
+    @DisplayName("Refuses extraction of a short-circuit `&&` right operand (would lose the guard)")
+    void refusesExtractionFromShortCircuitRight() {
+        // `s != null && s.length() > 0` runs `s.length() > 0` only when
+        // `s != null`. Hoisting `s.length() > 0` to a declaration before
+        // the if removes the guard and NPEs on null inputs.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", semanticsFixturePath());
+        args.put("startLine", 31);
+        args.put("startColumn", 25);
+        args.put("endLine", 31);
+        args.put("endColumn", 39);
+        args.put("variableName", "hasContent");
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess(),
+            "Extraction from the right operand of `&&` must be refused; got: " + r.getData());
+    }
+
+    @Test
+    @DisplayName("Refuses extraction from a while-loop condition")
+    void refusesExtractionFromWhileCondition() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", semanticsFixturePath());
+        args.put("startLine", 52);
+        args.put("startColumn", 15);
+        args.put("endLine", 52);
+        args.put("endColumn", 31);
+        args.put("variableName", "shouldContinue");
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess(),
+            "Extraction from a while-loop condition must be refused; got: " + r.getData());
+    }
+
     @Test
     @DisplayName("Inverted range (start >= end) is rejected")
     void rejectsInvertedRange() {
