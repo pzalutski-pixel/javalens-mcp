@@ -214,6 +214,27 @@ class GetSignatureHelpToolTest {
     }
 
     @Test
+    @DisplayName("Generic method signature label includes the method-level type parameter clause")
+    @SuppressWarnings("unchecked")
+    void genericMethod_signatureLabelIncludesTypeParameters() throws Exception {
+        // identity is declared as `<U extends Comparable<U>> U identity(U input)`.
+        // The signature-help label must include the `<U ...>` clause; otherwise
+        // a consumer can't see the method declares its own type variable.
+        java.nio.file.Path projectPath = helper.getFixturePath("simple-maven");
+        String generic = projectPath.resolve("src/main/java/com/example/GenericInterfaceExtractTarget.java").toString();
+        ObjectNode args = argsAtIdentifier(generic, "identity");
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+
+        List<Map<String, Object>> signatures = (List<Map<String, Object>>) getData(r).get("signatures");
+        assertFalse(signatures.isEmpty());
+        String label = (String) signatures.get(0).get("label");
+        assertNotNull(label);
+        assertTrue(label.contains("<U"),
+            "Signature label must include the method type parameter clause; got: " + label);
+    }
+
+    @Test
     @DisplayName("Method with no Javadoc omits documentation field on its signature")
     @SuppressWarnings("unchecked")
     void methodWithoutJavadoc_omitsDocumentation() throws Exception {

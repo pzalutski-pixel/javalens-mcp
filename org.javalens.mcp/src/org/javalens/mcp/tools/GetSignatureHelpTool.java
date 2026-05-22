@@ -7,6 +7,7 @@ import org.eclipse.jdt.core.IMember;
 import org.eclipse.jdt.core.IMethod;
 import org.eclipse.jdt.core.ISourceRange;
 import org.eclipse.jdt.core.IType;
+import org.eclipse.jdt.core.ITypeParameter;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.Signature;
 import org.javalens.core.IJdtService;
@@ -134,11 +135,34 @@ public class GetSignatureHelpTool extends AbstractTool {
         }
     }
 
+    private String formatTypeParameterClause(ITypeParameter[] params) throws JavaModelException {
+        if (params == null || params.length == 0) return "";
+        StringBuilder sb = new StringBuilder("<");
+        for (int i = 0; i < params.length; i++) {
+            if (i > 0) sb.append(", ");
+            sb.append(params[i].getElementName());
+            String[] bounds = params[i].getBounds();
+            if (bounds != null && bounds.length > 0) {
+                sb.append(" extends ");
+                for (int b = 0; b < bounds.length; b++) {
+                    if (b > 0) sb.append(" & ");
+                    sb.append(bounds[b]);
+                }
+            }
+        }
+        sb.append(">");
+        return sb.toString();
+    }
+
     private Map<String, Object> createSignatureInfo(IMethod method, IJdtService service) throws JavaModelException {
         Map<String, Object> info = new LinkedHashMap<>();
 
         // Build the label
         StringBuilder label = new StringBuilder();
+        String typeParamClause = formatTypeParameterClause(method.getTypeParameters());
+        if (!typeParamClause.isEmpty()) {
+            label.append(typeParamClause).append(" ");
+        }
         label.append(method.getElementName()).append("(");
 
         String[] paramTypes = method.getParameterTypes();
