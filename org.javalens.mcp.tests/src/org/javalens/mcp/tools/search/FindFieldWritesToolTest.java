@@ -326,6 +326,35 @@ class FindFieldWritesToolTest {
     }
 
     @Test
+    @DisplayName("Generic-class field write: find_field_writes surfaces this.value = v inside set()")
+    @SuppressWarnings("unchecked")
+    void genericClassField_writeDetected() {
+        // GenericClass<T> has `private T value;` and a `set(T v)` method
+        // assigning `this.value = v;`. The field's only write site is that
+        // assignment. find_field_writes positioned on the field declaration
+        // must surface it. SearchEngine's WRITE_ACCESSES filter is
+        // index-driven and unaffected by the IBinding equality quirk.
+        String generic = projectPath.resolve(
+            "src/main/java/com/example/genericunused/GenericClass.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", generic);
+        args.put("line", 9);
+        args.put("column", 14);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess(), "find_field_writes on a generic-class field must succeed; got: "
+            + (r.getError() != null ? r.getError().getMessage() : "n/a"));
+        Map<String, Object> data = getData(r);
+        assertEquals("value", data.get("field"));
+        assertEquals("GenericClass", data.get("declaringType"));
+
+        List<Map<String, Object>> writes = (List<Map<String, Object>>) data.get("writeLocations");
+        assertNotNull(writes);
+        assertEquals(1, writes.size(),
+            "Exactly one write: `this.value = v;` inside set(); got: " + writes);
+    }
+
+    @Test
     @DisplayName("totalWriteLocations == writeLocations.size()")
     void totalWriteLocations_equalsListSize() {
         String calcPath = projectPath.resolve("src/main/java/com/example/Calculator.java").toString();

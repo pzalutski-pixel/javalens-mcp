@@ -12,4 +12,8 @@ public class GenericClass<T> {
     public T read() {
         return value;
     }
+
+    public void set(T v) {
+        this.value = v;
+    }
 }
