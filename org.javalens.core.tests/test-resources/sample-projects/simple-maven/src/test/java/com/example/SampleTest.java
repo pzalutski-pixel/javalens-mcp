@@ -1,6 +1,8 @@
 package com.example;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestFactory;
+import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.BeforeEach;
@@ -8,6 +10,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+
+import java.util.stream.Stream;
 
 /**
  * Sample test class for testing FindTestsTool.
@@ -68,6 +72,14 @@ public class SampleTest {
     @ValueSource(ints = { 1, 2, 3 })
     void testParameterized(int value) {
         assert value > 0;
+    }
+
+    @TestFactory
+    Stream<DynamicTest> dynamicTestsFromFactory() {
+        return Stream.of(
+            DynamicTest.dynamicTest("first", () -> { assert true; }),
+            DynamicTest.dynamicTest("second", () -> { assert true; })
+        );
     }
 
     /**

@@ -150,6 +150,34 @@ class FindTestsToolTest {
     }
 
     @Test
+    @DisplayName("@TestFactory method on SampleTest is detected as a test (JUnit 5 dynamic test factory)")
+    void testFactory_isDetected() {
+        // dynamicTestsFromFactory is annotated @TestFactory — a JUnit 5
+        // dynamic-test producer. It IS a test method per the JUnit 5
+        // platform; the tool's contract claims JUnit 5 support so this
+        // annotation must be recognised.
+        ToolResponse r = tool.execute(objectMapper.createObjectNode());
+        assertTrue(r.isSuccess());
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> testClasses = (List<Map<String, Object>>) getData(r).get("testClasses");
+        Map<String, Object> sampleTest = testClasses.stream()
+            .filter(tc -> "SampleTest".equals(tc.get("className")))
+            .findFirst()
+            .orElseThrow();
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> methods = (List<Map<String, Object>>) sampleTest.get("testMethods");
+        java.util.Set<String> names = methods.stream()
+            .map(m -> (String) m.get("name"))
+            .collect(java.util.stream.Collectors.toSet());
+
+        assertTrue(names.contains("dynamicTestsFromFactory"),
+            "dynamicTestsFromFactory is annotated @TestFactory and must be detected as a test; got: "
+                + names);
+    }
+
+    @Test
     @DisplayName("@ParameterizedTest method on SampleTest is detected as a test")
     void parameterizedTest_isDetected() {
         ToolResponse r = tool.execute(objectMapper.createObjectNode());

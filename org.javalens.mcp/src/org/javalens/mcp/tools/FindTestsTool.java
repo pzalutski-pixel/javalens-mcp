@@ -218,7 +218,9 @@ public class FindTestsTool extends AbstractTool {
                 if (annName.equals("Test")) {
                     isTest = true;
                 } else if (annName.equals("ParameterizedTest") ||
-                           annName.equals("RepeatedTest")) {
+                           annName.equals("RepeatedTest") ||
+                           annName.equals("TestFactory") ||
+                           annName.equals("TestTemplate")) {
                     isTest = true;
                 } else if (annName.equals("Disabled") || annName.equals("Ignore")) {
                     isDisabled = true;
