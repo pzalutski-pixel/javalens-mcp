@@ -387,6 +387,42 @@ class FindReferencesToolTest {
     }
 
     @Test
+    @DisplayName("Generic-class member reference: find_references on GenericClass.read() surfaces cross-file caller")
+    @SuppressWarnings("unchecked")
+    void genericClassMember_findsCrossFileCaller() {
+        // GenericClass<T>.read() returns T. GenericClassConsumer calls
+        // container.read() on a GenericClass<String>. find_references on
+        // the read() method declaration must surface that call site.
+        // (find_references uses SearchEngine — index-driven, unaffected by
+        // the IBinding equality quirk that B1-1 fixed.)
+        String generic = projectPath.resolve(
+            "src/main/java/com/example/genericunused/GenericClass.java").toString();
+        try {
+            String source = java.nio.file.Files.readString(java.nio.file.Path.of(generic));
+            int idx = source.indexOf("read()");
+            int line = (int) source.substring(0, idx).chars().filter(c -> c == '\n').count();
+            int col = idx - (source.lastIndexOf('\n', idx) + 1);
+
+            ToolResponse r = tool.execute(argsAt(generic, line, col));
+            assertTrue(r.isSuccess());
+            Map<String, Object> data = getData(r);
+            assertEquals("read", data.get("symbol"));
+            assertEquals("method", data.get("symbolKind"));
+
+            List<Map<String, Object>> refs = getReferences(data);
+            boolean consumerFound = refs.stream()
+                .map(ref -> (String) ref.get("filePath"))
+                .filter(java.util.Objects::nonNull)
+                .map(p -> p.replace('\\', '/'))
+                .anyMatch(p -> p.endsWith("GenericClassConsumer.java"));
+            assertTrue(consumerFound,
+                "GenericClassConsumer calls container.read() — must appear; got: " + refs);
+        } catch (java.io.IOException ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    @Test
     @DisplayName("Constructor position resolves and finds constructor references")
     @SuppressWarnings("unchecked")
     void constructorPosition_findsConstructorReferences() throws Exception {
