@@ -186,6 +186,30 @@ class GetDependencyGraphToolTest {
     }
 
     @Test
+    @DisplayName("Package scope: static-import dependency resolves to the target package, not to the type")
+    @SuppressWarnings("unchecked")
+    void packageScope_staticImportEdgeResolvesToTargetPackage() {
+        // staticcycle.x imports `static com.example.staticcycle.y.Y.yValue;`.
+        // At package scope, the dependency must be reported as the target
+        // PACKAGE (com.example.staticcycle.y), not the declaring class
+        // (com.example.staticcycle.y.Y). Same enumeration gap as A-23 in
+        // find_circular_dependencies.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("scope", "package");
+        args.put("name", "com.example.staticcycle.x");
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+
+        List<Map<String, Object>> edges = (List<Map<String, Object>>) getData(r).get("edges");
+        boolean hasPackageEdge = edges.stream().anyMatch(e ->
+            "com.example.staticcycle.x".equals(e.get("from"))
+                && "com.example.staticcycle.y".equals(e.get("to")));
+        assertTrue(hasPackageEdge,
+            "Static import must yield a package-to-package edge from staticcycle.x to staticcycle.y; "
+                + "got edges: " + edges);
+    }
+
+    @Test
     @DisplayName("Calculator scope=type: root is reported verbatim")
     void rootEchoed() {
         ObjectNode args = objectMapper.createObjectNode();

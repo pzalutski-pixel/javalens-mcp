@@ -1,6 +1,7 @@
 package org.javalens.mcp.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.eclipse.jdt.core.Flags;
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IField;
 import org.eclipse.jdt.core.IImportDeclaration;
@@ -313,7 +314,8 @@ public class GetDependencyGraphTool extends AbstractTool {
 
                 for (ICompilationUnit cu : pkg.getCompilationUnits()) {
                     for (IImportDeclaration imp : cu.getImports()) {
-                        String importPkg = extractPackage(imp.getElementName());
+                        String importPkg = getImportedPackage(imp);
+                        if (importPkg.isEmpty()) continue;
 
                         if (importPkg.equals(pkgName)) continue;
                         if (!includeExternal && isExternalPackage(importPkg)) continue;
@@ -335,6 +337,39 @@ public class GetDependencyGraphTool extends AbstractTool {
     private String extractPackage(String typeName) {
         int lastDot = typeName.lastIndexOf('.');
         return lastDot > 0 ? typeName.substring(0, lastDot) : "";
+    }
+
+    /**
+     * Returns the imported PACKAGE name for any import form. Standard
+     * {@link #extractPackage(String)} only strips one trailing component,
+     * which is wrong for static imports (the element name carries both the
+     * declaring class and the imported member). Uses {@code isStatic()}
+     * and {@code isOnDemand()} to strip the correct number of components.
+     */
+    private String getImportedPackage(IImportDeclaration imp) {
+        try {
+            String name = imp.getElementName();
+            boolean onDemand = imp.isOnDemand();
+            boolean isStatic = Flags.isStatic(imp.getFlags());
+
+            if (onDemand && name.endsWith(".*")) {
+                name = name.substring(0, name.length() - 2);
+            }
+            if (isStatic && !onDemand) {
+                // Regular static import: "pkg.Type.member" — drop member.
+                int lastDot = name.lastIndexOf('.');
+                if (lastDot > 0) name = name.substring(0, lastDot);
+            }
+            if (onDemand && !isStatic) {
+                // Regular on-demand: name is already the package after .* strip.
+                return name;
+            }
+            // All other cases: name is now "pkg.Type" — drop Type to get pkg.
+            int lastDot = name.lastIndexOf('.');
+            return lastDot > 0 ? name.substring(0, lastDot) : "";
+        } catch (Exception e) {
+            return "";
+        }
     }
 
     private boolean isExternalPackage(String packageName) {
