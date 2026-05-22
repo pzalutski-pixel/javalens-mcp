@@ -347,6 +347,23 @@ class FindImplementationsToolTest {
     }
 
     @Test
+    @DisplayName("Greeter (plain interface): enum and record implementers both surface")
+    @SuppressWarnings("unchecked")
+    void greeter_returnsEnumAndRecordImplementers() {
+        // Greeter is implemented by GreetingMode (enum) and GreetingRecord (record).
+        // find_implementations must surface both — implementer kind (class vs
+        // enum vs record) must not filter results.
+        ToolResponse r = tool.execute(argsAt(
+            fixturePath("src/main/java/com/example/Greeter.java"), 6, 17));
+        Map<String, Object> data = SemanticAssertions.assertSuccessData(r);
+
+        java.util.Set<String> names = SemanticAssertions.fieldSet(
+            SemanticAssertions.getList(data, "implementations"), "qualifiedName");
+        assertEquals(Set.of("com.example.GreetingMode", "com.example.GreetingRecord"), names,
+            "Greeter has exactly two implementers — an enum and a record; got: " + names);
+    }
+
+    @Test
     @DisplayName("Method-level target: each entry carries `method` field with overrider's method name")
     @SuppressWarnings("unchecked")
     void methodLevelTarget_entriesCarryMethodField() {
