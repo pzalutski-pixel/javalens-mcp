@@ -6,6 +6,7 @@ import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IMethod;
 import org.eclipse.jdt.core.IType;
+import org.eclipse.jdt.core.ITypeParameter;
 import org.eclipse.jdt.core.Signature;
 import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTNode;
@@ -181,6 +182,21 @@ public class AnalyzeMethodTool extends AbstractTool {
         String returnType = MethodFormatter.returnTypeSimpleName(method);
         if (returnType != null) {
             info.put("returnType", returnType);
+        }
+
+        // Method-level type parameters (the `<T extends Bound>` clause).
+        // Without this a consumer sees a generic method as non-generic.
+        ITypeParameter[] methodTypeParams = method.getTypeParameters();
+        if (methodTypeParams != null && methodTypeParams.length > 0) {
+            List<String> tpNames = new ArrayList<>();
+            Map<String, List<String>> tpBounds = new LinkedHashMap<>();
+            for (ITypeParameter tp : methodTypeParams) {
+                tpNames.add(tp.getElementName());
+                String[] bounds = tp.getBounds();
+                tpBounds.put(tp.getElementName(), bounds != null ? List.of(bounds) : List.of());
+            }
+            info.put("typeParameters", tpNames);
+            info.put("typeParameterBounds", tpBounds);
         }
 
         // Location

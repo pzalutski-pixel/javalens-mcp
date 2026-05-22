@@ -360,4 +360,36 @@ class AnalyzeMethodToolTest {
             "MethodRefTarget::formatId in MethodRefUser.use's body must appear in callees " +
                 "(deferred-invocation dispatch site); got: " + calleeList);
     }
+
+    @Test
+    @DisplayName("Generic method analysis: method.typeParameters includes the method-level type parameter")
+    @SuppressWarnings("unchecked")
+    void genericMethod_typeParameters_reported() throws Exception {
+        // GenericInterfaceExtractTarget.identity is declared as
+        // `<U extends Comparable<U>> U identity(U input)`. analyze_method
+        // must report U as a method type parameter; without it a consumer
+        // sees the method as non-generic.
+        String generic = helper.getFixturePath("simple-maven")
+            .resolve("src/main/java/com/example/GenericInterfaceExtractTarget.java").toString();
+        String source = java.nio.file.Files.readString(java.nio.file.Path.of(generic));
+        int idx = source.indexOf("identity(");
+        int line = (int) source.substring(0, idx).chars().filter(c -> c == '\n').count();
+        int col = idx - (source.lastIndexOf('\n', idx) + 1);
+
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", generic);
+        args.put("line", line);
+        args.put("column", col);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> method = getMethod(getData(r));
+        assertEquals("identity", method.get("name"));
+
+        List<String> typeParameters = (List<String>) method.get("typeParameters");
+        assertNotNull(typeParameters,
+            "Method analysis must report typeParameters for a generic method; got: " + method);
+        assertEquals(List.of("U"), typeParameters,
+            "identity declares <U ...>; method.typeParameters must list U; got: " + typeParameters);
+    }
 }
