@@ -183,6 +183,38 @@ class GetComplexityMetricsToolTest {
     }
 
     @Test
+    @DisplayName("Java21Modern: switch-expression cases each contribute +1 to CC (describe has 4 non-default cases)")
+    void java21Modern_switchExpressionCases_contributeToCC() {
+        // describe(Object) is a switch expression with: case null, case String s,
+        // case Integer i, case int[] arr, default. The tool counts each non-default
+        // SwitchCase as +1 toward CC; `case null` is a non-default SwitchCase, so
+        // there are 4 non-default cases plus the base 1. Pinning CC=5 here guards
+        // against regressions in SwitchCase handling for pattern-matching switches.
+        String javaPath = helper.getFixturePath("simple-maven")
+            .resolve("src/main/java/com/example/Java21Modern.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", javaPath);
+        args.put("includeDetails", true);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> methods = (List<Map<String, Object>>) getData(r).get("methods");
+        Map<String, Integer> ccByName = new java.util.HashMap<>();
+        for (Map<String, Object> m : methods) {
+            Object cc = m.get("cyclomaticComplexity");
+            if (cc instanceof Number n) {
+                ccByName.put((String) m.get("name"), n.intValue());
+            }
+        }
+        Integer describeCC = ccByName.get("describe");
+        assertNotNull(describeCC, "describe must appear in methods; got: " + ccByName);
+        assertTrue(describeCC >= 4,
+            "describe has 4 non-default SwitchCase nodes (null, String s, Integer i, int[] arr); "
+                + "CC must reflect them. Got: " + describeCC);
+    }
+
+    @Test
     @DisplayName("ComplexityBoundaries: risk classification (low <=5, medium 6-10, high >10)")
     void complexityBoundaries_riskClassification() {
         String boundariesPath = helper.getFixturePath("simple-maven")
