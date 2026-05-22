@@ -32,12 +32,17 @@ public class GetJavadocTool extends AbstractTool {
 
     private static final Pattern PARAM_PATTERN = Pattern.compile("@param\\s+(\\w+)\\s+(.+?)(?=@|$)", Pattern.DOTALL);
     private static final Pattern RETURN_PATTERN = Pattern.compile("@return\\s+(.+?)(?=@|$)", Pattern.DOTALL);
-    private static final Pattern THROWS_PATTERN = Pattern.compile("@throws\\s+(\\S+)\\s+(.+?)(?=@|$)", Pattern.DOTALL);
+    // @exception is the older synonym for @throws — capture both.
+    private static final Pattern THROWS_PATTERN = Pattern.compile("@(?:throws|exception)\\s+(\\S+)\\s+(.+?)(?=@|$)", Pattern.DOTALL);
     private static final Pattern SEE_PATTERN = Pattern.compile("@see\\s+(.+?)(?=@|$)", Pattern.DOTALL);
     private static final Pattern SINCE_PATTERN = Pattern.compile("@since\\s+(.+?)(?=@|$)", Pattern.DOTALL);
     private static final Pattern DEPRECATED_PATTERN = Pattern.compile("@deprecated\\s+(.+?)(?=@|$)", Pattern.DOTALL);
     private static final Pattern AUTHOR_PATTERN = Pattern.compile("@author\\s+(.+?)(?=@|$)", Pattern.DOTALL);
     private static final Pattern VERSION_PATTERN = Pattern.compile("@version\\s+(.+?)(?=@|$)", Pattern.DOTALL);
+    // JEP 285 standard Javadoc tags — common in modern JDK and library code.
+    private static final Pattern API_NOTE_PATTERN = Pattern.compile("@apiNote\\s+(.+?)(?=@|$)", Pattern.DOTALL);
+    private static final Pattern IMPL_SPEC_PATTERN = Pattern.compile("@implSpec\\s+(.+?)(?=@|$)", Pattern.DOTALL);
+    private static final Pattern IMPL_NOTE_PATTERN = Pattern.compile("@implNote\\s+(.+?)(?=@|$)", Pattern.DOTALL);
 
     public GetJavadocTool(Supplier<IJdtService> serviceSupplier) {
         super(serviceSupplier);
@@ -258,6 +263,20 @@ public class GetJavadocTool extends AbstractTool {
         Matcher versionMatcher = VERSION_PATTERN.matcher(tagSection);
         if (versionMatcher.find()) {
             data.put("version", versionMatcher.group(1).trim());
+        }
+
+        // Parse JEP 285 standard tags.
+        Matcher apiNoteMatcher = API_NOTE_PATTERN.matcher(tagSection);
+        if (apiNoteMatcher.find()) {
+            data.put("apiNote", apiNoteMatcher.group(1).trim());
+        }
+        Matcher implSpecMatcher = IMPL_SPEC_PATTERN.matcher(tagSection);
+        if (implSpecMatcher.find()) {
+            data.put("implSpec", implSpecMatcher.group(1).trim());
+        }
+        Matcher implNoteMatcher = IMPL_NOTE_PATTERN.matcher(tagSection);
+        if (implNoteMatcher.find()) {
+            data.put("implNote", implNoteMatcher.group(1).trim());
         }
     }
 

@@ -235,6 +235,37 @@ class GetJavadocToolTest {
     }
 
     @Test
+    @DisplayName("Modern Javadoc tags @apiNote / @implSpec / @implNote and @exception are parsed")
+    @SuppressWarnings("unchecked")
+    void modernJavadocTags_parsed() throws Exception {
+        // Contract: "Parsed Javadoc with summary, @param, @return, @throws, etc."
+        // The "etc." extends to the JEP 285 standard tags (@apiNote, @implSpec,
+        // @implNote) and to @exception (synonym for @throws). Without these,
+        // documentation that uses modern Javadoc style is dropped.
+        String tag = projectPath.resolve("src/main/java/com/example/JavadocTagFixture.java").toString();
+        ToolResponse r = tool.execute(argsAtIdentifier(tag, "documentedMethod"));
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+
+        assertNotNull(data.get("apiNote"),
+            "@apiNote must be parsed; got: " + data);
+        assertTrue(data.get("apiNote").toString().contains("never pass null"),
+            "@apiNote text must be captured; got: " + data.get("apiNote"));
+
+        assertNotNull(data.get("implSpec"),
+            "@implSpec must be parsed; got: " + data);
+        assertNotNull(data.get("implNote"),
+            "@implNote must be parsed; got: " + data);
+
+        // @exception is the older synonym for @throws — must merge into the
+        // same `throws` list so consumers don't have to look in two places.
+        List<Map<String, String>> throwsList = (List<Map<String, String>>) data.get("throws");
+        assertNotNull(throwsList, "@exception must be merged into throws list; got: " + data);
+        assertTrue(throwsList.stream().anyMatch(t -> "IOException".equals(t.get("type"))),
+            "@exception IOException must appear in throws list; got: " + throwsList);
+    }
+
+    @Test
     @DisplayName("Method without Javadoc reports hasDocumentation=false and no parsed tags")
     void methodWithoutJavadoc_hasDocumentationFalse() throws Exception {
         String tkf = projectPath.resolve("src/main/java/com/example/TypeKindsFixture.java").toString();
