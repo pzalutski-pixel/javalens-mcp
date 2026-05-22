@@ -11,6 +11,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -231,5 +232,40 @@ class GetTypeUsageSummaryToolTest {
         assertEquals(1, ((Number) ((Map<String, Object>) usages.get("instantiations")).get("count")).intValue(),
             "Animal instantiated exactly once in FieldHolder; got: "
                 + ((Map<String, Object>) usages.get("instantiations")));
+    }
+
+    @Test
+    @DisplayName("Annotation Marker: TYPE_USE positions (parameter, local var, type argument) are included")
+    @SuppressWarnings("unchecked")
+    void annotation_typeUsePositions_included() {
+        // AnnotationUsages.java applies @Marker in seven positions:
+        //   line 7 (class), 10 (field), 13 (constructor), 17 (method),
+        //   31 (TYPE_USE on parameter `@Marker int p`),
+        //   32 (TYPE_USE on local var `@Marker int local`),
+        //   36 (TYPE_USE in type argument `List<@Marker String>`).
+        // SearchEngine's annotation-reference indexing must catch the
+        // TYPE_USE positions, not just declaration-modifier positions.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("typeName", "com.example.Marker");
+        args.put("maxPerCategory", 50);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> usages = (Map<String, Object>) getData(r).get("usages");
+        Map<String, Object> annotationUsages = (Map<String, Object>) usages.get("annotationUsages");
+        int count = ((Number) annotationUsages.get("count")).intValue();
+        assertTrue(count >= 7,
+            "@Marker is applied in 7 positions across AnnotationUsages.java including "
+                + "three TYPE_USE positions; count must reflect them all; got: " + count);
+
+        // Verify the TYPE_USE line numbers (0-based 30, 31, 35) appear in the locations.
+        List<Map<String, Object>> locations = (List<Map<String, Object>>) annotationUsages.get("locations");
+        java.util.Set<Integer> lines = new java.util.HashSet<>();
+        for (Map<String, Object> loc : locations) {
+            Object line = loc.get("line");
+            if (line instanceof Number n) lines.add(n.intValue());
+        }
+        assertTrue(lines.contains(30) || lines.contains(31) || lines.contains(35),
+            "At least one TYPE_USE @Marker position (parameter/local/type-arg) must appear; got lines: " + lines);
     }
 }
