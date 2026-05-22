@@ -341,4 +341,40 @@ class AnalyzeTypeToolTest {
         assertEquals("class", kindByName.get("BoundedBox"),
             "BoundedBox must be classified as class; got: " + kindByName);
     }
+
+    @Test
+    @DisplayName("Generic class with bounded type parameters: typeParameters and bounds appear in type info")
+    @SuppressWarnings("unchecked")
+    void analyzeType_genericClassWithBoundedTypeParameters_reportsBoundedParams() {
+        // BoundedMultiParam<T extends Number, U extends Comparable<U>> exercises:
+        //   - multi-parameter list (two distinct names)
+        //   - simple upper bound on T (Number)
+        //   - F-bounded self-referential bound on U (Comparable<U>)
+        // The type info MUST surface both names and their bounds; without this
+        // a consumer cannot reproduce the declaration faithfully.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("typeName", "com.example.BoundedMultiParam");
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> type = (Map<String, Object>) getData(r).get("type");
+        assertNotNull(type);
+
+        List<String> typeParameters = (List<String>) type.get("typeParameters");
+        assertNotNull(typeParameters, "type.typeParameters must be present for a generic class; got: " + type);
+        assertEquals(List.of("T", "U"), typeParameters,
+            "typeParameters must list the declared parameters in order; got: " + typeParameters);
+
+        Map<String, Object> bounds = (Map<String, Object>) type.get("typeParameterBounds");
+        assertNotNull(bounds,
+            "type.typeParameterBounds must report bounds for each parameter; got: " + type);
+        List<String> tBounds = (List<String>) bounds.get("T");
+        List<String> uBounds = (List<String>) bounds.get("U");
+        assertNotNull(tBounds, "Bounds for T missing; got: " + bounds);
+        assertNotNull(uBounds, "Bounds for U missing; got: " + bounds);
+        assertTrue(tBounds.contains("Number"),
+            "T bound must include Number; got: " + tBounds);
+        assertTrue(uBounds.stream().anyMatch(b -> b.contains("Comparable")),
+            "U bound must reference Comparable; got: " + uBounds);
+    }
 }

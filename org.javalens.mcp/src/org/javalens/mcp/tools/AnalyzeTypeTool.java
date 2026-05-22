@@ -7,6 +7,7 @@ import org.eclipse.jdt.core.IField;
 import org.eclipse.jdt.core.IMethod;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.ITypeHierarchy;
+import org.eclipse.jdt.core.ITypeParameter;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.Signature;
 import org.eclipse.jdt.core.compiler.IProblem;
@@ -134,6 +135,24 @@ public class AnalyzeTypeTool extends AbstractTool {
         info.put("kind", TypeKindResolver.kindOf(type));
 
         info.put("modifiers", ModifierFormatter.format(type.getFlags()));
+
+        // Type parameters and their bounds (for generic types).
+        ITypeParameter[] typeParams = type.getTypeParameters();
+        if (typeParams != null && typeParams.length > 0) {
+            List<String> names = new ArrayList<>();
+            Map<String, List<String>> boundsByName = new LinkedHashMap<>();
+            for (ITypeParameter tp : typeParams) {
+                names.add(tp.getElementName());
+                String[] bounds = tp.getBounds();
+                if (bounds != null && bounds.length > 0) {
+                    boundsByName.put(tp.getElementName(), List.of(bounds));
+                } else {
+                    boundsByName.put(tp.getElementName(), List.of());
+                }
+            }
+            info.put("typeParameters", names);
+            info.put("typeParameterBounds", boundsByName);
+        }
 
         // Location
         if (cu != null && cu.getResource() != null) {
