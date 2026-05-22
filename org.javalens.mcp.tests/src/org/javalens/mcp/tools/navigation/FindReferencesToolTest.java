@@ -348,6 +348,45 @@ class FindReferencesToolTest {
     }
 
     @Test
+    @DisplayName("Class-level type parameter <T extends Number> finds usages in member signatures")
+    @SuppressWarnings("unchecked")
+    void classTypeParameter_findsUsagesInMethods() {
+        // GenericInterfaceExtractTarget<T extends Number> uses T in field, ctor,
+        // get(), set(T value), and pair()'s return List<T>. Positioning on the
+        // declaration of T must resolve to ITypeParameter and find those usages.
+        String generic = projectPath.resolve(
+            "src/main/java/com/example/GenericInterfaceExtractTarget.java").toString();
+        try {
+            String source = java.nio.file.Files.readString(java.nio.file.Path.of(generic));
+            int idx = source.indexOf("GenericInterfaceExtractTarget<T");
+            int tIdx = source.indexOf("T", idx + "GenericInterfaceExtractTarget<".length() - 1);
+            tIdx = source.indexOf("T extends", idx);
+            int line = (int) source.substring(0, tIdx).chars().filter(c -> c == '\n').count();
+            int lineStart = source.lastIndexOf('\n', tIdx) + 1;
+            int column = tIdx - lineStart;
+
+            ToolResponse r = tool.execute(argsAt(generic, line, column));
+            assertTrue(r.isSuccess(),
+                "Position on class type parameter T must resolve; got: "
+                    + (r.getError() != null ? r.getError().getMessage() : "n/a"));
+            Map<String, Object> data = getData(r);
+            assertEquals("T", data.get("symbol"));
+            assertEquals("typeParameter", data.get("symbolKind"));
+
+            List<Map<String, Object>> refs = getReferences(data);
+            assertFalse(refs.isEmpty(),
+                "Type parameter T is used in field declaration, constructor parameter, "
+                    + "get(), set(T value), and pair() return; references must be non-empty");
+            for (Map<String, Object> ref : refs) {
+                assertEquals("TYPE_PARAMETER_REFERENCE", ref.get("referenceKind"),
+                    "All T references must classify as TYPE_PARAMETER_REFERENCE; got: " + ref);
+            }
+        } catch (java.io.IOException ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    @Test
     @DisplayName("Constructor position resolves and finds constructor references")
     @SuppressWarnings("unchecked")
     void constructorPosition_findsConstructorReferences() throws Exception {
