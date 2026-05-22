@@ -199,10 +199,17 @@ public class ExtractMethodTool extends AbstractTool {
             newMethod.append(returnStatement);
             newMethod.append("\n").append(methodIndent).append("}");
 
-            // Build the method call
+            // Build the method call. If the returned variable was declared
+            // inside the selection, its original declaration was extracted
+            // along with the body — the call site must redeclare it so the
+            // post-selection code that references it continues to compile.
             StringBuilder methodCall = new StringBuilder();
             if (!returnType.equals("void") && !returnVars.isEmpty()) {
-                methodCall.append(returnVars.get(0)).append(" = ");
+                String returnedName = returnVars.get(0);
+                if (analysis.declaredInSelection.contains(returnedName)) {
+                    methodCall.append(returnType).append(" ");
+                }
+                methodCall.append(returnedName).append(" = ");
             }
             methodCall.append(methodName).append("(");
             methodCall.append(String.join(", ", paramNames));
@@ -376,13 +383,25 @@ public class ExtractMethodTool extends AbstractTool {
             }
         }
 
-        // Variables modified in selection and used after -> return values
+        // Variables modified in selection and used after -> return values.
+        // declaredInSelection ∪ modifiedInSelection also counts: a variable
+        // declared and initialized inside the selection that is then read
+        // after must be lifted back to the caller via the return value, and
+        // the original declaration is gone — the caller will need to
+        // redeclare it (handled at the call-site construction).
         for (String var : modifiedInSelection) {
             if (usedAfterSelection.contains(var)) {
                 analysis.modifiedAndUsedAfter.add(new VariableInfo(var, varTypes.getOrDefault(var, "Object")));
             }
         }
+        for (String var : declaredInSelection) {
+            if (usedAfterSelection.contains(var)
+                    && analysis.modifiedAndUsedAfter.stream().noneMatch(v -> v.name.equals(var))) {
+                analysis.modifiedAndUsedAfter.add(new VariableInfo(var, varTypes.getOrDefault(var, "Object")));
+            }
+        }
 
+        analysis.declaredInSelection.addAll(declaredInSelection);
         return analysis;
     }
 
@@ -435,6 +454,7 @@ public class ExtractMethodTool extends AbstractTool {
     private static class VariableAnalysis {
         List<VariableInfo> parameters = new ArrayList<>();
         List<VariableInfo> modifiedAndUsedAfter = new ArrayList<>();
+        Set<String> declaredInSelection = new HashSet<>();
     }
 
     private static class VariableInfo {

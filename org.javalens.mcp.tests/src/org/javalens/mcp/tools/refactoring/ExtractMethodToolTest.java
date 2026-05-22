@@ -224,14 +224,17 @@ class ExtractMethodToolTest {
     }
 
     @Test
-    @DisplayName("methodCall assigns into the returned variable: `sum = calculateSum(numbers);`")
+    @DisplayName("methodCall assigns into the returned variable, redeclaring its type when extracted with the declaration")
     void methodCall_assignsReturnValue() {
         ToolResponse r = tool.execute(calculateSumArgs());
         assertTrue(r.isSuccess());
         String call = (String) getData(r).get("methodCall");
         assertNotNull(call);
-        assertTrue(call.startsWith("sum = "),
-            "methodCall must assign result back into the returned variable; got: " + call);
+        // `sum` is declared inside the selection (the `int sum = 0;` line is
+        // part of the extracted range), so the call site must reintroduce
+        // the declaration to keep post-selection references compiling.
+        assertTrue(call.contains("sum = "),
+            "methodCall must assign result into `sum`; got: " + call);
         assertTrue(call.contains("calculateSum"),
             "methodCall must reference the new method name; got: " + call);
         assertTrue(call.contains("numbers"),
@@ -308,6 +311,24 @@ class ExtractMethodToolTest {
         ToolResponse r = tool.execute(args);
         assertFalse(r.isSuccess(),
             "Selection outside any method body must be rejected; got: " + r.getData());
+    }
+
+    @Test
+    @DisplayName("Returned variable declared inside selection is redeclared at call site")
+    void returnedVariable_declaredInSelection_isRedeclaredAtCallSite() {
+        // The fixture's calculateTotal has `int sum = 0;` INSIDE the selection
+        // (the selection starts at that line). The extracted method declares
+        // and returns sum. After the selection is replaced with the call,
+        // the post-selection code `return sum * 2;` would reference an
+        // undeclared sum unless the call site redeclares it. The methodCall
+        // must therefore be `int sum = calculateSum(numbers);`, not
+        // `sum = calculateSum(numbers);`.
+        ToolResponse r = tool.execute(calculateSumArgs());
+        assertTrue(r.isSuccess());
+        String call = (String) getData(r).get("methodCall");
+        assertNotNull(call);
+        assertTrue(call.startsWith("int sum = "),
+            "Call site must redeclare `int sum` since its declaration was extracted; got: " + call);
     }
 
     @Test
