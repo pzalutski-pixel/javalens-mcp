@@ -5,11 +5,13 @@ import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTParser;
 import org.eclipse.jdt.core.dom.ASTVisitor;
+import org.eclipse.jdt.core.dom.AnnotationTypeDeclaration;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.EnumDeclaration;
 import org.eclipse.jdt.core.dom.FieldDeclaration;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.Modifier;
+import org.eclipse.jdt.core.dom.RecordDeclaration;
 import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
 import org.eclipse.jdt.core.dom.TypeDeclaration;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
@@ -113,6 +115,20 @@ public class FindNamingViolationsTool extends AbstractTool {
                     @Override
                     public boolean visit(EnumDeclaration node) {
                         checkName(node.getName().getIdentifier(), "enum", PASCAL_CASE, "PascalCase",
+                            ast.getLineNumber(node.getStartPosition()) - 1, formattedPath, violations);
+                        return true;
+                    }
+
+                    @Override
+                    public boolean visit(RecordDeclaration node) {
+                        checkName(node.getName().getIdentifier(), "record", PASCAL_CASE, "PascalCase",
+                            ast.getLineNumber(node.getStartPosition()) - 1, formattedPath, violations);
+                        return true;
+                    }
+
+                    @Override
+                    public boolean visit(AnnotationTypeDeclaration node) {
+                        checkName(node.getName().getIdentifier(), "annotation", PASCAL_CASE, "PascalCase",
                             ast.getLineNumber(node.getStartPosition()) - 1, formattedPath, violations);
                         return true;
                     }

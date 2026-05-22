@@ -188,15 +188,50 @@ class FindNamingViolationsToolTest {
     }
 
     @Test
-    @DisplayName("elementType values are one of {class, enum, method, field, constant, parameter}")
+    @DisplayName("elementType values are one of {class, enum, record, annotation, method, field, constant, parameter}")
     void elementTypeValues_valid() {
         ToolResponse r = tool.execute(objectMapper.createObjectNode());
         assertTrue(r.isSuccess());
-        java.util.Set<String> allowed = java.util.Set.of("class", "enum", "method", "field", "constant", "parameter");
+        java.util.Set<String> allowed = java.util.Set.of(
+            "class", "enum", "record", "annotation", "method", "field", "constant", "parameter");
         for (Map<String, Object> v : violationsOf(r)) {
             assertTrue(allowed.contains(v.get("elementType")),
                 "elementType must be one of " + allowed + "; got: " + v);
         }
+    }
+
+    @Test
+    @DisplayName("Top-level record with non-PascalCase name is flagged with elementType=record")
+    void recordDeclaration_isChecked() {
+        // bad_record is a top-level record declaration whose name violates
+        // PascalCase. Records are AbstractTypeDeclaration but not
+        // TypeDeclaration; a visitor that only handles TypeDeclaration
+        // misses them.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", "src/main/java/com/example/NamingViolationFixtures.java");
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        boolean found = violationsOf(r).stream()
+            .anyMatch(v -> "bad_record".equals(v.get("name"))
+                && "record".equals(v.get("elementType"))
+                && "PascalCase".equals(v.get("convention")));
+        assertTrue(found,
+            "bad_record must be flagged as a record naming violation; got: " + violationsOf(r));
+    }
+
+    @Test
+    @DisplayName("Top-level annotation type with non-PascalCase name is flagged with elementType=annotation")
+    void annotationTypeDeclaration_isChecked() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", "src/main/java/com/example/NamingViolationFixtures.java");
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        boolean found = violationsOf(r).stream()
+            .anyMatch(v -> "bad_annotation".equals(v.get("name"))
+                && "annotation".equals(v.get("elementType"))
+                && "PascalCase".equals(v.get("convention")));
+        assertTrue(found,
+            "bad_annotation must be flagged as an annotation-type naming violation; got: " + violationsOf(r));
     }
 
     @Test
