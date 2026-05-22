@@ -11,6 +11,7 @@ import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.IVariableBinding;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.PostfixExpression;
+import org.eclipse.jdt.core.dom.TypeParameter;
 import org.eclipse.jdt.core.dom.PrefixExpression;
 import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
@@ -190,10 +191,21 @@ public class ExtractMethodTool extends AbstractTool {
             // Format the extracted code with proper indentation
             String formattedBody = formatExtractedBody(selectedCode, bodyIndent);
 
-            // Build the new method
+            // Build the new method. If the containing method declares
+            // method-level type parameters (`<T extends Bound>`), the
+            // extracted body may reference them — propagate the clause to
+            // the new method so the references resolve. Over-declaration
+            // (copying params the body doesn't use) is harmless; missing
+            // them produces uncompilable code.
+            String containingTypeParams = formatContainingMethodTypeParameters(containingMethod);
+
             StringBuilder newMethod = new StringBuilder();
             newMethod.append("\n\n").append(methodIndent);
-            newMethod.append("private ").append(returnType).append(" ").append(methodName);
+            newMethod.append("private ");
+            if (!containingTypeParams.isEmpty()) {
+                newMethod.append(containingTypeParams).append(" ");
+            }
+            newMethod.append(returnType).append(" ").append(methodName);
             newMethod.append("(").append(params).append(") {\n");
             newMethod.append(formattedBody);
             newMethod.append(returnStatement);
@@ -270,6 +282,34 @@ public class ExtractMethodTool extends AbstractTool {
             log.error("Error extracting method: {}", e.getMessage(), e);
             return ToolResponse.internalError(e);
         }
+    }
+
+    /**
+     * Formats the containing method's type-parameter list as a Java source
+     * declaration clause like {@code <T extends Number, U>}, or returns the
+     * empty string when there are no parameters.
+     */
+    private String formatContainingMethodTypeParameters(MethodDeclaration method) {
+        @SuppressWarnings("unchecked")
+        List<TypeParameter> tps = method.typeParameters();
+        if (tps == null || tps.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder("<");
+        for (int i = 0; i < tps.size(); i++) {
+            if (i > 0) sb.append(", ");
+            TypeParameter tp = tps.get(i);
+            sb.append(tp.getName().getIdentifier());
+            @SuppressWarnings("unchecked")
+            List<org.eclipse.jdt.core.dom.Type> bounds = tp.typeBounds();
+            if (bounds != null && !bounds.isEmpty()) {
+                sb.append(" extends ");
+                for (int b = 0; b < bounds.size(); b++) {
+                    if (b > 0) sb.append(" & ");
+                    sb.append(bounds.get(b).toString());
+                }
+            }
+        }
+        sb.append(">");
+        return sb.toString();
     }
 
     private MethodDeclaration findContainingMethod(CompilationUnit ast, int offset) {

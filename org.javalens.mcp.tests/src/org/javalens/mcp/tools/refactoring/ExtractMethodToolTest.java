@@ -314,6 +314,36 @@ class ExtractMethodToolTest {
     }
 
     @Test
+    @DisplayName("Extracting from a generic method propagates the method-level <U> clause to the new method")
+    @SuppressWarnings("unchecked")
+    void extractFromGenericMethod_propagatesTypeParameter() {
+        // GenericExtractTarget.processGeneric is declared as `<U> U processGeneric(U input)`.
+        // Extracting the statement `System.out.println(result);` (where `result` is of
+        // type U) into a new private method requires that new method to declare <U>
+        // too, otherwise the parameter type U is undeclared in the new method scope.
+        String generic = projectPath.resolve(
+            "src/main/java/com/example/GenericExtractTarget.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", generic);
+        args.put("startLine", 12);
+        args.put("startColumn", 8);
+        args.put("endLine", 12);
+        args.put("endColumn", 35);
+        args.put("methodName", "logResult");
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess(), "Extraction must succeed; got: "
+            + (r.getError() != null ? r.getError().getMessage() : "n/a"));
+
+        Map<String, Object> data = getData(r);
+        String newMethodCode = (String) data.get("newMethodCode");
+        assertNotNull(newMethodCode);
+        assertTrue(newMethodCode.contains("<U"),
+            "The extracted method body references U; new method declaration must include `<U>`; got: "
+                + newMethodCode);
+    }
+
+    @Test
     @DisplayName("Returned variable declared inside selection is redeclared at call site")
     void returnedVariable_declaredInSelection_isRedeclaredAtCallSite() {
         // The fixture's calculateTotal has `int sum = 0;` INSIDE the selection
