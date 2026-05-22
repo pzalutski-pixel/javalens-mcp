@@ -1,7 +1,17 @@
 package org.javalens.core.jdt;
 
 import org.eclipse.core.runtime.NullProgressMonitor;
+import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IType;
+import org.eclipse.jdt.core.dom.AST;
+import org.eclipse.jdt.core.dom.ASTParser;
+import org.eclipse.jdt.core.dom.ASTVisitor;
+import org.eclipse.jdt.core.dom.CompilationUnit;
+import org.eclipse.jdt.core.dom.FieldDeclaration;
+import org.eclipse.jdt.core.dom.IVariableBinding;
+import org.eclipse.jdt.core.dom.MethodDeclaration;
+import org.eclipse.jdt.core.dom.SimpleName;
+import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
 import org.eclipse.jdt.core.search.FieldReferenceMatch;
 import org.eclipse.jdt.core.search.IJavaSearchConstants;
 import org.eclipse.jdt.core.search.MethodReferenceMatch;
@@ -250,5 +260,85 @@ class JdtContractTest {
             },
             new NullProgressMonitor());
         return matches;
+    }
+
+    // ========== IBinding equality quirk for parameterized members ==========
+
+    @Test
+    @DisplayName("Generic-class field: declaration-context and usage-context IVariableBindings are NOT equal; their getVariableDeclaration() forms ARE equal")
+    void genericClassField_bindingEquality_quirk() throws Exception {
+        // In a generic class `class Foo<T> { private T x; T get() { return x; } }`,
+        // resolveBinding on the field's VariableDeclarationFragment returns one
+        // IVariableBinding; resolveBinding on the `x` SimpleName inside `get()` returns
+        // a DIFFERENT IVariableBinding for the same field. Both .getVariableDeclaration()
+        // canonical forms ARE equal.
+        //
+        // This is the quirk that drove issue #17: a tool putting the declaration binding
+        // into a HashMap and looking up via the usage binding gets a miss. JavaLens's
+        // FindUnusedCodeTool canonicalizes via getVariableDeclaration() at every put/add
+        // site (commit 1a589fb). If a future JDT release unifies these bindings, this
+        // test breaks loudly and we can simplify.
+        java.nio.file.Path fixture = helper.getFixturePath("simple-maven")
+            .resolve("src/main/java/com/example/genericunused/GenericClass.java");
+        ICompilationUnit cu = service.getCompilationUnit(fixture);
+        assertNotNull(cu, "GenericClass.java fixture must load");
+
+        ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
+        parser.setSource(cu);
+        parser.setResolveBindings(true);
+        parser.setBindingsRecovery(true);
+        CompilationUnit ast = (CompilationUnit) parser.createAST(null);
+
+        IVariableBinding[] declBinding = new IVariableBinding[1];
+        IVariableBinding[] usageBinding = new IVariableBinding[1];
+
+        ast.accept(new ASTVisitor() {
+            @Override
+            public boolean visit(FieldDeclaration node) {
+                for (Object frag : node.fragments()) {
+                    if (frag instanceof VariableDeclarationFragment vdf
+                            && "value".equals(vdf.getName().getIdentifier())) {
+                        declBinding[0] = vdf.resolveBinding();
+                    }
+                }
+                return true;
+            }
+            @Override
+            public boolean visit(MethodDeclaration node) {
+                if (!"read".equals(node.getName().getIdentifier())) return true;
+                node.accept(new ASTVisitor() {
+                    @Override
+                    public boolean visit(SimpleName name) {
+                        if (!"value".equals(name.getIdentifier())) return true;
+                        // Skip the method's name SimpleName itself
+                        if (name.getParent() instanceof MethodDeclaration) return true;
+                        if (name.resolveBinding() instanceof IVariableBinding vb) {
+                            usageBinding[0] = vb;
+                        }
+                        return true;
+                    }
+                });
+                return false;
+            }
+        });
+
+        assertNotNull(declBinding[0], "Field declaration binding must resolve");
+        assertNotNull(usageBinding[0], "Field usage binding inside read() must resolve");
+
+        // The quirk: raw bindings are NOT equal even though they refer to the same field.
+        assertFalse(declBinding[0].equals(usageBinding[0]),
+            "JDT contract: in a generic class, the declaration-context binding and the "
+                + "usage-context binding for the same field are DISTINCT IBinding instances. "
+                + "If this changes (JDT unifies them), JavaLens's binding-canonicalization in "
+                + "FindUnusedCodeTool can be simplified.");
+
+        // The canonicalization that JavaLens uses to make membership comparisons work:
+        IVariableBinding canonicalDecl = declBinding[0].getVariableDeclaration();
+        IVariableBinding canonicalUsage = usageBinding[0].getVariableDeclaration();
+        assertNotNull(canonicalDecl, "getVariableDeclaration() on declaration binding must not be null");
+        assertNotNull(canonicalUsage, "getVariableDeclaration() on usage binding must not be null");
+        assertEquals(canonicalDecl, canonicalUsage,
+            "JDT contract: getVariableDeclaration() returns the canonical declaration "
+                + "binding; both contexts must produce the same canonical instance.");
     }
 }
