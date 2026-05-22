@@ -519,6 +519,65 @@ class RenameSymbolToolTest {
     }
 
     @Test
+    @DisplayName("Renaming a generic-class type parameter propagates to its usages in member signatures and body")
+    @SuppressWarnings("unchecked")
+    void renameTypeParameter_propagatesInClassBody() {
+        // TypeKindsFixture.GenericContainer<T> declares <T> and uses T in:
+        //   - field declaration: `private T value;`
+        //   - getter return type: `public T get()`
+        //   - setter parameter type: `public void set(T value)`
+        // Position cursor on the T declaration in `class GenericContainer<T>`
+        // (0-based line 16, column 41) and rename to E. Every use of T inside
+        // the class body must be updated.
+        String tkf = projectPath.resolve("src/main/java/com/example/TypeKindsFixture.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", tkf);
+        args.put("line", 16);
+        args.put("column", 41);
+        args.put("newName", "E");
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess(),
+            "Rename on a type parameter must succeed; got error: "
+                + (r.getError() != null ? r.getError().getMessage() : "n/a"));
+
+        Map<String, List<Map<String, Object>>> editsByFile = getEditsByFile(getData(r));
+        assertNotNull(editsByFile);
+        assertFalse(editsByFile.isEmpty(),
+            "rename of a type parameter must produce at least one file edit; full response: " + getData(r));
+
+        List<Map<String, Object>> edits = editsByFile.entrySet().stream()
+            .filter(e -> e.getKey().replace('\\', '/').endsWith("TypeKindsFixture.java"))
+            .findFirst().map(java.util.Map.Entry::getValue)
+            .orElseThrow(() -> new AssertionError(
+                "Edits must be under TypeKindsFixture.java; got files: " + editsByFile.keySet()
+                    + "; full response: " + getData(r)));
+
+        // Edit set must include the declaration (line 16) AND the body usages:
+        //   line 18 (private T value;)
+        //   line 20 (public T get())
+        //   line 24 (set(T value))
+        // The declaration edit at line 16 is included by rename_symbol's
+        // editsByFile (the response always rewrites the declaration too).
+        java.util.Set<Integer> editLines = new java.util.HashSet<>();
+        for (Map<String, Object> e : edits) {
+            editLines.add(((Number) e.get("line")).intValue());
+        }
+        assertTrue(editLines.contains(18),
+            "Field declaration `private T value;` must be rewritten; got lines: " + editLines);
+        assertTrue(editLines.contains(20),
+            "Getter return type `public T get()` must be rewritten; got lines: " + editLines);
+        assertTrue(editLines.contains(24),
+            "Setter parameter type `public void set(T value)` must be rewritten; got lines: " + editLines);
+
+        // Every edit's newText must be the new name "E".
+        for (Map<String, Object> e : edits) {
+            assertEquals("E", e.get("newText"),
+                "Rename edit must substitute E for T; got: " + e);
+        }
+    }
+
+    @Test
     @DisplayName("totalEdits equals the sum of per-file edit list sizes")
     void totalEdits_sumsAcrossFiles() {
         ObjectNode args = objectMapper.createObjectNode();

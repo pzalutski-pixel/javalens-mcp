@@ -10,6 +10,7 @@ import org.eclipse.jdt.core.IMethod;
 import org.eclipse.jdt.core.ISourceRange;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.ITypeHierarchy;
+import org.eclipse.jdt.core.ITypeParameter;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.jdt.core.dom.AST;
@@ -340,6 +341,10 @@ public class RenameSymbolTool extends AbstractTool {
                 }
             } else if (element instanceof ILocalVariable local) {
                 range = local.getNameRange();
+            } else if (element instanceof ITypeParameter typeParam) {
+                // Type parameters have no getNameRange(); the source range
+                // covers just the identifier (`T` in `<T>`).
+                range = typeParam.getSourceRange();
             }
 
             if (range == null || range.getOffset() < 0) {
