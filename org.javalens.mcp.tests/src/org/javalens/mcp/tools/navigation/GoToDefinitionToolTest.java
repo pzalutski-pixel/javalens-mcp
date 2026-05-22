@@ -335,6 +335,24 @@ class GoToDefinitionToolTest {
     // the position resolves correctly for a bounded type parameter.
 
     @Test
+    @DisplayName("Position inside a line comment returns SYMBOL_NOT_FOUND")
+    void positionInsideLineComment_returnsSymbolNotFound() {
+        // BugPatterns.java line 18 (0-based 17): `// Empty catch block - bad practice`.
+        // Position inside the comment text must not resolve to a symbol.
+        String bugPatterns = helper.getFixturePath("simple-maven")
+            .resolve("src/main/java/com/example/BugPatterns.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", bugPatterns);
+        args.put("line", 17);
+        args.put("column", 20);
+
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess(),
+            "Position inside a line comment must not resolve to an enclosing element; got: "
+                + r.getData());
+    }
+
+    @Test
     @DisplayName("Position inside a string literal returns SYMBOL_NOT_FOUND (not a spurious enclosing symbol)")
     void positionInsideStringLiteral_returnsSymbolNotFound() {
         // BugPatterns.java line 16 contains `Integer.parseInt("not a number");`.

@@ -330,21 +330,22 @@ public class JdtServiceImpl implements IJdtService {
             int offset = getOffset(cu, line, column);
             log.debug("Looking for element at {}:{}:{} (offset {})", filePath, line, column, offset);
 
+            // Positions inside string/char/text-block literals or any comment
+            // have no resolvable symbol. JDT's codeSelect tokenises comment
+            // text and may return spurious matches when the comment contains
+            // identifier-like words (e.g., "Empty" inside `// Empty catch`
+            // would otherwise resolve to sun.invoke.empty.Empty). Short-
+            // circuit BEFORE consulting codeSelect or the getElementAt
+            // fallback.
+            if (isOffsetInsideLiteralOrComment(cu, offset)) {
+                log.debug("Offset {} is inside a literal/comment; returning null", offset);
+                return null;
+            }
+
             IJavaElement[] elements = cu.codeSelect(offset, 0);
             if (elements.length > 0) {
                 log.debug("Found element: {} ({})", elements[0].getElementName(), elements[0].getClass().getSimpleName());
                 return elements[0];
-            }
-
-            // codeSelect returned no element. Before falling back to
-            // cu.getElementAt(offset) — which returns the smallest enclosing
-            // IMember — verify the offset is not inside a string/char
-            // literal or a comment. Those positions have no symbol, and the
-            // fallback would otherwise mis-classify them as the enclosing
-            // method/class (a misleading silent success).
-            if (isOffsetInsideLiteralOrComment(cu, offset)) {
-                log.debug("Offset {} is inside a literal/comment; not consulting getElementAt fallback", offset);
-                return null;
             }
 
             // Fallback: try to find element at offset using getElementAt
