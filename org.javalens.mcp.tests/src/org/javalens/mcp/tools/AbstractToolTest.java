@@ -5,10 +5,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.IJdtService;
 import org.javalens.core.exceptions.ProjectNotLoadedException;
+import org.javalens.mcp.JavaLensApplication;
+import org.javalens.mcp.ProjectLoadingState;
 import org.javalens.mcp.models.ErrorInfo;
 import org.javalens.mcp.models.ToolResponse;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+
+import java.lang.reflect.Field;
 
 import java.util.List;
 import java.util.Map;
@@ -63,6 +68,65 @@ class AbstractToolTest {
     }
 
     // ========== execute() dispatch ==========
+
+    @AfterEach
+    void clearStaticInstance() throws Exception {
+        // Tests that flipped JavaLensApplication's static instance MUST restore it; any
+        // test that left LOADING/FAILED state would corrupt every subsequent dispatch
+        // test. Clears the static reference back to null (the test-environment default).
+        Field instanceField = JavaLensApplication.class.getDeclaredField("instance");
+        instanceField.setAccessible(true);
+        instanceField.set(null, null);
+    }
+
+    /**
+     * Force {@link JavaLensApplication#getLoadingState()} to return the given state by
+     * constructing a JavaLensApplication, setting its private loadingState field, and
+     * planting it as the static instance. No production-code hook required.
+     */
+    private static void forceLoadingState(ProjectLoadingState state, String errorMessage) throws Exception {
+        JavaLensApplication app = new JavaLensApplication();
+        Field stateField = JavaLensApplication.class.getDeclaredField("loadingState");
+        stateField.setAccessible(true);
+        stateField.set(app, state);
+        if (errorMessage != null) {
+            Field errorField = JavaLensApplication.class.getDeclaredField("loadingError");
+            errorField.setAccessible(true);
+            errorField.set(app, errorMessage);
+        }
+        Field instanceField = JavaLensApplication.class.getDeclaredField("instance");
+        instanceField.setAccessible(true);
+        instanceField.set(null, app);
+    }
+
+    @Test
+    @DisplayName("execute() during LOADING returns PROJECT_LOADING error code (not exception, not stale data)")
+    void execute_nullService_loadingState_returnsProjectLoading() throws Exception {
+        forceLoadingState(ProjectLoadingState.LOADING, null);
+        TestTool tool = new TestTool(() -> null);
+        ToolResponse response = tool.execute(objectMapper.createObjectNode());
+
+        assertFalse(response.isSuccess());
+        assertNotNull(response.getError());
+        assertEquals("PROJECT_LOADING", response.getError().getCode(),
+            "LOADING dispatch branch must produce PROJECT_LOADING error code");
+    }
+
+    @Test
+    @DisplayName("execute() during FAILED returns PROJECT_LOAD_FAILED with the captured error message")
+    void execute_nullService_failedState_returnsLoadFailed() throws Exception {
+        forceLoadingState(ProjectLoadingState.FAILED, "pom.xml not found");
+        TestTool tool = new TestTool(() -> null);
+        ToolResponse response = tool.execute(objectMapper.createObjectNode());
+
+        assertFalse(response.isSuccess());
+        assertNotNull(response.getError());
+        assertEquals("PROJECT_LOAD_FAILED", response.getError().getCode(),
+            "FAILED dispatch branch must produce PROJECT_LOAD_FAILED error code");
+        assertTrue(response.getError().getMessage().contains("pom.xml not found"),
+            "Error message must include the captured loadingError; got: "
+                + response.getError().getMessage());
+    }
 
     @Test
     @DisplayName("execute() with null service returns project-not-loaded (default loading-state branch)")
