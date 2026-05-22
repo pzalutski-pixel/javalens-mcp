@@ -7,6 +7,8 @@ import java.lang.reflect.Field;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -72,6 +74,47 @@ class JavaLensApplicationLifecycleTest {
         assertEquals(ProjectLoadingState.NOT_LOADED, readLoadingState(b));
     }
 
+    @Test
+    @DisplayName("Per-session state fields (running, loadingState, jdtService, loadingError) are all instance fields, not static")
+    void perSessionState_isAllInstanceScoped() throws Exception {
+        // Per-JVM JavaLens is a singleton, but the instance fields MUST be non-static so
+        // that — if anyone ever instantiates two apps in one JVM — they don't silently
+        // corrupt each other's state. The static `instance` field is intentionally shared
+        // (it routes static getLoadingState() calls); everything else is per-instance.
+        for (String fieldName : new String[]{"running", "loadingState", "jdtService", "loadingError"}) {
+            Field f = JavaLensApplication.class.getDeclaredField(fieldName);
+            assertFalse(java.lang.reflect.Modifier.isStatic(f.getModifiers()),
+                fieldName + " must be an instance field, not static");
+        }
+
+        // Sanity: starting fresh, both instances report the constructor defaults independently.
+        JavaLensApplication a = new JavaLensApplication();
+        JavaLensApplication b = new JavaLensApplication();
+        assertNull(readJdtService(a), "a.jdtService must start null");
+        assertNull(readJdtService(b), "b.jdtService must start null");
+        assertEquals(ProjectLoadingState.NOT_LOADED, readLoadingState(a));
+        assertEquals(ProjectLoadingState.NOT_LOADED, readLoadingState(b));
+    }
+
+    @Test
+    @DisplayName("Stopping one instance does not change the other instance's loading state")
+    void stop_oneInstance_otherLoadingStateUnaffected() throws Exception {
+        JavaLensApplication a = new JavaLensApplication();
+        JavaLensApplication b = new JavaLensApplication();
+
+        // Force b into LOADING via reflection — simulate b being in mid-load when a stops.
+        Field stateField = JavaLensApplication.class.getDeclaredField("loadingState");
+        stateField.setAccessible(true);
+        stateField.set(b, ProjectLoadingState.LOADING);
+
+        a.stop();
+
+        assertEquals(ProjectLoadingState.LOADING, readLoadingState(b),
+            "b's loadingState must be unaffected when a is stopped");
+        assertTrue(readRunning(b),
+            "b's running flag must be unaffected when a is stopped");
+    }
+
     private static boolean readRunning(JavaLensApplication app) throws Exception {
         Field f = JavaLensApplication.class.getDeclaredField("running");
         f.setAccessible(true);
@@ -82,5 +125,11 @@ class JavaLensApplicationLifecycleTest {
         Field f = JavaLensApplication.class.getDeclaredField("loadingState");
         f.setAccessible(true);
         return (ProjectLoadingState) f.get(app);
+    }
+
+    private static Object readJdtService(JavaLensApplication app) throws Exception {
+        Field f = JavaLensApplication.class.getDeclaredField("jdtService");
+        f.setAccessible(true);
+        return f.get(app);
     }
 }
