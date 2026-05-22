@@ -353,6 +353,22 @@ class GoToDefinitionToolTest {
     }
 
     @Test
+    @DisplayName("Position past EOF returns a clear failure (no exception)")
+    void positionPastEof_returnsClearFailure() {
+        // Calculator.java is ~50 lines; line=999999 sits far past EOF. The
+        // tool must surface a failure (not throw); also must not return a
+        // bogus symbol from any "fallback to last element" path.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        args.put("line", 999999);
+        args.put("column", 0);
+
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess(),
+            "Position past EOF must not return a spurious symbol; got: " + r.getData());
+    }
+
+    @Test
     @DisplayName("Position inside a string literal returns SYMBOL_NOT_FOUND (not a spurious enclosing symbol)")
     void positionInsideStringLiteral_returnsSymbolNotFound() {
         // BugPatterns.java line 16 contains `Integer.parseInt("not a number");`.
