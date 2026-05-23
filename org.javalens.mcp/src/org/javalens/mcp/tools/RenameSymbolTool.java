@@ -1,6 +1,7 @@
 package org.javalens.mcp.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.eclipse.core.runtime.IPath;
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IField;
 import org.eclipse.jdt.core.IJavaElement;
@@ -19,8 +20,10 @@ import org.eclipse.jdt.core.dom.ASTVisitor;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.IBinding;
 import org.eclipse.jdt.core.dom.SimpleName;
+import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.ElementKindResolver;
 import org.javalens.core.IJdtService;
+import org.javalens.core.search.SearchResult;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
 import org.slf4j.Logger;
@@ -129,86 +132,248 @@ public class RenameSymbolTool extends AbstractTool {
                 return ToolResponse.invalidParameter("newName", "Same as current name");
             }
 
-            // Get the binding key by parsing the AST at the element's location
-            ICompilationUnit cu = (ICompilationUnit) element.getAncestor(IJavaElement.COMPILATION_UNIT);
-            if (cu == null) {
-                return ToolResponse.symbolNotFound("Cannot find compilation unit for element");
+            // Dispatch: IMember (IType, IField, IMethod) uses SearchEngine, which is
+            // index-driven and resilient to per-call binding-resolution failures that
+            // emerged at scale. ILocalVariable and ITypeParameter are not indexed by
+            // SearchEngine in a useful way; they stay on the AST-binding path whose
+            // file scope is the declaring CU only (locals/type-params don't cross files).
+            if (element instanceof IMember member) {
+                return renameViaSearch(member, oldName, newName, symbolKind, service);
             }
-
-            // Parse AST to get binding key
-            ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
-            parser.setSource(cu);
-            parser.setResolveBindings(true);
-            parser.setBindingsRecovery(true);
-            CompilationUnit ast = (CompilationUnit) parser.createAST(null);
-
-            // Find the binding key using the element's source range
-            String targetKey = findBindingKey(element, ast, oldName);
-            if (targetKey == null) {
-                // Fallback to handle identifier matching
-                targetKey = element.getHandleIdentifier();
-                log.debug("Using handle identifier as fallback: {}", targetKey);
-            }
-
-            // Renaming a method must also rename its overriders (in subtypes) and
-            // overridden parents (in supertypes), or the override chain breaks and the
-            // code stops compiling. Pre-compute the binding keys for all related
-            // methods so the visitor below accepts any of them as a rename target.
-            Set<String> compatibleKeys = computeCompatibleKeys(element, targetKey);
-
-            // Find all references across project
-            Map<String, List<Map<String, Object>>> editsByFile = new LinkedHashMap<>();
-            int totalEdits = 0;
-
-            for (Path sourceFile : service.getAllJavaFiles()) {
-                try {
-                    ICompilationUnit sourceCu = service.getCompilationUnit(sourceFile);
-                    if (sourceCu == null) continue;
-
-                    ASTParser sourceParser = ASTParser.newParser(AST.getJLSLatest());
-                    sourceParser.setSource(sourceCu);
-                    sourceParser.setResolveBindings(true);
-                    sourceParser.setBindingsRecovery(true);
-                    CompilationUnit sourceAst = (CompilationUnit) sourceParser.createAST(null);
-
-                    List<Map<String, Object>> fileEdits = findRenameEdits(
-                        sourceAst, compatibleKeys, oldName, newName
-                    );
-
-                    if (!fileEdits.isEmpty()) {
-                        String relativePath = service.getPathUtils().formatPath(sourceFile);
-                        editsByFile.put(relativePath, fileEdits);
-                        totalEdits += fileEdits.size();
-                    }
-                } catch (Exception e) {
-                    log.debug("Error finding rename edits in file: {}", e.getMessage());
-                }
-            }
-
-            Map<String, Object> data = new LinkedHashMap<>();
-            data.put("oldName", oldName);
-            data.put("newName", newName);
-            data.put("symbolKind", symbolKind);
-            data.put("totalEdits", totalEdits);
-            data.put("filesAffected", editsByFile.size());
-            data.put("editsByFile", editsByFile);
-
-            if (element instanceof IType) {
-                data.put("note", "Renaming a type may require renaming the file as well");
-            }
-
-            return ToolResponse.success(data, ResponseMeta.builder()
-                .totalCount(totalEdits)
-                .returnedCount(totalEdits)
-                .suggestedNextTools(List.of(
-                    "Apply the text edits to complete the rename",
-                    "get_diagnostics to verify no errors after rename"
-                ))
-                .build());
+            return renameViaAstBinding(element, oldName, newName, symbolKind, service);
 
         } catch (Exception e) {
             log.error("Error renaming symbol: {}", e.getMessage(), e);
             return ToolResponse.internalError(e);
+        }
+    }
+
+    /**
+     * SearchEngine-based rename for {@link IMember} targets. Closes issue #13's failure
+     * mode where the AST-binding path lost references at scale: visiting every project
+     * file with full binding resolution intermittently produced null bindings under JDT
+     * index pressure on multi-thousand-file projects. SearchEngine is index-driven —
+     * it doesn't re-resolve bindings per file — so it stays correct at scale.
+     */
+    private ToolResponse renameViaSearch(IMember target, String oldName, String newName,
+                                          String symbolKind, IJdtService service) throws Exception {
+        // Override-chain: for methods, every overrider in subtypes and every overridden
+        // parent in supertypes must be renamed in lockstep. For non-methods this list
+        // is just the target.
+        List<IMember> compatibleMembers = computeCompatibleMembers(target);
+
+        Map<String, List<Map<String, Object>>> editsByFile = new LinkedHashMap<>();
+        Set<String> emittedKeys = new LinkedHashSet<>();
+        int totalEdits = 0;
+
+        for (IMember member : compatibleMembers) {
+            // Declaration site (SearchEngine REFERENCES omits the declaration itself).
+            ISourceRange nameRange = member.getNameRange();
+            if (nameRange != null && nameRange.getOffset() >= 0) {
+                ICompilationUnit memberCu =
+                    (ICompilationUnit) member.getAncestor(IJavaElement.COMPILATION_UNIT);
+                if (memberCu != null) {
+                    String filePath = formatPathFor(memberCu, service);
+                    String dedupKey = filePath + "@" + nameRange.getOffset();
+                    if (filePath != null && emittedKeys.add(dedupKey)) {
+                        Map<String, Object> declEdit = buildEdit(
+                            memberCu, nameRange.getOffset(), nameRange.getLength(),
+                            oldName, newName, service);
+                        if (declEdit != null) {
+                            editsByFile.computeIfAbsent(filePath, k -> new ArrayList<>()).add(declEdit);
+                            totalEdits++;
+                        }
+                    }
+                }
+            }
+
+            // Reference sites via SearchEngine. The cap is high so the rename surfaces
+            // every site; per-tool maxResults capping doesn't apply here because rename
+            // edits are not paginated — applying a partial rename would break compilation.
+            SearchResult result = service.getSearchService()
+                .findAllReferences(member, 1_000_000);
+            for (SearchMatch match : result.matches()) {
+                ICompilationUnit matchCu = MatchResolver.resolveCu(match);
+                if (matchCu == null) continue;
+                String filePath = formatPathFor(matchCu, service);
+                if (filePath == null) continue;
+                String dedupKey = filePath + "@" + match.getOffset();
+                // A method-binding ref and an overrider's ref may coincide at the same
+                // offset in JDT's index when the call resolves through dynamic dispatch.
+                // Dedup so each occurrence emits exactly one edit.
+                if (!emittedKeys.add(dedupKey)) continue;
+                Map<String, Object> refEdit = buildEdit(
+                    matchCu, match.getOffset(), oldName.length(),
+                    oldName, newName, service);
+                if (refEdit != null) {
+                    editsByFile.computeIfAbsent(filePath, k -> new ArrayList<>()).add(refEdit);
+                    totalEdits++;
+                }
+            }
+        }
+
+        // Sort per-file edits reverse-position so a caller applying them in order does
+        // not invalidate earlier offsets.
+        for (List<Map<String, Object>> fileEdits : editsByFile.values()) {
+            fileEdits.sort((a, b) -> {
+                int lineA = (int) a.get("line");
+                int lineB = (int) b.get("line");
+                if (lineA != lineB) return Integer.compare(lineB, lineA);
+                int colA = (int) a.get("column");
+                int colB = (int) b.get("column");
+                return Integer.compare(colB, colA);
+            });
+        }
+
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("oldName", oldName);
+        data.put("newName", newName);
+        data.put("symbolKind", symbolKind);
+        data.put("totalEdits", totalEdits);
+        data.put("filesAffected", editsByFile.size());
+        data.put("editsByFile", editsByFile);
+
+        if (target instanceof IType) {
+            data.put("note", "Renaming a type may require renaming the file as well");
+        }
+
+        return ToolResponse.success(data, ResponseMeta.builder()
+            .totalCount(totalEdits)
+            .returnedCount(totalEdits)
+            .suggestedNextTools(List.of(
+                "Apply the text edits to complete the rename",
+                "get_diagnostics to verify no errors after rename"
+            ))
+            .build());
+    }
+
+    /**
+     * AST-binding rename for {@link ILocalVariable} and {@link ITypeParameter} targets.
+     * These elements have no SearchEngine indexing path; locals don't cross files and
+     * type parameters are constrained to the declaring class/method body, so parsing
+     * the single declaring CU is sufficient and avoids the scale-driven binding-
+     * resolution failures of the project-wide AST scan.
+     */
+    private ToolResponse renameViaAstBinding(IJavaElement element, String oldName, String newName,
+                                              String symbolKind, IJdtService service) throws Exception {
+        ICompilationUnit cu = (ICompilationUnit) element.getAncestor(IJavaElement.COMPILATION_UNIT);
+        if (cu == null) {
+            return ToolResponse.symbolNotFound("Cannot find compilation unit for element");
+        }
+
+        ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
+        parser.setSource(cu);
+        parser.setResolveBindings(true);
+        parser.setBindingsRecovery(true);
+        CompilationUnit ast = (CompilationUnit) parser.createAST(null);
+
+        String targetKey = findBindingKey(element, ast, oldName);
+        if (targetKey == null) {
+            targetKey = element.getHandleIdentifier();
+            log.debug("Using handle identifier as fallback: {}", targetKey);
+        }
+
+        Set<String> compatibleKeys = computeCompatibleKeys(element, targetKey);
+
+        Map<String, List<Map<String, Object>>> editsByFile = new LinkedHashMap<>();
+        int totalEdits = 0;
+
+        List<Map<String, Object>> fileEdits = findRenameEdits(ast, compatibleKeys, oldName, newName);
+        if (!fileEdits.isEmpty()) {
+            Path sourceFile = cu.getResource().getLocation().toFile().toPath();
+            String relativePath = service.getPathUtils().formatPath(sourceFile);
+            editsByFile.put(relativePath, fileEdits);
+            totalEdits = fileEdits.size();
+        }
+
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("oldName", oldName);
+        data.put("newName", newName);
+        data.put("symbolKind", symbolKind);
+        data.put("totalEdits", totalEdits);
+        data.put("filesAffected", editsByFile.size());
+        data.put("editsByFile", editsByFile);
+
+        return ToolResponse.success(data, ResponseMeta.builder()
+            .totalCount(totalEdits)
+            .returnedCount(totalEdits)
+            .suggestedNextTools(List.of(
+                "Apply the text edits to complete the rename",
+                "get_diagnostics to verify no errors after rename"
+            ))
+            .build());
+    }
+
+    private Map<String, Object> buildEdit(ICompilationUnit cu, int offset, int length,
+                                           String oldName, String newName, IJdtService service) {
+        try {
+            int lineNum = service.getLineNumber(cu, offset);
+            int columnNum = service.getColumnNumber(cu, offset);
+            Map<String, Object> edit = new LinkedHashMap<>();
+            edit.put("line", lineNum);
+            edit.put("column", columnNum);
+            edit.put("endColumn", columnNum + oldName.length());
+            edit.put("oldText", oldName);
+            edit.put("newText", newName);
+            edit.put("startOffset", offset);
+            edit.put("endOffset", offset + length);
+            return edit;
+        } catch (Exception e) {
+            log.debug("Failed to build edit at offset {}: {}", offset, e.getMessage());
+            return null;
+        }
+    }
+
+    private String formatPathFor(ICompilationUnit cu, IJdtService service) {
+        if (cu == null || cu.getResource() == null) return null;
+        IPath location = cu.getResource().getLocation();
+        if (location == null) return null;
+        return service.getPathUtils().formatPath(location.toOSString());
+    }
+
+    /**
+     * Companion to {@link #computeCompatibleKeys} that returns IMember instances
+     * (needed for the SearchEngine path) rather than binding-key strings.
+     */
+    private List<IMember> computeCompatibleMembers(IMember target) {
+        List<IMember> members = new ArrayList<>();
+        members.add(target);
+
+        if (!(target instanceof IMethod targetMethod)) return members;
+
+        try {
+            IType declaringType = targetMethod.getDeclaringType();
+            if (declaringType == null) return members;
+
+            ITypeHierarchy hierarchy = declaringType.newTypeHierarchy(new NullProgressMonitor());
+            for (IType subtype : hierarchy.getAllSubtypes(declaringType)) {
+                addMatchingMethodMember(subtype, targetMethod, members);
+            }
+            for (IType supertype : hierarchy.getAllSupertypes(declaringType)) {
+                addMatchingMethodMember(supertype, targetMethod, members);
+            }
+        } catch (Exception e) {
+            log.debug("Failed to compute override-related members: {}", e.getMessage());
+        }
+        return members;
+    }
+
+    private void addMatchingMethodMember(IType type, IMethod target, List<IMember> members) {
+        try {
+            String targetName = target.getElementName();
+            String[] targetParamTypes = target.getParameterTypes();
+            for (IMethod m : type.getMethods()) {
+                if (!m.getElementName().equals(targetName)) continue;
+                String[] paramTypes = m.getParameterTypes();
+                if (paramTypes.length != targetParamTypes.length) continue;
+                boolean match = true;
+                for (int i = 0; i < paramTypes.length; i++) {
+                    if (!paramTypes[i].equals(targetParamTypes[i])) { match = false; break; }
+                }
+                if (match) members.add(m);
+            }
+        } catch (Exception e) {
+            log.debug("Error matching method in {}: {}", type.getFullyQualifiedName(), e.getMessage());
         }
     }
 
