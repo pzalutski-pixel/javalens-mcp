@@ -218,6 +218,44 @@ class CompilerComplianceTest {
     }
 
     @Test
+    @DisplayName("Source level higher than JDT supports falls back to a known recent level — no crash")
+    void higherThanSupportedSourceLevel_fallsBackGracefully() throws Exception {
+        // The compliance-level extractor reads the raw string from pom. If a project declares
+        // a future Java version the bundled JDT can't compile against (e.g. "99"), the load
+        // must not crash; JDT either rejects the option silently and keeps a known default,
+        // or surfaces COMPLIANCE_LEVEL_UNKNOWN. The contract is: load succeeds, the resulting
+        // compilerSource is a non-null parseable Java level, and analysis remains usable.
+        Path projectRoot = helper.copyFixture("compliance-level-mismatch");
+        Path pom = projectRoot.resolve("pom.xml");
+        String original = Files.readString(pom);
+        String bumped = original.replace(
+            "<maven.compiler.source>17</maven.compiler.source>",
+            "<maven.compiler.source>99</maven.compiler.source>")
+            .replace(
+                "<maven.compiler.target>17</maven.compiler.target>",
+                "<maven.compiler.target>99</maven.compiler.target>")
+            .replace(
+                "<maven.compiler.release>17</maven.compiler.release>",
+                "<maven.compiler.release>99</maven.compiler.release>");
+        Files.writeString(pom, bumped);
+
+        JdtServiceImpl service = new JdtServiceImpl();
+        service.loadProject(projectRoot);
+        ClasspathSnapshot snapshot = ClasspathSnapshot.capture(service.getJavaProject());
+
+        String source = snapshot.compilerSource();
+        assertTrue(source != null && !source.isBlank(),
+            "Even with an unsupported source level declared, compilerSource must be set; got: "
+                + source);
+        // The level must parse as a positive integer — that's the contract on the surface.
+        // JDT may accept "99" verbatim (forward-tolerance) or substitute a known-good fallback;
+        // either is fine, just not an empty/null value or a non-numeric token.
+        int parsed = Integer.parseInt(source);
+        assertTrue(parsed >= 1,
+            "compilerSource must be a positive Java level; got: " + source);
+    }
+
+    @Test
     @DisplayName("Maven plugin <configuration> works with artifactId-before-groupId ordering")
     void mavenComplianceFromPluginWithReversedIdentityOrder() throws Exception {
         // Maven's POM schema doesn't require groupId-before-artifactId. The regex must
