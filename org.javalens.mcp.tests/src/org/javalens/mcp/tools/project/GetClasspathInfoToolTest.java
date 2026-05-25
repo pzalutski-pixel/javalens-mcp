@@ -189,6 +189,140 @@ class GetClasspathInfoToolTest {
             "projectRoot must be present; got: " + data);
     }
 
+    // ========== Resolved-classpath section ==========
+    //
+    // The raw classpath returned above shows containers as opaque paths
+    // (org.eclipse.jdt.launching.JRE_CONTAINER). The `resolved` section exposes
+    // what JDT actually sees post-container-expansion: every system module from
+    // the JRE container becomes its own library entry, every library entry is
+    // validated for on-disk existence, and per-entry extra-attributes (e.g. the
+    // `module` attribute that controls modulepath vs classpath placement) are
+    // surfaced.
+
+    @Test
+    @DisplayName("resolved section is present and contains more entries than raw (container expanded)")
+    @SuppressWarnings("unchecked")
+    void resolved_sectionExpandsContainersIntoIndividualEntries() {
+        ToolResponse r = tool.execute(objectMapper.createObjectNode());
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+
+        List<Map<String, Object>> resolved = (List<Map<String, Object>>) data.get("resolved");
+        assertNotNull(resolved, "resolved section must be present; got: " + data.keySet());
+        assertFalse(resolved.isEmpty(), "resolved section must contain entries");
+
+        int containerCount = ((List<?>) data.get("containers")).size();
+        int resolvedCount = resolved.size();
+        assertTrue(resolvedCount > containerCount,
+            "Resolved entries should outnumber raw containers (each container expands to "
+                + "multiple library entries); raw containers=" + containerCount
+                + " resolved=" + resolvedCount);
+    }
+
+    @Test
+    @DisplayName("resolved entries include the JDK system modules from JRE container expansion")
+    @SuppressWarnings("unchecked")
+    void resolved_includesJdkSystemModules() {
+        ToolResponse r = tool.execute(objectMapper.createObjectNode());
+        assertTrue(r.isSuccess());
+
+        List<Map<String, Object>> resolved =
+            (List<Map<String, Object>>) getData(r).get("resolved");
+        boolean hasJdkBootstrap = resolved.stream()
+            .map(e -> (String) e.get("path"))
+            .filter(java.util.Objects::nonNull)
+            .anyMatch(p -> p.contains("jrt-fs.jar")
+                || p.contains("java.base")
+                || p.endsWith("rt.jar")
+                || p.startsWith("jrt:"));
+        assertTrue(hasJdkBootstrap,
+            "Resolved classpath must include a JDK bootstrap entry "
+                + "(jrt-fs.jar / java.base / rt.jar / jrt:); got paths: "
+                + resolved.stream().map(e -> e.get("path")).toList());
+    }
+
+    @Test
+    @DisplayName("each resolved entry carries kind, path, and exists fields")
+    @SuppressWarnings("unchecked")
+    void resolved_perEntryShape() {
+        ToolResponse r = tool.execute(objectMapper.createObjectNode());
+        assertTrue(r.isSuccess());
+
+        List<Map<String, Object>> resolved =
+            (List<Map<String, Object>>) getData(r).get("resolved");
+        for (Map<String, Object> entry : resolved) {
+            assertNotNull(entry.get("kind"),
+                "Every resolved entry must report its kind; got: " + entry);
+            assertNotNull(entry.get("path"),
+                "Every resolved entry must report its path; got: " + entry);
+            assertTrue(entry.containsKey("exists"),
+                "Every resolved entry must report file-existence status; got: " + entry);
+            assertTrue(entry.get("exists") instanceof Boolean,
+                "exists must be a boolean; got: " + entry);
+        }
+    }
+
+    // ========== JRE section ==========
+    //
+    // Today the only way to know which JDK JDT picked is to inspect the
+    // running process; the tool never reports it. For projects loaded under a
+    // different JDK than the user expects (npm-launched runtimes, IDE bundled
+    // JVMs, container images), this is a real source of confusion.
+
+    @Test
+    @DisplayName("jre section reports the JRE that JDT actually selected for the project")
+    @SuppressWarnings("unchecked")
+    void jre_sectionReportsDetectedRuntime() {
+        ToolResponse r = tool.execute(objectMapper.createObjectNode());
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+
+        Map<String, Object> jre = (Map<String, Object>) data.get("jre");
+        assertNotNull(jre, "jre section must be present; got data keys: " + data.keySet());
+
+        String installLocation = (String) jre.get("installLocation");
+        assertNotNull(installLocation, "jre.installLocation must be reported; got: " + jre);
+        assertFalse(installLocation.isBlank(), "jre.installLocation must be non-blank");
+
+        String name = (String) jre.get("name");
+        assertNotNull(name, "jre.name must be reported; got: " + jre);
+    }
+
+    @Test
+    @DisplayName("jre section reports javaVersion when the IVMInstall is an IVMInstall2")
+    @SuppressWarnings("unchecked")
+    void jre_reportsJavaVersionWhenAvailable() {
+        ToolResponse r = tool.execute(objectMapper.createObjectNode());
+        assertTrue(r.isSuccess());
+        Map<String, Object> jre = (Map<String, Object>) getData(r).get("jre");
+        assertNotNull(jre);
+        String javaVersion = (String) jre.get("javaVersion");
+        assertNotNull(javaVersion,
+            "jre.javaVersion must be reported (the running JVM is always IVMInstall2-capable); got: "
+                + jre);
+        assertFalse(javaVersion.isBlank(),
+            "jre.javaVersion must be non-blank; got: " + javaVersion);
+    }
+
+    @Test
+    @DisplayName("jre section lists the system modules the project can reach (includes java.base)")
+    @SuppressWarnings("unchecked")
+    void jre_systemModulesIncludeJavaBase() {
+        ToolResponse r = tool.execute(objectMapper.createObjectNode());
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+
+        Map<String, Object> jre = (Map<String, Object>) data.get("jre");
+        assertNotNull(jre);
+        List<String> systemModules = (List<String>) jre.get("systemModules");
+        assertNotNull(systemModules,
+            "jre.systemModules must be reported (list of module names visible to the project); got: "
+                + jre);
+        assertTrue(systemModules.contains("java.base"),
+            "jre.systemModules must include java.base (every project reads java.base); got: "
+                + systemModules);
+    }
+
     @Test
     @DisplayName("multi-module-maven: every module's src/main/java is reported as a separate source folder")
     @SuppressWarnings("unchecked")

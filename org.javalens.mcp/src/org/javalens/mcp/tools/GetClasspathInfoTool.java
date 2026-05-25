@@ -1,15 +1,25 @@
 package org.javalens.mcp.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.eclipse.jdt.core.IClasspathAttribute;
+import org.eclipse.jdt.core.IClasspathContainer;
 import org.eclipse.jdt.core.IClasspathEntry;
 import org.eclipse.jdt.core.IJavaProject;
+import org.eclipse.jdt.core.IModuleDescription;
+import org.eclipse.jdt.core.IPackageFragmentRoot;
+import org.eclipse.jdt.core.JavaCore;
 import org.eclipse.jdt.core.JavaModelException;
+import org.eclipse.jdt.launching.IVMInstall;
+import org.eclipse.jdt.launching.IVMInstall2;
+import org.eclipse.jdt.launching.JavaRuntime;
 import org.javalens.core.IJdtService;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -131,6 +141,25 @@ public class GetClasspathInfoTool extends AbstractTool {
                               projects.size() + variables.size();
             data.put("totalEntries", totalEntries);
 
+            // Resolved classpath — containers expanded, per-entry existence check.
+            // This is what the analyzer actually sees, not what was configured. The
+            // raw classpath shows JRE_CONTAINER as one opaque entry; resolved expands
+            // it into the individual system-module entries JDT will read class files
+            // from. Stale paths (jars in the classpath that no longer exist on disk)
+            // show up here with exists=false, which is otherwise invisible.
+            data.put("resolved", buildResolvedSection(project));
+
+            // JRE that JDT selected for this project — install location, name,
+            // and the list of system modules visible to the project. Surfaces the
+            // exact JDK driving analysis (which can diverge from the user-expected
+            // JDK in npm-launched runtimes, IDE-bundled JVMs, or container images)
+            // and lets a consumer confirm that bootstrap modules like java.base
+            // are reachable.
+            Map<String, Object> jreInfo = buildJreSection(project);
+            if (jreInfo != null) {
+                data.put("jre", jreInfo);
+            }
+
             return ToolResponse.success(data, ResponseMeta.builder()
                 .totalCount(entries.length)
                 .returnedCount(totalEntries)
@@ -202,5 +231,146 @@ public class GetClasspathInfoTool extends AbstractTool {
         }
 
         return info;
+    }
+
+    /**
+     * Build the resolved-classpath section. Walks {@link IJavaProject#getResolvedClasspath}
+     * (containers expanded, variables resolved) and emits per-entry kind + path + a
+     * boolean {@code exists} that probes the file/directory on disk. Library entries
+     * with an explicit {@code IClasspathAttribute.MODULE} also surface that value so
+     * consumers can tell modulepath placement from classpath placement.
+     */
+    private List<Map<String, Object>> buildResolvedSection(IJavaProject project) {
+        List<Map<String, Object>> resolved = new ArrayList<>();
+        try {
+            IClasspathEntry[] entries = project.getResolvedClasspath(true);
+            for (IClasspathEntry entry : entries) {
+                Map<String, Object> info = new LinkedHashMap<>();
+                String kind = switch (entry.getEntryKind()) {
+                    case IClasspathEntry.CPE_SOURCE -> "source";
+                    case IClasspathEntry.CPE_LIBRARY -> "library";
+                    case IClasspathEntry.CPE_CONTAINER -> "container";
+                    case IClasspathEntry.CPE_PROJECT -> "project";
+                    case IClasspathEntry.CPE_VARIABLE -> "variable";
+                    default -> "unknown";
+                };
+                info.put("kind", kind);
+                String path = entry.getPath().toString();
+                info.put("path", path);
+                info.put("exists", pathExists(path));
+
+                // Surface the MODULE classpath attribute when explicitly set — the
+                // value controls whether the entry is treated as modulepath (named
+                // or automatic module) vs classpath (unnamed module). Absent means
+                // JDT's default (classpath/unnamed for libraries).
+                String moduleAttr = readModuleAttribute(entry);
+                if (moduleAttr != null) info.put("module", moduleAttr);
+
+                resolved.add(info);
+            }
+        } catch (JavaModelException e) {
+            log.warn("Failed to resolve classpath: {}", e.getMessage());
+        }
+        return resolved;
+    }
+
+    private boolean pathExists(String path) {
+        if (path == null || path.isBlank()) return false;
+        // jrt:/ paths refer to entries inside the JDK's Java Runtime Image, not the
+        // filesystem — they aren't probeable via Files.exists. Treat them as present
+        // when the path begins with the jrt scheme.
+        if (path.startsWith("jrt:") || path.startsWith("jrt-fs:")) return true;
+        try {
+            return Files.exists(new File(path).toPath());
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private String readModuleAttribute(IClasspathEntry entry) {
+        IClasspathAttribute[] attrs = entry.getExtraAttributes();
+        if (attrs == null) return null;
+        for (IClasspathAttribute attr : attrs) {
+            if (IClasspathAttribute.MODULE.equals(attr.getName())) {
+                return attr.getValue();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Build the {@code jre} section. Resolves the JDT JRE container, extracts the
+     * {@link IVMInstall} JDT selected, and reports the install location, name, and
+     * the list of system modules visible to the project (java.base, java.logging, …).
+     * Returns null if no JRE container is on the raw classpath — projects without a
+     * JRE container don't get a jre section in the response.
+     */
+    private Map<String, Object> buildJreSection(IJavaProject project) {
+        try {
+            IClasspathEntry jreContainerEntry = findJreContainerEntry(project);
+            if (jreContainerEntry == null) return null;
+
+            Map<String, Object> jre = new LinkedHashMap<>();
+
+            IVMInstall vm = JavaRuntime.getVMInstall(project);
+            if (vm != null) {
+                jre.put("name", vm.getName());
+                if (vm.getInstallLocation() != null) {
+                    jre.put("installLocation", vm.getInstallLocation().getAbsolutePath());
+                }
+                jre.put("id", vm.getId());
+                jre.put("typeId", vm.getVMInstallType().getId());
+                if (vm instanceof IVMInstall2 vm2) {
+                    String javaVersion = vm2.getJavaVersion();
+                    if (javaVersion != null) jre.put("javaVersion", javaVersion);
+                }
+            }
+
+            // System modules: the names visible inside the resolved entries of the
+            // JRE container. Under JDK 9+ each system module surfaces as its own
+            // resolved library entry whose path includes the module name as the
+            // last segment.
+            jre.put("systemModules", extractSystemModuleNames(project, jreContainerEntry));
+
+            jre.put("containerPath", jreContainerEntry.getPath().toString());
+
+            return jre;
+        } catch (Exception e) {
+            log.warn("Failed to build JRE section: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private IClasspathEntry findJreContainerEntry(IJavaProject project) throws JavaModelException {
+        for (IClasspathEntry e : project.getRawClasspath()) {
+            if (e.getEntryKind() == IClasspathEntry.CPE_CONTAINER
+                && e.getPath().toString().startsWith(JavaRuntime.JRE_CONTAINER)) {
+                return e;
+            }
+        }
+        return null;
+    }
+
+    private List<String> extractSystemModuleNames(IJavaProject project, IClasspathEntry jreContainerEntry) {
+        List<String> modules = new ArrayList<>();
+        try {
+            // Use the JDT model authoritatively: each system module exposed by the
+            // JRE container surfaces as an IPackageFragmentRoot whose raw classpath
+            // entry is the JRE container itself and whose getModuleDescription() is
+            // non-null. The IModuleDescription's element name IS the module name —
+            // no path-string parsing required, no JDT-internal heuristics.
+            for (IPackageFragmentRoot root : project.getAllPackageFragmentRoots()) {
+                IClasspathEntry raw = root.getRawClasspathEntry();
+                if (raw == null) continue;
+                if (raw.getEntryKind() != IClasspathEntry.CPE_CONTAINER) continue;
+                if (!raw.getPath().equals(jreContainerEntry.getPath())) continue;
+                IModuleDescription module = root.getModuleDescription();
+                if (module == null) continue;
+                modules.add(module.getElementName());
+            }
+        } catch (JavaModelException e) {
+            log.warn("Failed to extract system module names: {}", e.getMessage());
+        }
+        return modules;
     }
 }
