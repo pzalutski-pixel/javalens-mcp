@@ -1,6 +1,9 @@
 package org.javalens.mcp.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.eclipse.core.resources.IResource;
+import org.eclipse.core.resources.ResourcesPlugin;
+import org.eclipse.core.runtime.Path;
 import org.eclipse.jdt.core.IClasspathAttribute;
 import org.eclipse.jdt.core.IClasspathContainer;
 import org.eclipse.jdt.core.IClasspathEntry;
@@ -257,7 +260,7 @@ public class GetClasspathInfoTool extends AbstractTool {
                 info.put("kind", kind);
                 String path = entry.getPath().toString();
                 info.put("path", path);
-                info.put("exists", pathExists(path));
+                info.put("exists", entryExists(entry));
 
                 // Surface the MODULE classpath attribute when explicitly set — the
                 // value controls whether the entry is treated as modulepath (named
@@ -274,16 +277,35 @@ public class GetClasspathInfoTool extends AbstractTool {
         return resolved;
     }
 
-    private boolean pathExists(String path) {
+    /**
+     * Per-entry existence check. The right answer depends on the entry kind:
+     * source / project entries carry workspace-relative paths and must be checked
+     * via the Eclipse resource model; library / variable entries carry filesystem
+     * paths (or the {@code jrt:} virtual scheme for JDK system modules); container
+     * entries should not appear in the resolved classpath since containers expand
+     * before resolution. A single {@code Files.exists(path)} on the raw string is
+     * wrong for source entries because the linked-folder workspace path has no
+     * filesystem analog.
+     */
+    private boolean entryExists(IClasspathEntry entry) {
+        String path = entry.getPath().toString();
         if (path == null || path.isBlank()) return false;
-        // jrt:/ paths refer to entries inside the JDK's Java Runtime Image, not the
-        // filesystem — they aren't probeable via Files.exists. Treat them as present
-        // when the path begins with the jrt scheme.
-        if (path.startsWith("jrt:") || path.startsWith("jrt-fs:")) return true;
-        try {
-            return Files.exists(new File(path).toPath());
-        } catch (Exception e) {
-            return false;
+
+        switch (entry.getEntryKind()) {
+            case IClasspathEntry.CPE_SOURCE:
+            case IClasspathEntry.CPE_PROJECT:
+                IResource resource = ResourcesPlugin.getWorkspace().getRoot()
+                    .findMember(new Path(path));
+                return resource != null && resource.exists();
+            case IClasspathEntry.CPE_LIBRARY:
+            case IClasspathEntry.CPE_VARIABLE:
+            default:
+                if (path.startsWith("jrt:") || path.startsWith("jrt-fs:")) return true;
+                try {
+                    return Files.exists(new File(path).toPath());
+                } catch (Exception e) {
+                    return false;
+                }
         }
     }
 

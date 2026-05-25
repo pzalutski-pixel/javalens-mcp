@@ -262,6 +262,29 @@ class GetClasspathInfoToolTest {
         }
     }
 
+    @Test
+    @DisplayName("resolved source-folder entries report exists=true via the workspace resource model")
+    @SuppressWarnings("unchecked")
+    void resolved_sourceEntries_useWorkspaceExistsCheck() {
+        ToolResponse r = tool.execute(objectMapper.createObjectNode());
+        assertTrue(r.isSuccess());
+
+        List<Map<String, Object>> resolved =
+            (List<Map<String, Object>>) getData(r).get("resolved");
+        List<Map<String, Object>> sourceEntries = resolved.stream()
+            .filter(e -> "source".equals(e.get("kind")))
+            .toList();
+        assertFalse(sourceEntries.isEmpty(),
+            "simple-maven fixture must contribute at least one source entry to the resolved classpath");
+        for (Map<String, Object> entry : sourceEntries) {
+            assertEquals(Boolean.TRUE, entry.get("exists"),
+                "Source-folder entries carry workspace paths, not filesystem paths — "
+                    + "their `exists` must be checked via the workspace resource model. "
+                    + "A naive Files.exists on the workspace path returns false, which is "
+                    + "the wrong answer (the linked source folder genuinely exists). Got: " + entry);
+        }
+    }
+
     // ========== JRE section ==========
     //
     // Today the only way to know which JDK JDT picked is to inspect the
