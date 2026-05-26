@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.3.5] - 2026-05-26
+
+### Fixed
+
+- Projects loaded in environments where JDT's default-JRE auto-detection doesn't fire are no longer left with an unresolved JRE container (which caused BUILDPATH cascades on every source file referencing `java.lang.Object`). The running JVM is now registered explicitly as the project's JRE before the container is added.
+
+### Added
+
+- `LoadWarning.JRE_REGISTRATION_FAILED` surfaces when the running JVM cannot be registered (`java.home` unset or invalid). Turns an otherwise opaque BUILDPATH cascade into an actionable load-time signal.
+
 ## [1.3.4] - 2026-05-25
 
 ### Added
@@ -277,5 +287,6 @@ Initial release of JavaLens MCP Server.
 - Maven and Gradle project support
 - 347 tests
 
+[1.3.5]: https://github.com/pzalutski-pixel/javalens-mcp/compare/v1.3.4...v1.3.5
 [1.3.4]: https://github.com/pzalutski-pixel/javalens-mcp/compare/v1.3.3...v1.3.4
 [1.3.3]: https://github.com/pzalutski-pixel/javalens-mcp/compare/v1.3.2...v1.3.3
