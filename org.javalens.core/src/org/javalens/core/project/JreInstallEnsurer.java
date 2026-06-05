@@ -112,11 +112,13 @@ public final class JreInstallEnsurer {
     }
 
     private static void ensureDefault(IVMInstall install) {
+        // setDefaultVMInstall records the default VM and persists the registry to
+        // PREF_VM_XML, so calling it unconditionally makes the registration durable
+        // rather than in-memory only. The current default is intentionally not read
+        // first: getDefaultVMInstall() re-runs VM detection, and disposes the
+        // registry, whenever the persisted default does not resolve.
         try {
-            IVMInstall current = JavaRuntime.getDefaultVMInstall();
-            if (current == null || !current.getId().equals(install.getId())) {
-                JavaRuntime.setDefaultVMInstall(install, new NullProgressMonitor());
-            }
+            JavaRuntime.setDefaultVMInstall(install, new NullProgressMonitor());
         } catch (CoreException e) {
             log.warn("Could not set default IVMInstall to {}: {}", install.getId(), e.getMessage());
         }
