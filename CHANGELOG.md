@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.3.6] - 2026-06-05
+
+### Fixed
+
+- The JRE registration added in 1.3.5 was not written to the persisted VM configuration when JDT's default-VM pointer already referenced the running JVM, leaving the JRE container unbacked on environments where startup VM detection registers nothing (e.g. SDKMAN-managed JDKs with no JVM under the system Java location). The running JVM is now set as the default unconditionally, so the registration persists.
+
 ## [1.3.5] - 2026-05-26
 
 ### Fixed
