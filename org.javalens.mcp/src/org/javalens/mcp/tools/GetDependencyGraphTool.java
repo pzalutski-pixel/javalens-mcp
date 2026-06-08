@@ -190,6 +190,14 @@ public class GetDependencyGraphTool extends AbstractTool {
 
         // 1. Import dependencies
         for (IImportDeclaration imp : cu.getImports()) {
+            if (Flags.isModule(imp.getFlags())) {
+                // import module M; (JEP 511) names a module, not a package or
+                // type. The JDT model surfaces it as an on-demand import whose
+                // element name is "M.*", so the on-demand strip below would turn
+                // it into a bogus dependency on a package named after the module.
+                // It carries no package/type dependency — skip it.
+                continue;
+            }
             String importName = imp.getElementName();
             if (imp.isOnDemand()) {
                 importName = importName.replace(".*", "");
@@ -348,6 +356,12 @@ public class GetDependencyGraphTool extends AbstractTool {
      */
     private String getImportedPackage(IImportDeclaration imp) {
         try {
+            if (Flags.isModule(imp.getFlags())) {
+                // import module M; (JEP 511) names a module, not a package. Its
+                // element name is "M.*", which the on-demand strip would read as
+                // a package named after the module. It contributes no package.
+                return "";
+            }
             String name = imp.getElementName();
             boolean onDemand = imp.isOnDemand();
             boolean isStatic = Flags.isStatic(imp.getFlags());
