@@ -1,6 +1,7 @@
 package org.javalens.mcp.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.eclipse.jdt.core.Flags;
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IImportDeclaration;
 import org.eclipse.jdt.core.IJavaElement;
@@ -178,6 +179,13 @@ public class FindCircularDependenciesTool extends AbstractTool {
 
                 for (ICompilationUnit cu : pkg.getCompilationUnits()) {
                     for (IImportDeclaration imp : cu.getImports()) {
+                        if (Flags.isModule(imp.getFlags())) {
+                            // import module M; (JEP 511) names a module, not a
+                            // package. Its element name is "M.*", which the prefix
+                            // walk would otherwise probe as a package — skip it so
+                            // it can never contribute a package-dependency edge.
+                            continue;
+                        }
                         String importPkg = resolveImportPackage(imp.getElementName(), projectPackages);
 
                         // Only track dependencies to other project packages
