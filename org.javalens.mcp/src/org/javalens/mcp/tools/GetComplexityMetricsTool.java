@@ -2,6 +2,7 @@ package org.javalens.mcp.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import org.eclipse.jdt.core.ICompilationUnit;
+import org.eclipse.jdt.core.dom.AbstractTypeDeclaration;
 import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTParser;
 import org.eclipse.jdt.core.dom.ASTVisitor;
@@ -20,7 +21,6 @@ import org.eclipse.jdt.core.dom.Statement;
 import org.eclipse.jdt.core.dom.SwitchCase;
 import org.eclipse.jdt.core.dom.ThrowStatement;
 import org.eclipse.jdt.core.dom.TryStatement;
-import org.eclipse.jdt.core.dom.TypeDeclaration;
 import org.eclipse.jdt.core.dom.WhileStatement;
 import org.javalens.core.IJdtService;
 import org.javalens.mcp.models.ResponseMeta;
@@ -142,7 +142,7 @@ public class GetComplexityMetricsTool extends AbstractTool {
             int maxCC = 0;
 
             for (Object type : ast.types()) {
-                if (type instanceof TypeDeclaration typeDecl) {
+                if (type instanceof AbstractTypeDeclaration typeDecl) {
                     collectMethodMetrics(typeDecl, ast, methodMetrics);
                 }
             }
@@ -219,11 +219,30 @@ public class GetComplexityMetricsTool extends AbstractTool {
     /**
      * Collect metrics for all methods in a type (including nested types).
      */
-    private void collectMethodMetrics(TypeDeclaration typeDecl, CompilationUnit ast,
+    private void collectMethodMetrics(AbstractTypeDeclaration typeDecl, CompilationUnit ast,
                                        List<Map<String, Object>> metrics) {
         String typeName = typeDecl.getName().getIdentifier();
+        if (typeName.isEmpty() && ast.getJavaElement() != null) {
+            // JEP 512 implicit classes have no source-level name; the DOM reports an
+            // empty identifier. The JDT model names them after the file, so derive
+            // the same name here to keep the type attribution consistent with the
+            // other tools (e.g. analyze_file reports the implicit class as CompactMain).
+            String unit = ast.getJavaElement().getElementName();
+            typeName = unit.endsWith(".java") ? unit.substring(0, unit.length() - 5) : unit;
+        }
 
-        for (MethodDeclaration method : typeDecl.getMethods()) {
+        // Iterate bodyDeclarations() rather than TypeDeclaration.getMethods() so that
+        // every AbstractTypeDeclaration is covered: ordinary classes/interfaces,
+        // enums, records, and — for JEP 512 compact source files — the implicitly
+        // declared class (ImplicitTypeDeclaration), which is not a TypeDeclaration.
+        for (Object bd : typeDecl.bodyDeclarations()) {
+            if (bd instanceof AbstractTypeDeclaration nested) {
+                collectMethodMetrics(nested, ast, metrics);
+                continue;
+            }
+            if (!(bd instanceof MethodDeclaration method)) {
+                continue;
+            }
             Map<String, Object> methodInfo = new LinkedHashMap<>();
             methodInfo.put("name", method.getName().getIdentifier());
             methodInfo.put("type", typeName);
@@ -250,11 +269,6 @@ public class GetComplexityMetricsTool extends AbstractTool {
             methodInfo.put("risk", risk);
 
             metrics.add(methodInfo);
-        }
-
-        // Process nested types
-        for (TypeDeclaration nestedType : typeDecl.getTypes()) {
-            collectMethodMetrics(nestedType, ast, metrics);
         }
     }
 
