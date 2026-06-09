@@ -1,8 +1,8 @@
 package org.javalens.mcp.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.jdt.core.ICompilationUnit;
-import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTParser;
@@ -18,15 +18,22 @@ import org.eclipse.jdt.core.dom.InfixExpression;
 import org.eclipse.jdt.core.dom.MethodInvocation;
 import org.eclipse.jdt.core.dom.NodeFinder;
 import org.eclipse.jdt.core.dom.Statement;
+import org.eclipse.jdt.core.dom.Type;
+import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
+import org.eclipse.jdt.core.dom.VariableDeclarationStatement;
 import org.eclipse.jdt.core.dom.WhileStatement;
+import org.eclipse.jdt.core.dom.rewrite.ASTRewrite;
+import org.eclipse.jdt.core.dom.rewrite.ImportRewrite;
+import org.eclipse.jdt.core.dom.rewrite.ListRewrite;
+import org.eclipse.text.edits.TextEdit;
 import org.javalens.core.IJdtService;
+import org.javalens.mcp.rewrite.TextEditConverter;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -173,43 +180,53 @@ public class ExtractVariableTool extends AbstractTool {
                     "Extracting this expression would change evaluation semantics: " + semanticsViolation);
             }
 
-            // Get expression text
-            String expressionText = expression.toString();
+            // Get expression text (source slice, also used for response metadata)
+            String source = cu.getSource();
+            String expressionText = source.substring(expression.getStartPosition(),
+                expression.getStartPosition() + expression.getLength());
 
-            // Build the variable declaration
+            // The insertion point must live in a statement list; otherwise the
+            // declaration would land in an unblocked single-statement body and
+            // not compile.
+            ASTNode statementParent = containingStatement.getParent();
+            if (!(statementParent instanceof Block)) {
+                return ToolResponse.invalidParameter("selection",
+                    "Containing statement is not inside a block; extraction would not compile");
+            }
+
+            // Synthesize the edits structurally with ASTRewrite — the rewriter
+            // renders the declaration, indentation, and replacement from AST
+            // modifications instead of hand-built strings. ImportRewrite brings
+            // in the variable's type respecting project import conventions.
+            AST astFactory = ast.getAST();
+            ASTRewrite rewrite = ASTRewrite.create(astFactory);
+            ImportRewrite importRewrite = ImportRewrite.create(ast, true);
+
+            VariableDeclarationFragment fragment = astFactory.newVariableDeclarationFragment();
+            fragment.setName(astFactory.newSimpleName(variableName));
+            fragment.setInitializer((Expression) rewrite.createStringPlaceholder(
+                expressionText, expression.getNodeType()));
+
+            VariableDeclarationStatement declStmt = astFactory.newVariableDeclarationStatement(fragment);
+            Type typeNode = typeBinding != null
+                ? importRewrite.addImport(typeBinding, astFactory)
+                : astFactory.newSimpleType(astFactory.newSimpleName("var"));
+            declStmt.setType(typeNode);
+
+            ListRewrite statements = rewrite.getListRewrite(statementParent, Block.STATEMENTS_PROPERTY);
+            statements.insertBefore(declStmt, containingStatement, null);
+            rewrite.replace(expression, astFactory.newSimpleName(variableName), null);
+
+            TextEdit rewriteEdit = rewrite.rewriteAST();
+            List<Map<String, Object>> edits = TextEditConverter.toEditMaps(rewriteEdit, source, ast);
+            TextEdit importsEdit = importRewrite.rewriteImports(new NullProgressMonitor());
+            if (importsEdit != null && (importsEdit.hasChildren() || importsEdit.getLength() > 0
+                    || !importsEdit.getClass().getSimpleName().equals("MultiTextEdit"))) {
+                edits.addAll(TextEditConverter.toEditMaps(importsEdit, source, ast));
+            }
+
+            // Human-readable summary of what the declaration introduces.
             String declaration = typeName + " " + variableName + " = " + expressionText + ";";
-
-            // Calculate insertion point
-            int insertOffset = containingStatement.getStartPosition();
-            int insertLine = ast.getLineNumber(insertOffset) - 1;
-
-            // Get indentation
-            String indent = getIndentation(cu, containingStatement);
-
-            // Build edits
-            List<Map<String, Object>> edits = new ArrayList<>();
-
-            // Edit 1: Insert variable declaration
-            Map<String, Object> insertEdit = new LinkedHashMap<>();
-            insertEdit.put("type", "insert");
-            insertEdit.put("line", insertLine);
-            insertEdit.put("column", 0);
-            insertEdit.put("offset", insertOffset);
-            insertEdit.put("newText", indent + declaration + "\n");
-            edits.add(insertEdit);
-
-            // Edit 2: Replace expression with variable name
-            Map<String, Object> replaceEdit = new LinkedHashMap<>();
-            replaceEdit.put("type", "replace");
-            replaceEdit.put("startLine", ast.getLineNumber(expression.getStartPosition()) - 1);
-            replaceEdit.put("startColumn", ast.getColumnNumber(expression.getStartPosition()));
-            replaceEdit.put("endLine", ast.getLineNumber(expression.getStartPosition() + expression.getLength()) - 1);
-            replaceEdit.put("endColumn", ast.getColumnNumber(expression.getStartPosition() + expression.getLength()));
-            replaceEdit.put("startOffset", expression.getStartPosition());
-            replaceEdit.put("endOffset", expression.getStartPosition() + expression.getLength());
-            replaceEdit.put("oldText", expressionText);
-            replaceEdit.put("newText", variableName);
-            edits.add(replaceEdit);
 
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("filePath", service.getPathUtils().formatPath(path));
@@ -290,30 +307,6 @@ public class ExtractVariableTool extends AbstractTool {
             node = node.getParent();
         }
         return null;
-    }
-
-    private String getIndentation(ICompilationUnit cu, ASTNode node) {
-        try {
-            String source = cu.getSource();
-            if (source == null) return "        ";
-
-            int nodeStart = node.getStartPosition();
-            int lineStart = source.lastIndexOf('\n', nodeStart - 1) + 1;
-
-            StringBuilder indent = new StringBuilder();
-            for (int i = lineStart; i < nodeStart && i < source.length(); i++) {
-                char c = source.charAt(i);
-                if (c == ' ' || c == '\t') {
-                    indent.append(c);
-                } else {
-                    break;
-                }
-            }
-            return indent.toString();
-        } catch (JavaModelException e) {
-            log.debug("Error getting indentation: {}", e.getMessage());
-            return "        ";
-        }
     }
 
     private String suggestVariableName(Expression expression, ITypeBinding typeBinding) {
