@@ -2,22 +2,31 @@ package org.javalens.mcp.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import org.eclipse.jdt.core.ICompilationUnit;
-import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.dom.AST;
+import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTParser;
 import org.eclipse.jdt.core.dom.ASTVisitor;
 import org.eclipse.jdt.core.dom.Assignment;
+import org.eclipse.jdt.core.dom.Block;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.IVariableBinding;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
+import org.eclipse.jdt.core.dom.Modifier;
 import org.eclipse.jdt.core.dom.PostfixExpression;
 import org.eclipse.jdt.core.dom.TypeParameter;
 import org.eclipse.jdt.core.dom.PrefixExpression;
+import org.eclipse.jdt.core.dom.ReturnStatement;
 import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
+import org.eclipse.jdt.core.dom.Statement;
+import org.eclipse.jdt.core.dom.Type;
 import org.eclipse.jdt.core.dom.TypeDeclaration;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
+import org.eclipse.jdt.core.dom.rewrite.ASTRewrite;
+import org.eclipse.jdt.core.dom.rewrite.ListRewrite;
+import org.eclipse.text.edits.TextEdit;
 import org.javalens.core.IJdtService;
+import org.javalens.mcp.rewrite.TextEditConverter;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
 import org.slf4j.Logger;
@@ -162,54 +171,68 @@ public class ExtractMethodTool extends AbstractTool {
 
             // Determine return type
             String returnType = "void";
-            String returnStatement = "";
             List<String> returnVars = new ArrayList<>();
 
-            if (!analysis.modifiedAndUsedAfter.isEmpty()) {
-                if (analysis.modifiedAndUsedAfter.size() == 1) {
-                    VariableInfo var = analysis.modifiedAndUsedAfter.get(0);
-                    returnType = var.type;
-                    returnStatement = "\n        return " + var.name + ";";
-                    returnVars.add(var.name);
-                }
+            if (analysis.modifiedAndUsedAfter.size() == 1) {
+                VariableInfo var = analysis.modifiedAndUsedAfter.get(0);
+                returnType = var.type;
+                returnVars.add(var.name);
             }
 
-            // Build parameter list
-            StringBuilder params = new StringBuilder();
             List<String> paramNames = new ArrayList<>();
-            for (int i = 0; i < analysis.parameters.size(); i++) {
-                if (i > 0) params.append(", ");
-                VariableInfo param = analysis.parameters.get(i);
-                params.append(param.type).append(" ").append(param.name);
+            for (VariableInfo param : analysis.parameters) {
                 paramNames.add(param.name);
             }
 
-            // Get indentation
-            String methodIndent = getIndentation(source, containingMethod.getStartPosition());
-            String bodyIndent = methodIndent + "    ";
+            // Synthesize the new method declaration with ASTRewrite: a private
+            // MethodDeclaration whose signature is built from the variable
+            // analysis (type-parameter clause propagated from the containing
+            // method so body references to it still resolve; over-declaration
+            // is harmless, missing it does not compile), and whose body carries
+            // the selection text. ListRewrite places it after the containing
+            // method and the rewriter renders declaration text and indentation.
+            AST astFactory = ast.getAST();
+            ASTRewrite rewrite = ASTRewrite.create(astFactory);
 
-            // Format the extracted code with proper indentation
-            String formattedBody = formatExtractedBody(selectedCode, bodyIndent);
-
-            // Build the new method. If the containing method declares
-            // method-level type parameters (`<T extends Bound>`), the
-            // extracted body may reference them — propagate the clause to
-            // the new method so the references resolve. Over-declaration
-            // (copying params the body doesn't use) is harmless; missing
-            // them produces uncompilable code.
-            String containingTypeParams = formatContainingMethodTypeParameters(containingMethod);
-
-            StringBuilder newMethod = new StringBuilder();
-            newMethod.append("\n\n").append(methodIndent);
-            newMethod.append("private ");
-            if (!containingTypeParams.isEmpty()) {
-                newMethod.append(containingTypeParams).append(" ");
+            MethodDeclaration newMethod = astFactory.newMethodDeclaration();
+            newMethod.modifiers().addAll(astFactory.newModifiers(Modifier.PRIVATE));
+            for (Object tpObj : containingMethod.typeParameters()) {
+                TypeParameter tp = (TypeParameter) tpObj;
+                String tpText = source.substring(tp.getStartPosition(),
+                    tp.getStartPosition() + tp.getLength());
+                newMethod.typeParameters().add(
+                    rewrite.createStringPlaceholder(tpText, ASTNode.TYPE_PARAMETER));
             }
-            newMethod.append(returnType).append(" ").append(methodName);
-            newMethod.append("(").append(params).append(") {\n");
-            newMethod.append(formattedBody);
-            newMethod.append(returnStatement);
-            newMethod.append("\n").append(methodIndent).append("}");
+            newMethod.setName(astFactory.newSimpleName(methodName));
+            newMethod.setReturnType2((Type) rewrite.createStringPlaceholder(
+                returnType, ASTNode.SIMPLE_TYPE));
+            for (VariableInfo param : analysis.parameters) {
+                SingleVariableDeclaration svd = astFactory.newSingleVariableDeclaration();
+                svd.setType((Type) rewrite.createStringPlaceholder(param.type, ASTNode.SIMPLE_TYPE));
+                svd.setName(astFactory.newSimpleName(param.name));
+                newMethod.parameters().add(svd);
+            }
+            Block newBody = astFactory.newBlock();
+            newBody.statements().add(rewrite.createStringPlaceholder(
+                stripCommonIndent(selectedCode), ASTNode.EXPRESSION_STATEMENT));
+            if (!returnVars.isEmpty()) {
+                ReturnStatement ret = astFactory.newReturnStatement();
+                ret.setExpression(astFactory.newSimpleName(returnVars.get(0)));
+                newBody.statements().add(ret);
+            }
+            newMethod.setBody(newBody);
+
+            ListRewrite bodyDeclarations = rewrite.getListRewrite(containingType,
+                containingType.getBodyDeclarationsProperty());
+            bodyDeclarations.insertAfter(newMethod, containingMethod, null);
+
+            TextEdit rewriteEdit = rewrite.rewriteAST();
+            List<Map<String, Object>> edits = TextEditConverter.toEditMaps(rewriteEdit, source, ast);
+            if (edits.size() != 1 || !"insert".equals(edits.get(0).get("type"))) {
+                return ToolResponse.internalError(
+                    "Unexpected rewrite shape for the new method insertion: " + edits);
+            }
+            String newMethodCode = ((String) edits.get(0).get("newText")).trim();
 
             // Build the method call. If the returned variable was declared
             // inside the selection, its original declaration was extracted
@@ -227,22 +250,9 @@ public class ExtractMethodTool extends AbstractTool {
             methodCall.append(String.join(", ", paramNames));
             methodCall.append(");");
 
-            // Calculate insertion point for new method
-            int insertOffset = containingMethod.getStartPosition() + containingMethod.getLength();
-            int insertLine = ast.getLineNumber(insertOffset) - 1;
-
-            // Build edits
-            List<Map<String, Object>> edits = new ArrayList<>();
-
-            // Edit 1: Insert new method
-            Map<String, Object> insertEdit = new LinkedHashMap<>();
-            insertEdit.put("type", "insert");
-            insertEdit.put("line", insertLine);
-            insertEdit.put("offset", insertOffset);
-            insertEdit.put("newText", newMethod.toString());
-            edits.add(insertEdit);
-
-            // Edit 2: Replace selection with method call
+            // Edit 2: replace the user's exact selection range with the call.
+            // The selection is a text range, not an AST node, so this edit is
+            // range-based by design — its newText is the call expression.
             Map<String, Object> replaceEdit = new LinkedHashMap<>();
             replaceEdit.put("type", "replace");
             replaceEdit.put("startLine", startLine);
@@ -262,7 +272,7 @@ public class ExtractMethodTool extends AbstractTool {
             data.put("parameters", analysis.parameters.stream()
                 .map(p -> Map.of("name", p.name, "type", p.type))
                 .toList());
-            data.put("newMethodCode", newMethod.toString().trim());
+            data.put("newMethodCode", newMethodCode);
             data.put("methodCall", methodCall.toString());
             data.put("edits", edits);
 
@@ -285,30 +295,31 @@ public class ExtractMethodTool extends AbstractTool {
     }
 
     /**
-     * Formats the containing method's type-parameter list as a Java source
-     * declaration clause like {@code <T extends Number, U>}, or returns the
-     * empty string when there are no parameters.
+     * Strips the common leading whitespace from the selection's continuation
+     * lines (the first line arrives already trimmed) so the placeholder text
+     * carries only the selection's RELATIVE nesting; the rewriter applies the
+     * target indentation when rendering.
      */
-    private String formatContainingMethodTypeParameters(MethodDeclaration method) {
-        @SuppressWarnings("unchecked")
-        List<TypeParameter> tps = method.typeParameters();
-        if (tps == null || tps.isEmpty()) return "";
-        StringBuilder sb = new StringBuilder("<");
-        for (int i = 0; i < tps.size(); i++) {
-            if (i > 0) sb.append(", ");
-            TypeParameter tp = tps.get(i);
-            sb.append(tp.getName().getIdentifier());
-            @SuppressWarnings("unchecked")
-            List<org.eclipse.jdt.core.dom.Type> bounds = tp.typeBounds();
-            if (bounds != null && !bounds.isEmpty()) {
-                sb.append(" extends ");
-                for (int b = 0; b < bounds.size(); b++) {
-                    if (b > 0) sb.append(" & ");
-                    sb.append(bounds.get(b).toString());
-                }
+    private String stripCommonIndent(String code) {
+        String[] lines = code.split("\n", -1);
+        int common = Integer.MAX_VALUE;
+        for (int i = 1; i < lines.length; i++) {
+            String line = lines[i];
+            if (line.isBlank()) continue;
+            int w = 0;
+            while (w < line.length() && (line.charAt(w) == ' ' || line.charAt(w) == '\t')) {
+                w++;
             }
+            common = Math.min(common, w);
         }
-        sb.append(">");
+        if (common == Integer.MAX_VALUE || common == 0) {
+            return code;
+        }
+        StringBuilder sb = new StringBuilder(lines[0]);
+        for (int i = 1; i < lines.length; i++) {
+            String line = lines[i];
+            sb.append('\n').append(line.isBlank() ? line : line.substring(common));
+        }
         return sb.toString();
     }
 
@@ -451,29 +462,6 @@ public class ExtractMethodTool extends AbstractTool {
             return assign.getLeftHandSide() == node;
         }
         return parent instanceof PostfixExpression || parent instanceof PrefixExpression;
-    }
-
-    private String getIndentation(String source, int offset) {
-        int lineStart = source.lastIndexOf('\n', offset - 1) + 1;
-        StringBuilder indent = new StringBuilder();
-        for (int i = lineStart; i < offset && i < source.length(); i++) {
-            char c = source.charAt(i);
-            if (c == ' ' || c == '\t') {
-                indent.append(c);
-            } else {
-                break;
-            }
-        }
-        return indent.toString();
-    }
-
-    private String formatExtractedBody(String code, String indent) {
-        String[] lines = code.split("\n");
-        StringBuilder result = new StringBuilder();
-        for (String line : lines) {
-            result.append(indent).append(line.trim()).append("\n");
-        }
-        return result.toString().stripTrailing();
     }
 
     private boolean isValidJavaIdentifier(String name) {
