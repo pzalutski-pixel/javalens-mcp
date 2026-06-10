@@ -472,6 +472,13 @@ class ToolContractParityTest {
         cleanupArgs.put("cleanupId", "convert_loops");
         m.put("apply_cleanup", cleanupArgs);
 
+        // encapsulate_field: RefactoringTarget.userName (0-based line 15, col 19).
+        ObjectNode encapsulateArgs = objectMapper.createObjectNode();
+        encapsulateArgs.put("filePath", refTarget);
+        encapsulateArgs.put("line", 15);
+        encapsulateArgs.put("column", 19);
+        m.put("encapsulate_field", encapsulateArgs);
+
         // Project lifecycle.
         ObjectNode healthArgs = objectMapper.createObjectNode();
         m.put("health_check", healthArgs);

@@ -58,6 +58,7 @@ import org.javalens.mcp.tools.SuggestImportsTool;
 import org.javalens.mcp.tools.GetQuickFixesTool;
 import org.javalens.mcp.tools.ApplyQuickFixTool;
 import org.javalens.mcp.tools.ApplyCleanupTool;
+import org.javalens.mcp.tools.EncapsulateFieldTool;
 import org.javalens.mcp.tools.GetComplexityMetricsTool;
 import org.javalens.mcp.tools.GetDependencyGraphTool;
 import org.javalens.mcp.tools.FindCircularDependenciesTool;
@@ -278,6 +279,7 @@ public class JavaLensApplication implements IApplication {
         toolRegistry.register(new GetQuickFixesTool(() -> jdtService));
         toolRegistry.register(new ApplyQuickFixTool(() -> jdtService));
         toolRegistry.register(new ApplyCleanupTool(() -> jdtService));
+        toolRegistry.register(new EncapsulateFieldTool(() -> jdtService));
 
         // Metrics tools
         toolRegistry.register(new GetComplexityMetricsTool(() -> jdtService));

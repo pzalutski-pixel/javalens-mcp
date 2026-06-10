@@ -1,12 +1,10 @@
 package org.javalens.mcp.cleanup;
 
 import org.eclipse.core.runtime.NullProgressMonitor;
-import org.eclipse.core.runtime.preferences.InstanceScope;
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTParser;
 import org.eclipse.jdt.core.dom.CompilationUnit;
-import org.eclipse.jdt.core.manipulation.JavaManipulation;
 import org.eclipse.jdt.core.refactoring.CompilationUnitChange;
 import org.eclipse.jdt.internal.corext.fix.BooleanValueRatherThanComparisonFixCore;
 import org.eclipse.jdt.internal.corext.fix.ConvertLoopFixCore;
@@ -19,7 +17,6 @@ import org.eclipse.jdt.internal.corext.fix.PatternMatchingForInstanceofFixCore;
 import org.eclipse.jdt.internal.corext.fix.StringConcatToTextBlockFixCore;
 import org.eclipse.jdt.internal.corext.fix.SwitchExpressionsFixCore;
 import org.eclipse.jdt.ui.cleanup.ICleanUpFix;
-import org.osgi.service.prefs.Preferences;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -77,8 +74,6 @@ public final class CleanUpInvoker {
             ast -> OverriddenAssignmentFixCore.createCleanUp(ast, true)));
     }
 
-    private static volatile boolean environmentReady = false;
-
     private CleanUpInvoker() {
     }
 
@@ -108,7 +103,7 @@ public final class CleanUpInvoker {
                 + ". Supported: " + supportedCleanUps());
         }
 
-        ensureHeadlessEnvironment();
+        org.javalens.mcp.rewrite.HeadlessJdtEnvironment.ensure();
 
         ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
         parser.setSource(cu);
@@ -129,37 +124,6 @@ public final class CleanUpInvoker {
         String preview = change.getPreviewContent(new NullProgressMonitor());
         boolean changed = !preview.equals(original);
         return new CleanUpResult(changed, changed ? preview : original, changed ? change.getName() : null);
-    }
-
-    /**
-     * Seed the minimal preference state the clean-up operations need to run
-     * outside the Eclipse IDE. Idempotent.
-     */
-    private static void ensureHeadlessEnvironment() {
-        if (environmentReady) {
-            return;
-        }
-        synchronized (CleanUpInvoker.class) {
-            if (environmentReady) {
-                return;
-            }
-            if (JavaManipulation.getPreferenceNodeId() == null) {
-                JavaManipulation.setPreferenceNodeId(JavaManipulation.ID_PLUGIN);
-            }
-            // The import rewrite used by several clean-ups reads these; without
-            // them it throws on a null import order. These mirror JDT's defaults.
-            Preferences node = InstanceScope.INSTANCE.getNode(JavaManipulation.ID_PLUGIN);
-            putIfAbsent(node, "org.eclipse.jdt.ui.importorder", "java;javax;jakarta;org;com");
-            putIfAbsent(node, "org.eclipse.jdt.ui.ondemandthreshold", "99");
-            putIfAbsent(node, "org.eclipse.jdt.ui.staticondemandthreshold", "99");
-            environmentReady = true;
-        }
-    }
-
-    private static void putIfAbsent(Preferences node, String key, String value) {
-        if (node.get(key, null) == null) {
-            node.put(key, value);
-        }
     }
 
     /** The outcome of a clean-up: whether anything changed, the resulting source, and a label. */
