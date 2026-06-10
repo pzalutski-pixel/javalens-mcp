@@ -68,6 +68,17 @@ public final class HeadlessJdtEnvironment {
                     throw new IllegalStateException("Could not seed JDT code templates", e);
                 }
             }
+
+            // Member-sort-order cache: structural refactorings (pull-up & co.)
+            // consult it when placing members; the plugin's default instance is
+            // never installed headlessly, leaving its preferences null.
+            try {
+                var membersOrderCache =
+                    new org.eclipse.jdt.internal.core.manipulation.MembersOrderPreferenceCacheCommon();
+                membersOrderCache.install();
+            } catch (Exception e) {
+                throw new IllegalStateException("Could not install members-order cache", e);
+            }
             ready = true;
         }
     }

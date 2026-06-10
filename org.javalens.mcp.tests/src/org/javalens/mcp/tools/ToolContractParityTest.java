@@ -479,6 +479,14 @@ class ToolContractParityTest {
         encapsulateArgs.put("column", 19);
         m.put("encapsulate_field", encapsulateArgs);
 
+        // pull_up: any member position; a refusal (no project superclass) is
+        // still a well-formed response for the parity contract.
+        ObjectNode pullUpArgs = objectMapper.createObjectNode();
+        pullUpArgs.put("filePath", calcPath);
+        pullUpArgs.put("line", 14);
+        pullUpArgs.put("column", 15);
+        m.put("pull_up", pullUpArgs);
+
         // Project lifecycle.
         ObjectNode healthArgs = objectMapper.createObjectNode();
         m.put("health_check", healthArgs);
