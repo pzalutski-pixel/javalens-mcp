@@ -38,6 +38,9 @@ public class ApplyCleanupTool extends AbstractTool {
 
     @Override
     public String getDescription() {
+        StringBuilder catalog = new StringBuilder();
+        CleanUpInvoker.catalog().forEach((id, description) ->
+            catalog.append("            - ").append(id).append(": ").append(description).append('\n'));
         return """
             Apply a JDT code clean-up to a file and return the rewritten source.
 
@@ -46,7 +49,7 @@ public class ApplyCleanupTool extends AbstractTool {
             NOT written — apply the returned source yourself).
 
             Supported cleanupId values:
-            - convert_loops: rewrite index- and iterator-based for loops as enhanced for loops
+            """ + catalog + """
 
             Requires load_project to be called first.
             """;

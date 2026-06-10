@@ -8,13 +8,21 @@ import org.eclipse.jdt.core.dom.ASTParser;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.manipulation.JavaManipulation;
 import org.eclipse.jdt.core.refactoring.CompilationUnitChange;
+import org.eclipse.jdt.internal.corext.fix.BooleanValueRatherThanComparisonFixCore;
 import org.eclipse.jdt.internal.corext.fix.ConvertLoopFixCore;
+import org.eclipse.jdt.internal.corext.fix.DoWhileRatherThanWhileFixCore;
+import org.eclipse.jdt.internal.corext.fix.ElseIfFixCore;
+import org.eclipse.jdt.internal.corext.fix.InvertEqualsFixCore;
+import org.eclipse.jdt.internal.corext.fix.LambdaExpressionsFixCore;
+import org.eclipse.jdt.internal.corext.fix.OverriddenAssignmentFixCore;
+import org.eclipse.jdt.internal.corext.fix.PatternMatchingForInstanceofFixCore;
+import org.eclipse.jdt.internal.corext.fix.StringConcatToTextBlockFixCore;
+import org.eclipse.jdt.internal.corext.fix.SwitchExpressionsFixCore;
 import org.eclipse.jdt.ui.cleanup.ICleanUpFix;
 import org.osgi.service.prefs.Preferences;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.Set;
 import java.util.function.Function;
 
 /**
@@ -30,12 +38,43 @@ import java.util.function.Function;
  */
 public final class CleanUpInvoker {
 
-    /** Clean-up id -> factory producing the whole-file fix for a parsed AST. */
-    private static final Map<String, Function<CompilationUnit, ICleanUpFix>> CLEAN_UPS = new LinkedHashMap<>();
+    /** A catalog entry: the whole-file fix factory plus the AI-facing description. */
+    private record CleanUpDef(String description, Function<CompilationUnit, ICleanUpFix> factory) {
+    }
+
+    /** Clean-up id -> definition. Iteration order is the documentation order. */
+    private static final Map<String, CleanUpDef> CLEAN_UPS = new LinkedHashMap<>();
     static {
-        // Convert index-based and iterator-based for loops to enhanced for loops.
-        CLEAN_UPS.put("convert_loops",
-            ast -> ConvertLoopFixCore.createCleanUp(ast, true, true, false, false));
+        CLEAN_UPS.put("convert_loops", new CleanUpDef(
+            "rewrite index- and iterator-based for loops as enhanced for loops",
+            ast -> ConvertLoopFixCore.createCleanUp(ast, true, true, false, false)));
+        CLEAN_UPS.put("convert_to_lambda", new CleanUpDef(
+            "convert anonymous classes implementing a functional interface to lambdas",
+            ast -> LambdaExpressionsFixCore.createCleanUp(ast, true, false, false)));
+        CLEAN_UPS.put("pattern_matching_instanceof", new CleanUpDef(
+            "use pattern matching for instanceof checks followed by a cast",
+            PatternMatchingForInstanceofFixCore::createCleanUp));
+        CLEAN_UPS.put("convert_to_switch_expression", new CleanUpDef(
+            "convert assignment/return switch statements to switch expressions",
+            SwitchExpressionsFixCore::createCleanUp));
+        CLEAN_UPS.put("string_concat_to_text_block", new CleanUpDef(
+            "convert multi-line string concatenations to text blocks",
+            ast -> StringConcatToTextBlockFixCore.createCleanUp(ast, false)));
+        CLEAN_UPS.put("do_while_rather_than_while", new CleanUpDef(
+            "replace while loops that always run once with do-while loops",
+            DoWhileRatherThanWhileFixCore::createCleanUp));
+        CLEAN_UPS.put("invert_equals", new CleanUpDef(
+            "invert equals() calls so the constant is the receiver (avoids NPEs)",
+            InvertEqualsFixCore::createCleanUp));
+        CLEAN_UPS.put("boolean_value_rather_than_comparison", new CleanUpDef(
+            "simplify comparisons with boolean literals (x == true -> x)",
+            BooleanValueRatherThanComparisonFixCore::createCleanUp));
+        CLEAN_UPS.put("else_if", new CleanUpDef(
+            "collapse else blocks containing a lone if into else-if chains",
+            ElseIfFixCore::createCleanUp));
+        CLEAN_UPS.put("overridden_assignment", new CleanUpDef(
+            "remove initializers that are overwritten before being read",
+            ast -> OverriddenAssignmentFixCore.createCleanUp(ast, true)));
     }
 
     private static volatile boolean environmentReady = false;
@@ -43,8 +82,15 @@ public final class CleanUpInvoker {
     private CleanUpInvoker() {
     }
 
+    /** Clean-up id -> AI-facing description, in documentation order. */
+    public static Map<String, String> catalog() {
+        Map<String, String> catalog = new LinkedHashMap<>();
+        CLEAN_UPS.forEach((id, def) -> catalog.put(id, def.description()));
+        return catalog;
+    }
+
     /** The clean-up ids this tool can apply. */
-    public static Set<String> supportedCleanUps() {
+    public static java.util.Set<String> supportedCleanUps() {
         return CLEAN_UPS.keySet();
     }
 
@@ -56,8 +102,8 @@ public final class CleanUpInvoker {
      * @throws IllegalArgumentException if the id is unknown
      */
     public static CleanUpResult apply(ICompilationUnit cu, String cleanUpId) throws Exception {
-        Function<CompilationUnit, ICleanUpFix> factory = CLEAN_UPS.get(cleanUpId);
-        if (factory == null) {
+        CleanUpDef def = CLEAN_UPS.get(cleanUpId);
+        if (def == null) {
             throw new IllegalArgumentException("Unknown cleanUpId: " + cleanUpId
                 + ". Supported: " + supportedCleanUps());
         }
@@ -71,7 +117,7 @@ public final class CleanUpInvoker {
 
         String original = cu.getSource();
 
-        ICleanUpFix fix = factory.apply(ast);
+        ICleanUpFix fix = def.factory().apply(ast);
         if (fix == null) {
             return new CleanUpResult(false, original, null);
         }
