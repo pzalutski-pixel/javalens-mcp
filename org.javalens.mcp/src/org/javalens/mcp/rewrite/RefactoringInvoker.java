@@ -105,11 +105,15 @@ public final class RefactoringInvoker {
 
         String changeClass = change.getClass().getSimpleName();
 
-        // A new compilation unit: surface its path and full content.
-        if (changeClass.startsWith("Create") && change instanceof TextEditBasedChange created) {
+        // A new file: surface its path and full content.
+        if (change instanceof org.eclipse.jdt.internal.corext.refactoring.nls.changes.CreateTextFileChange createChange) {
             Map<String, String> file = new LinkedHashMap<>();
-            file.put("filePath", describeModifiedElement(change, service));
-            file.put("content", created.getPreviewContent(new NullProgressMonitor()));
+            String path = change instanceof
+                org.eclipse.jdt.internal.corext.refactoring.changes.CreateCompilationUnitChange cuChange
+                ? formatCuPath(cuChange.getCu(), service)
+                : createChange.getName();
+            file.put("filePath", path);
+            file.put("content", createChange.getPreview());
             createdFiles.add(file);
             return;
         }
@@ -118,12 +122,10 @@ public final class RefactoringInvoker {
         // emit edit trees that can include copy/move edits whose semantics a
         // flattener cannot soundly reproduce, so the conversion is diff-based:
         // the change's preview content against the current source, reduced to
-        // one minimal-span replace edit per file.
-        if (change instanceof TextEditBasedChange textChange
-                && change.getModifiedElement() instanceof IJavaElement element) {
-            ICompilationUnit cu = element instanceof ICompilationUnit unit
-                ? unit
-                : (ICompilationUnit) element.getAncestor(IJavaElement.COMPILATION_UNIT);
+        // one minimal-span replace edit per file. The modified element varies
+        // by change subclass (the CU, another Java element, or the IFile).
+        if (change instanceof TextEditBasedChange textChange) {
+            ICompilationUnit cu = resolveCompilationUnit(change.getModifiedElement());
             if (cu != null) {
                 String source = cu.getSource();
                 String preview = textChange.getPreviewContent(new NullProgressMonitor());
@@ -192,17 +194,27 @@ public final class RefactoringInvoker {
         return edit;
     }
 
-    private static String describeModifiedElement(Change change, IJdtService service) {
-        Object element = change.getModifiedElement();
+    /** The CU a change targets, from whatever form its modified element takes. */
+    private static ICompilationUnit resolveCompilationUnit(Object element) {
         if (element instanceof ICompilationUnit cu) {
-            return formatCuPath(cu, service);
+            return cu;
         }
         if (element instanceof IJavaElement javaElement) {
-            ICompilationUnit cu =
-                (ICompilationUnit) javaElement.getAncestor(IJavaElement.COMPILATION_UNIT);
-            if (cu != null) {
-                return formatCuPath(cu, service);
-            }
+            return (ICompilationUnit) javaElement.getAncestor(IJavaElement.COMPILATION_UNIT);
+        }
+        if (element instanceof org.eclipse.core.resources.IFile file
+                && org.eclipse.jdt.core.JavaCore.create(file) instanceof ICompilationUnit cu) {
+            return cu;
+        }
+        return null;
+    }
+
+    private static String describeModifiedElement(Change change, IJdtService service) {
+        ICompilationUnit cu = resolveCompilationUnit(change.getModifiedElement());
+        if (cu != null) {
+            return formatCuPath(cu, service);
+        }
+        if (change.getModifiedElement() instanceof IJavaElement javaElement) {
             return javaElement.getElementName();
         }
         return change.getName();
