@@ -30,6 +30,7 @@ import org.javalens.mcp.tools.GetCallHierarchyIncomingTool;
 import org.javalens.mcp.tools.GetCallHierarchyOutgoingTool;
 import org.javalens.mcp.tools.FindFieldWritesTool;
 import org.javalens.mcp.tools.FindTestsTool;
+import org.javalens.mcp.tools.FindUnreachableCodeTool;
 import org.javalens.mcp.tools.FindUnusedCodeTool;
 import org.javalens.mcp.tools.FindPossibleBugsTool;
 import org.javalens.mcp.tools.RenameSymbolTool;
@@ -248,6 +249,7 @@ public class JavaLensApplication implements IApplication {
         toolRegistry.register(new FindFieldWritesTool(() -> jdtService));
         toolRegistry.register(new FindTestsTool(() -> jdtService));
         toolRegistry.register(new FindUnusedCodeTool(() -> jdtService));
+        toolRegistry.register(new FindUnreachableCodeTool(() -> jdtService));
         toolRegistry.register(new FindPossibleBugsTool(() -> jdtService));
 
         // Refactoring tools

@@ -436,6 +436,9 @@ class ToolContractParityTest {
         ObjectNode findUnusedArgs = objectMapper.createObjectNode();
         m.put("find_unused_code", findUnusedArgs);
 
+        ObjectNode findUnreachableArgs = objectMapper.createObjectNode();
+        m.put("find_unreachable_code", findUnreachableArgs);
+
         ObjectNode getDeps = objectMapper.createObjectNode();
         m.put("get_dependency_graph", getDeps);
 

@@ -5,13 +5,8 @@ import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTParser;
 import org.eclipse.jdt.core.dom.ASTVisitor;
-import org.eclipse.jdt.core.dom.Annotation;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
-import org.eclipse.jdt.core.dom.QualifiedName;
-import org.eclipse.jdt.core.dom.SimpleName;
-import org.eclipse.jdt.core.dom.SingleMemberAnnotation;
-import org.eclipse.jdt.core.dom.StringLiteral;
 import org.eclipse.jdt.core.dom.TypeDeclaration;
 import org.javalens.core.IJdtService;
 import org.javalens.mcp.models.ResponseMeta;
@@ -145,17 +140,7 @@ public class FindTestsTool extends AbstractTool {
             public boolean visit(TypeDeclaration node) {
                 List<Map<String, Object>> testMethods = new ArrayList<>();
                 boolean isTestClass = false;
-                boolean classDisabled = false;
-
-                // Check class-level annotations
-                for (Object mod : node.modifiers()) {
-                    if (mod instanceof Annotation ann) {
-                        String annName = getAnnotationName(ann);
-                        if (annName.equals("Disabled") || annName.equals("Ignore")) {
-                            classDisabled = true;
-                        }
-                    }
-                }
+                boolean classDisabled = TestMethodDetector.isDisabled(node);
 
                 // Check methods
                 for (MethodDeclaration method : node.getMethods()) {
@@ -190,7 +175,7 @@ public class FindTestsTool extends AbstractTool {
                     }
 
                     // Detect test framework
-                    String framework = detectFramework(node);
+                    String framework = TestMethodDetector.detectFramework(node);
                     if (framework != null) {
                         classInfo.put("framework", framework);
                     }
@@ -207,32 +192,7 @@ public class FindTestsTool extends AbstractTool {
 
     private Map<String, Object> checkTestMethod(MethodDeclaration method, CompilationUnit ast,
                                                  Path file, IJdtService service) {
-        boolean isTest = false;
-        boolean isDisabled = false;
-        String displayName = null;
-
-        for (Object mod : method.modifiers()) {
-            if (mod instanceof Annotation ann) {
-                String annName = getAnnotationName(ann);
-
-                if (annName.equals("Test")) {
-                    isTest = true;
-                } else if (annName.equals("ParameterizedTest") ||
-                           annName.equals("RepeatedTest") ||
-                           annName.equals("TestFactory") ||
-                           annName.equals("TestTemplate")) {
-                    isTest = true;
-                } else if (annName.equals("Disabled") || annName.equals("Ignore")) {
-                    isDisabled = true;
-                } else if (annName.equals("DisplayName") && ann instanceof SingleMemberAnnotation sma) {
-                    if (sma.getValue() instanceof StringLiteral sl) {
-                        displayName = sl.getLiteralValue();
-                    }
-                }
-            }
-        }
-
-        if (!isTest) {
+        if (!TestMethodDetector.isTestMethod(method)) {
             return null;
         }
 
@@ -242,56 +202,15 @@ public class FindTestsTool extends AbstractTool {
         int methodLine = ast.getLineNumber(method.getName().getStartPosition()) - 1;
         testInfo.put("line", methodLine);
 
+        String displayName = TestMethodDetector.displayName(method);
         if (displayName != null) {
             testInfo.put("displayName", displayName);
         }
-        if (isDisabled) {
+        if (TestMethodDetector.isDisabled(method)) {
             testInfo.put("disabled", true);
         }
 
         return testInfo;
-    }
-
-    private String getAnnotationName(Annotation ann) {
-        if (ann.getTypeName() instanceof SimpleName sn) {
-            return sn.getIdentifier();
-        } else if (ann.getTypeName() instanceof QualifiedName qn) {
-            return qn.getName().getIdentifier();
-        }
-        return ann.getTypeName().toString();
-    }
-
-    private String detectFramework(TypeDeclaration type) {
-        for (MethodDeclaration method : type.getMethods()) {
-            for (Object mod : method.modifiers()) {
-                if (mod instanceof Annotation ann) {
-                    String fullName = ann.getTypeName().toString();
-                    if (fullName.contains("jupiter") || fullName.contains("junit5")) {
-                        return "JUnit5";
-                    } else if (fullName.contains("junit4") || fullName.equals("org.junit.Test")) {
-                        return "JUnit4";
-                    } else if (fullName.contains("testng")) {
-                        return "TestNG";
-                    }
-                }
-            }
-        }
-
-        // Heuristic based on lifecycle annotations
-        for (MethodDeclaration method : type.getMethods()) {
-            for (Object mod : method.modifiers()) {
-                if (mod instanceof Annotation ann) {
-                    String annName = getAnnotationName(ann);
-                    if (annName.equals("BeforeEach") || annName.equals("AfterEach")) {
-                        return "JUnit5";
-                    } else if (annName.equals("Before") || annName.equals("After")) {
-                        return "JUnit4";
-                    }
-                }
-            }
-        }
-
-        return null;
     }
 
     private boolean matchesGlob(String name, String pattern) {
