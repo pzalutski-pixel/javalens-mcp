@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Java 21](https://img.shields.io/badge/Java-21-orange.svg)](https://openjdk.org/projects/jdk/21/)
 
-An MCP server providing 63 semantic analysis tools for Java, built directly on Eclipse JDT for compiler-accurate code understanding.
+An MCP server providing 64 semantic analysis tools for Java, built directly on Eclipse JDT for compiler-accurate code understanding.
 
 ## Built for AI Agents
 
@@ -25,6 +25,8 @@ JavaLens provides **compiler-accurate code analysis** through Eclipse JDT—the 
 - Method overloading and overriding
 - Generic type arguments
 - Import resolution and classpath dependencies
+- Java source from version 1.1 through **Java 25** (markdown Javadoc, module imports, compact source files, flexible constructor bodies)
+- **Lombok**-generated members — a bundled agent makes `@Data` accessors and the like resolve, so code using them is not flagged as undefined
 
 **Example:** Finding all places where `UserService.save()` is called:
 
@@ -386,6 +388,7 @@ Subprocess invocations of `mvn` / `gradle` happen during project load. If a tool
 | `JAVALENS_TIMEOUT_SECONDS` | Operation timeout | 30 |
 | `JAVALENS_LOG_LEVEL` | TRACE/DEBUG/INFO/WARN/ERROR | INFO |
 | `JAVA_TOOL_OPTIONS` | JVM options, e.g. `-Xmx2g` for large projects | (default: 512m via eclipse.ini) |
+| `JAVALENS_LOMBOK_JAR` | Path to the Lombok agent jar attached at launch; overrides the bundled one | (bundled) |
 
 ## Building from Source
 
@@ -427,7 +430,7 @@ Build-system coverage is structured as focused per-bug tests plus realistic end-
 ```mermaid
 flowchart TD
     Client["<b>MCP Client</b>"]
-    MCP["<b>org.javalens.mcp</b><br/>McpProtocolHandler → ToolRegistry → 63 Tools"]
+    MCP["<b>org.javalens.mcp</b><br/>McpProtocolHandler → ToolRegistry → 64 Tools"]
     Core["<b>org.javalens.core</b><br/>JdtServiceImpl → WorkspaceManager, SearchService"]
     JDT["<b>Eclipse JDT Core</b> (via OSGi / Equinox)<br/>IWorkspace, IJavaProject, SearchEngine, ASTParser"]
 

@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.4.0] - 2026-06-09
+
+### Added
+
+- Java 25 language support. The target platform moves to Eclipse 2025-12 (JDT 3.44), and the tools handle the new standard language features rather than merely parsing them: markdown documentation comments (`///`), module import declarations (`import module M;`), compact source files with an implicitly declared class, and flexible constructor bodies (statements before `super()`/`this()`).
+- Lombok support. A Lombok agent is bundled with the distribution and attached at JVM launch (`-javaagent:lombok.jar=ECJ`), so JDT's model surfaces Lombok-generated members: `@Data` accessors appear in `get_type_members` and code calling them no longer reports false "undefined" errors. `JAVALENS_LOMBOK_JAR` overrides the bundled jar.
+- `apply_cleanup` tool. Applies JDT's own clean-up operations headlessly (starting with `convert_loops`, which rewrites index/iterator `for` loops as enhanced `for` loops) and returns the rewritten source without writing the file.
+
+### Fixed
+
+- Reference search now finds constructor delegations (`super(...)`/`this(...)`) that are not the first statement of a constructor — the shape flexible constructor bodies introduce. JDT's indexed search misses these; `find_references`, `change_method_signature`, and the call-hierarchy tools all inherited the blind spot and now report them.
+- `get_complexity_metrics` and `find_large_classes` now measure the implicitly declared class of a compact source file (previously skipped because it is not a `TypeDeclaration`); `find_large_classes` also reports its name and line span instead of an empty name and a `-1` count.
+- `get_javadoc` parses markdown (`///`) documentation comments; `organize_imports`, `analyze_file`, `get_dependency_graph`, and `find_circular_dependencies` handle module imports instead of mis-deriving a package from them.
+- `get_diagnostics` counts only errors and warnings; JDT info-severity problems no longer inflate the total.
+
 ## [1.3.6] - 2026-06-05
 
 ### Fixed
@@ -293,6 +308,8 @@ Initial release of JavaLens MCP Server.
 - Maven and Gradle project support
 - 347 tests
 
+[1.4.0]: https://github.com/pzalutski-pixel/javalens-mcp/compare/v1.3.6...v1.4.0
+[1.3.6]: https://github.com/pzalutski-pixel/javalens-mcp/compare/v1.3.5...v1.3.6
 [1.3.5]: https://github.com/pzalutski-pixel/javalens-mcp/compare/v1.3.4...v1.3.5
 [1.3.4]: https://github.com/pzalutski-pixel/javalens-mcp/compare/v1.3.3...v1.3.4
 [1.3.3]: https://github.com/pzalutski-pixel/javalens-mcp/compare/v1.3.2...v1.3.3

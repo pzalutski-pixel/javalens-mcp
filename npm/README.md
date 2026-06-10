@@ -4,12 +4,14 @@
 [![npm](https://img.shields.io/npm/v/javalens-mcp.svg)](https://www.npmjs.com/package/javalens-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/pzalutski-pixel/javalens-mcp/blob/master/LICENSE)
 
-An MCP server providing **63 semantic analysis tools** for Java, built directly on Eclipse JDT for compiler-accurate code understanding.
+An MCP server providing **64 semantic analysis tools** for Java, built directly on Eclipse JDT for compiler-accurate code understanding.
 
 ## Requirements
 
-- **Java 21 or later** — required as the server runtime, analyzes Java source from version 1.1 through 25
+- **Java 21 or later** — required as the server runtime, analyzes Java source from version 1.1 through 25 (markdown Javadoc, module imports, compact source files, flexible constructor bodies)
 - **Node.js 18+** — required to run this package via `npx`. If you don't have Node.js, download JavaLens directly from [GitHub Releases](https://github.com/pzalutski-pixel/javalens-mcp/releases) instead.
+
+**Lombok** is supported out of the box: a bundled agent makes Lombok-generated members resolve, so `@Data` accessors appear in the model and code using them is not flagged as undefined. Set `JAVALENS_LOMBOK_JAR` to override the bundled agent jar.
 
 ## Quick Start
 
@@ -88,6 +90,7 @@ If `mvn` / `gradle` is missing or the subprocess fails, JavaLens reports a struc
 | `JAVALENS_TIMEOUT_SECONDS` | Operation timeout | 30 |
 | `JAVA_TOOL_OPTIONS` | JVM options, e.g. `-Xmx2g` for large projects | 512m |
 | `JAVALENS_LOG_LEVEL` | TRACE/DEBUG/INFO/WARN/ERROR | INFO |
+| `JAVALENS_LOMBOK_JAR` | Path to the Lombok agent jar attached at launch; overrides the bundled one | (bundled) |
 
 ## Documentation
 
