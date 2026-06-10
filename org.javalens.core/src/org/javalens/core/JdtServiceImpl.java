@@ -19,6 +19,7 @@ import org.eclipse.jdt.core.search.IJavaSearchConstants;
 import org.eclipse.jdt.core.search.SearchEngine;
 import org.eclipse.jdt.core.search.SearchPattern;
 import org.eclipse.jdt.core.search.TypeNameRequestor;
+import org.javalens.core.graph.ProjectGraphService;
 import org.javalens.core.project.BuildSystem;
 import org.javalens.core.project.ProjectImporter;
 import org.javalens.core.project.model.LoadWarning;
@@ -58,6 +59,7 @@ public class JdtServiceImpl implements IJdtService {
     private IPathUtils pathUtils;
     private IJavaProject javaProject;
     private SearchService searchService;
+    private ProjectGraphService projectGraphService;
     private Instant loadedAt;
 
     // Project info for health_check
@@ -116,6 +118,9 @@ public class JdtServiceImpl implements IJdtService {
 
         // Initialize search service
         this.searchService = new SearchService(javaProject);
+
+        // Graph service builds its graph lazily on first query
+        this.projectGraphService = new ProjectGraphService(javaProject);
 
         // Bug F fix: force the JDT search index to be ready before loadProject returns.
         // Without this, callers that issue SearchEngine queries immediately after load can
@@ -218,6 +223,11 @@ public class JdtServiceImpl implements IJdtService {
     @Override
     public SearchService getSearchService() {
         return searchService;
+    }
+
+    @Override
+    public ProjectGraphService getProjectGraphService() {
+        return projectGraphService;
     }
 
     public Instant getLoadedAt() {

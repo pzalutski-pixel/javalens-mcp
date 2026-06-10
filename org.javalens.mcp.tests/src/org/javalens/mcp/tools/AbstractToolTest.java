@@ -337,6 +337,7 @@ class AbstractToolTest {
         @Override public <T> T executeWithTimeout(java.util.concurrent.Callable<T> op, String name) { return null; }
         @Override public org.eclipse.jdt.core.IJavaProject getJavaProject() { return null; }
         @Override public org.javalens.core.search.SearchService getSearchService() { return null; }
+        @Override public org.javalens.core.graph.ProjectGraphService getProjectGraphService() { return null; }
         @Override public org.eclipse.jdt.core.ICompilationUnit getCompilationUnit(java.nio.file.Path p) { return null; }
         @Override public org.eclipse.jdt.core.IJavaElement getElementAtPosition(java.nio.file.Path p, int l, int c) { return null; }
         @Override public org.eclipse.jdt.core.IType getTypeAtPosition(java.nio.file.Path p, int l, int c) { return null; }

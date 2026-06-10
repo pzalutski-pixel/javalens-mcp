@@ -4,6 +4,7 @@ import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IJavaProject;
 import org.eclipse.jdt.core.IType;
+import org.javalens.core.graph.ProjectGraphService;
 import org.javalens.core.project.model.LoadWarning;
 import org.javalens.core.search.SearchService;
 
@@ -59,6 +60,14 @@ public interface IJdtService {
      * @return SearchService instance
      */
     SearchService getSearchService();
+
+    /**
+     * Get the whole-project graph service for reachability and
+     * transitive-impact queries. The graph builds lazily on first use.
+     *
+     * @return ProjectGraphService instance
+     */
+    ProjectGraphService getProjectGraphService();
 
     /**
      * Get the underlying Java project.

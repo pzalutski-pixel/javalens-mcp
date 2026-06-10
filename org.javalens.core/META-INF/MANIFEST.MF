@@ -8,6 +8,7 @@ Bundle-RequiredExecutionEnvironment: JavaSE-21
 Bundle-ActivationPolicy: lazy
 Export-Package: org.javalens.core,
  org.javalens.core.exceptions,
+ org.javalens.core.graph,
  org.javalens.core.project,
  org.javalens.core.project.model,
  org.javalens.core.search,
