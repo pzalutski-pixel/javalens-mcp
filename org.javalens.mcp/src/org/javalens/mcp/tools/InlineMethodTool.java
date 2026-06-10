@@ -15,6 +15,7 @@ import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.Expression;
 import org.eclipse.jdt.core.dom.ExpressionStatement;
 import org.eclipse.jdt.core.dom.IMethodBinding;
+import org.eclipse.jdt.core.dom.IVariableBinding;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.MethodInvocation;
 import org.eclipse.jdt.core.dom.NodeFinder;
@@ -27,7 +28,10 @@ import org.eclipse.jdt.core.dom.SuperFieldAccess;
 import org.eclipse.jdt.core.dom.SuperMethodInvocation;
 import org.eclipse.jdt.core.dom.SuperMethodReference;
 import org.eclipse.jdt.core.dom.ThisExpression;
+import org.eclipse.jdt.core.dom.rewrite.ASTRewrite;
+import org.eclipse.text.edits.TextEdit;
 import org.javalens.core.IJdtService;
+import org.javalens.mcp.rewrite.TextEditConverter;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
 import org.slf4j.Logger;
@@ -197,15 +201,28 @@ public class InlineMethodTool extends AbstractTool {
                     "Parameter/argument count mismatch");
             }
 
-            Map<String, String> paramSubstitutions = new HashMap<>();
+            // Bind each parameter to its argument's source text. Substitution is
+            // binding-driven: only SimpleNames that RESOLVE to the parameter are
+            // replaced, so identical text inside string literals, comments, or
+            // shadowing locals is never touched (the old word-boundary regex was).
+            String callSource = cu.getSource();
+            String methodSource = methodCu.getSource();
+            Map<String, String> argTextByParamKey = new HashMap<>();
             for (int i = 0; i < params.size(); i++) {
-                String paramName = params.get(i).getName().getIdentifier();
-                String argText = args.get(i).toString();
-                paramSubstitutions.put(paramName, argText);
+                IVariableBinding paramBinding = params.get(i).resolveBinding();
+                if (paramBinding == null) {
+                    return ToolResponse.invalidParameter("method",
+                        "Cannot resolve parameter binding for substitution");
+                }
+                Expression arg = args.get(i);
+                argTextByParamKey.put(paramBinding.getKey(),
+                    callSource.substring(arg.getStartPosition(),
+                        arg.getStartPosition() + arg.getLength()));
             }
 
-            // Build the inlined code
-            String inlinedCode = buildInlinedCode(body, paramSubstitutions, invocation, cu);
+            // Build the inlined code from method-source slices with the
+            // parameter occurrences spliced out.
+            String inlinedCode = buildInlinedCode(body, methodSource, argTextByParamKey);
 
             // Determine what to replace
             // If the invocation is the whole statement, replace the statement
@@ -223,19 +240,12 @@ public class InlineMethodTool extends AbstractTool {
                 isExpressionContext = true;
             }
 
-            // Build edit
-            List<Map<String, Object>> edits = new ArrayList<>();
-            Map<String, Object> replaceEdit = new LinkedHashMap<>();
-            replaceEdit.put("type", "replace");
-            replaceEdit.put("startLine", ast.getLineNumber(nodeToReplace.getStartPosition()) - 1);
-            replaceEdit.put("startColumn", ast.getColumnNumber(nodeToReplace.getStartPosition()));
-            replaceEdit.put("endLine", ast.getLineNumber(nodeToReplace.getStartPosition() + nodeToReplace.getLength()) - 1);
-            replaceEdit.put("endColumn", ast.getColumnNumber(nodeToReplace.getStartPosition() + nodeToReplace.getLength()));
-            replaceEdit.put("startOffset", nodeToReplace.getStartPosition());
-            replaceEdit.put("endOffset", nodeToReplace.getStartPosition() + nodeToReplace.getLength());
-            replaceEdit.put("oldText", getNodeText(cu, nodeToReplace));
-            replaceEdit.put("newText", inlinedCode);
-            edits.add(replaceEdit);
+            // Synthesize the call-site replacement via ASTRewrite.
+            ASTRewrite rewrite = ASTRewrite.create(ast.getAST());
+            rewrite.replace(nodeToReplace,
+                rewrite.createStringPlaceholder(inlinedCode, nodeToReplace.getNodeType()), null);
+            TextEdit rewriteEdit = rewrite.rewriteAST();
+            List<Map<String, Object>> edits = TextEditConverter.toEditMaps(rewriteEdit, callSource, ast);
 
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("filePath", service.getPathUtils().formatPath(path));
@@ -388,8 +398,8 @@ public class InlineMethodTool extends AbstractTool {
         return count[0];
     }
 
-    private String buildInlinedCode(Block body, Map<String, String> paramSubstitutions,
-                                    MethodInvocation invocation, ICompilationUnit callSiteCu) {
+    private String buildInlinedCode(Block body, String methodSource,
+                                    Map<String, String> argTextByParamKey) {
         @SuppressWarnings("unchecked")
         List<Statement> statements = body.statements();
 
@@ -401,8 +411,7 @@ public class InlineMethodTool extends AbstractTool {
         if (statements.size() == 1 && statements.get(0) instanceof ReturnStatement rs) {
             Expression returnExpr = rs.getExpression();
             if (returnExpr != null) {
-                String code = returnExpr.toString();
-                code = substituteParameters(code, paramSubstitutions);
+                String code = substituteParameters(returnExpr, methodSource, argTextByParamKey);
                 // If used in expression context, wrap in parentheses if needed
                 if (isComplexExpression(returnExpr)) {
                     code = "(" + code + ")";
@@ -415,9 +424,7 @@ public class InlineMethodTool extends AbstractTool {
 
         // Handle single expression statement
         if (statements.size() == 1 && statements.get(0) instanceof ExpressionStatement es) {
-            String code = es.getExpression().toString();
-            code = substituteParameters(code, paramSubstitutions);
-            return code;
+            return substituteParameters(es.getExpression(), methodSource, argTextByParamKey);
         }
 
         // Multiple statements - wrap in block or expand
@@ -431,8 +438,7 @@ public class InlineMethodTool extends AbstractTool {
         if (!endsWithReturn) {
             result.append("{\n");
             for (Statement stmt : statements) {
-                String stmtText = stmt.toString().trim();
-                stmtText = substituteParameters(stmtText, paramSubstitutions);
+                String stmtText = substituteParameters(stmt, methodSource, argTextByParamKey).trim();
                 result.append("    ").append(stmtText).append("\n");
             }
             result.append("}");
@@ -443,16 +449,14 @@ public class InlineMethodTool extends AbstractTool {
 
             result.append("/* Inlined from method - review needed */\n");
             for (int i = 0; i < statements.size() - 1; i++) {
-                String stmtText = statements.get(i).toString().trim();
-                stmtText = substituteParameters(stmtText, paramSubstitutions);
+                String stmtText = substituteParameters(statements.get(i), methodSource, argTextByParamKey).trim();
                 result.append(stmtText).append("\n");
             }
 
             // Handle the return
             ReturnStatement rs = (ReturnStatement) lastStmt;
             if (rs.getExpression() != null) {
-                String returnCode = rs.getExpression().toString();
-                returnCode = substituteParameters(returnCode, paramSubstitutions);
+                String returnCode = substituteParameters(rs.getExpression(), methodSource, argTextByParamKey);
                 result.append("/* return: ").append(returnCode).append(" */");
             }
         }
@@ -460,17 +464,37 @@ public class InlineMethodTool extends AbstractTool {
         return result.toString();
     }
 
-    private String substituteParameters(String code, Map<String, String> substitutions) {
-        // Simple word-boundary substitution
-        // This is a basic implementation - could be improved with proper AST rewriting
-        for (Map.Entry<String, String> entry : substitutions.entrySet()) {
-            String param = entry.getKey();
-            String arg = entry.getValue();
+    /**
+     * Returns {@code node}'s source slice with every SimpleName that RESOLVES
+     * to one of the method's parameters replaced by the call's argument text.
+     * Binding-driven: occurrences inside string literals or belonging to
+     * shadowing declarations are untouched by construction.
+     */
+    private String substituteParameters(ASTNode node, String methodSource,
+                                        Map<String, String> argTextByParamKey) {
+        List<SimpleName> paramReferences = new ArrayList<>();
+        node.accept(new ASTVisitor() {
+            @Override
+            public boolean visit(SimpleName name) {
+                if (name.resolveBinding() instanceof IVariableBinding vb
+                        && argTextByParamKey.containsKey(vb.getKey())) {
+                    paramReferences.add(name);
+                }
+                return true;
+            }
+        });
 
-            // Use word boundary matching
-            code = code.replaceAll("\\b" + param + "\\b", arg);
+        int nodeStart = node.getStartPosition();
+        StringBuilder out = new StringBuilder(
+            methodSource.substring(nodeStart, nodeStart + node.getLength()));
+        // Splice replacements back-to-front so earlier offsets stay valid.
+        paramReferences.sort((a, b) -> Integer.compare(b.getStartPosition(), a.getStartPosition()));
+        for (SimpleName ref : paramReferences) {
+            IVariableBinding vb = (IVariableBinding) ref.resolveBinding();
+            int from = ref.getStartPosition() - nodeStart;
+            out.replace(from, from + ref.getLength(), argTextByParamKey.get(vb.getKey()));
         }
-        return code;
+        return out.toString();
     }
 
     private boolean isComplexExpression(Expression expr) {
@@ -479,19 +503,5 @@ public class InlineMethodTool extends AbstractTool {
                nodeType == ASTNode.CONDITIONAL_EXPRESSION ||
                nodeType == ASTNode.ASSIGNMENT ||
                nodeType == ASTNode.CAST_EXPRESSION;
-    }
-
-    private String getNodeText(ICompilationUnit cu, ASTNode node) {
-        try {
-            String source = cu.getSource();
-            if (source != null) {
-                int start = node.getStartPosition();
-                int end = start + node.getLength();
-                return source.substring(start, end);
-            }
-        } catch (JavaModelException e) {
-            log.debug("Error getting node text: {}", e.getMessage());
-        }
-        return "";
     }
 }
