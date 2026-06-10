@@ -487,6 +487,12 @@ class ToolContractParityTest {
         pullUpArgs.put("column", 15);
         m.put("pull_up", pullUpArgs);
 
+        ObjectNode pushDownArgs = objectMapper.createObjectNode();
+        pushDownArgs.put("filePath", calcPath);
+        pushDownArgs.put("line", 14);
+        pushDownArgs.put("column", 15);
+        m.put("push_down", pushDownArgs);
+
         // Project lifecycle.
         ObjectNode healthArgs = objectMapper.createObjectNode();
         m.put("health_check", healthArgs);
