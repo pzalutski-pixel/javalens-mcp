@@ -26,7 +26,10 @@
                 <configuration>
                     <useUIHarness>false</useUIHarness>
                     <useUIThread>false</useUIThread>
-                    <argLine>-Xmx2048m -Djavalens.test.fixtures=${project.basedir}/../org.javalens.core.tests/test-resources/sample-projects</argLine>
+                    <!-- Attach the Lombok agent (=ECJ) so the MCP tools can be
+                         exercised against a Lombok project the way the shipped
+                         server runs; lombok.jar is staged into target/ below. -->
+                    <argLine>-Xmx2048m -javaagent:${project.build.directory}/lombok/lombok.jar=ECJ -Djavalens.test.fixtures=${project.basedir}/../org.javalens.core.tests/test-resources/sample-projects</argLine>
                     <providerHint>junit5</providerHint>
                     <trimStackTrace>false</trimStackTrace>
                     <failIfNoTests>false</failIfNoTests>
@@ -140,6 +143,31 @@
                         </dependency>
                     </dependencies>
                 </configuration>
+            </plugin>
+            <!-- Stage the Lombok agent jar so the surefire argLine can attach it. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>stage-lombok-agent</id>
+                        <phase>process-test-resources</phase>
+                        <goals>
+                            <goal>copy</goal>
+                        </goals>
+                        <configuration>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>org.projectlombok</groupId>
+                                    <artifactId>lombok</artifactId>
+                                    <version>${lombok.version}</version>
+                                    <outputDirectory>${project.build.directory}/lombok</outputDirectory>
+                                    <destFileName>lombok.jar</destFileName>
+                                </artifactItem>
+                            </artifactItems>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>
