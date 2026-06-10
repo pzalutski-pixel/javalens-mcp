@@ -11,6 +11,7 @@ import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTParser;
 import org.eclipse.jdt.core.dom.ASTVisitor;
+import org.eclipse.jdt.core.dom.ChildListPropertyDescriptor;
 import org.eclipse.jdt.core.dom.ClassInstanceCreation;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.ConstructorInvocation;
@@ -20,16 +21,21 @@ import org.eclipse.jdt.core.dom.ExpressionMethodReference;
 import org.eclipse.jdt.core.dom.IMethodBinding;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.MethodInvocation;
+import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
 import org.eclipse.jdt.core.dom.SuperConstructorInvocation;
 import org.eclipse.jdt.core.dom.SuperMethodInvocation;
 import org.eclipse.jdt.core.dom.SuperMethodReference;
+import org.eclipse.jdt.core.dom.Type;
 import org.eclipse.jdt.core.dom.TypeMethodReference;
+import org.eclipse.jdt.core.dom.rewrite.ASTRewrite;
+import org.eclipse.jdt.core.dom.rewrite.ListRewrite;
 import org.eclipse.jdt.core.search.IJavaSearchConstants;
 import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.IJdtService;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
+import org.javalens.mcp.rewrite.TextEditConverter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -219,16 +225,42 @@ public class ChangeMethodSignatureTool extends AbstractTool {
                 return ToolResponse.invalidParameter("method", "Cannot find method in AST");
             }
 
-            // Constructors are not method-name-prefixed by their "return type" — JDT
-            // surfaces `Signature.toString(method.getReturnType()) == "void"` for them,
-            // which would otherwise leak into newSignature as `void Foo(...)` (invalid
-            // Java). Skip the prefix for constructors.
+            // Synthesize the declaration change with ASTRewrite: name and (for
+            // non-constructors — they have no return-type prefix) return type are
+            // node replacements, and the parameter list is rebuilt through a
+            // ListRewrite, so separators and spacing render by construction.
+            // The contract pins ONE edit spanning the whole signature; the
+            // fine-grained rewrite edits are aggregated onto that span below.
             boolean methodIsConstructor = method.isConstructor();
-            String newSignature = methodIsConstructor
-                ? buildMethodSignature(newName, null, newParameters)
-                : buildMethodSignature(newName, newReturnType, newParameters);
+            AST declFactory = ast.getAST();
+            ASTRewrite declRewrite = ASTRewrite.create(declFactory);
+            if (!newName.equals(oldName)) {
+                declRewrite.replace(methodDecl.getName(),
+                    declRewrite.createStringPlaceholder(newName, ASTNode.SIMPLE_NAME), null);
+            }
+            if (!methodIsConstructor && methodDecl.getReturnType2() != null
+                    && !newReturnType.equals(oldReturnType)) {
+                declRewrite.replace(methodDecl.getReturnType2(),
+                    declRewrite.createStringPlaceholder(newReturnType, ASTNode.SIMPLE_TYPE), null);
+            }
+            ListRewrite paramsRewrite = declRewrite.getListRewrite(methodDecl,
+                MethodDeclaration.PARAMETERS_PROPERTY);
+            for (Object oldParam : methodDecl.parameters()) {
+                paramsRewrite.remove((ASTNode) oldParam, null);
+            }
+            for (ParameterInfo param : newParameters) {
+                SingleVariableDeclaration svd = declFactory.newSingleVariableDeclaration();
+                svd.setType((Type) declRewrite.createStringPlaceholder(param.type, ASTNode.SIMPLE_TYPE));
+                svd.setName(declFactory.newSimpleName(param.name));
+                paramsRewrite.insertLast(svd, null);
+            }
+
             int sigStart = getSignatureStart(methodDecl, ast);
             int sigEnd = getSignatureEnd(methodDecl);
+            String methodSource = methodCu.getSource();
+            String newSignature = TextEditConverter.applyToSlice(
+                TextEditConverter.toEditMaps(declRewrite.rewriteAST(), methodSource, ast),
+                sigStart, sigEnd, methodSource);
 
             String methodFilePath = service.getPathUtils().formatPath(
                 Path.of(methodCu.getResource().getLocation().toOSString()));
@@ -241,7 +273,7 @@ public class ChangeMethodSignatureTool extends AbstractTool {
             declEdit.put("endColumn", ast.getColumnNumber(sigEnd));
             declEdit.put("startOffset", sigStart);
             declEdit.put("endOffset", sigEnd);
-            declEdit.put("oldSignature", getSignatureText(methodCu, sigStart, sigEnd));
+            declEdit.put("oldSignature", methodSource.substring(sigStart, sigEnd));
             declEdit.put("newSignature", newSignature);
             declEdit.put("isDeclaration", true);
 
@@ -363,26 +395,6 @@ public class ChangeMethodSignatureTool extends AbstractTool {
         return result[0];
     }
 
-    /**
-     * Pass {@code returnType == null} for constructors (which have no return type prefix
-     * in valid Java). Pass the explicit type string for methods.
-     */
-    private String buildMethodSignature(String name, String returnType, List<ParameterInfo> params) {
-        StringBuilder sig = new StringBuilder();
-        if (returnType != null) {
-            sig.append(returnType).append(" ");
-        }
-        sig.append(name).append("(");
-
-        for (int i = 0; i < params.size(); i++) {
-            if (i > 0) sig.append(", ");
-            sig.append(params.get(i).type).append(" ").append(params.get(i).name);
-        }
-
-        sig.append(")");
-        return sig.toString();
-    }
-
     private int getSignatureStart(MethodDeclaration decl, CompilationUnit ast) {
         // Return type start
         if (decl.getReturnType2() != null) {
@@ -402,18 +414,6 @@ public class ChangeMethodSignatureTool extends AbstractTool {
         }
         // No parameters - find the closing paren
         return decl.getName().getStartPosition() + decl.getName().getLength() + 2; // +2 for '()'
-    }
-
-    private String getSignatureText(ICompilationUnit cu, int start, int end) {
-        try {
-            String source = cu.getSource();
-            if (source != null && start >= 0 && end <= source.length()) {
-                return source.substring(start, end);
-            }
-        } catch (JavaModelException e) {
-            log.debug("Error getting signature: {}", e.getMessage());
-        }
-        return "";
     }
 
     private void updateCallSite(SearchMatch match, String oldName, String newName,
@@ -580,11 +580,23 @@ public class ChangeMethodSignatureTool extends AbstractTool {
 
         ASTNode mi = callNode[0];
 
-        // Extract arguments based on node type.
+        // Rebuild the argument list through a ListRewrite: surviving arguments
+        // keep their original source text, removed ones disappear, new ones
+        // take the default value (or a TODO marker), and the renamed method
+        // name is a node replacement. The call's header — qualifier, the
+        // super/this/new keywords, the constructed type — is untouched source,
+        // so the per-node-type re-rendering is gone by construction. The
+        // contract pins ONE edit spanning the whole call; the fine-grained
+        // rewrite edits are aggregated onto that span.
+        String callSource = cu.getSource();
         @SuppressWarnings("unchecked")
         List<Expression> oldArgs = (List<Expression>) callArguments(mi);
-        List<String> newArgs = new ArrayList<>();
 
+        ASTRewrite callRewrite = ASTRewrite.create(ast.getAST());
+        ListRewrite argsRewrite = callRewrite.getListRewrite(mi, argumentsProperty(mi));
+        for (Expression oldArg : oldArgs) {
+            argsRewrite.remove(oldArg, null);
+        }
         for (int newIdx = 0; newIdx < newParams.size(); newIdx++) {
             ParameterInfo newParam = newParams.get(newIdx);
             int oldIdx = -1;
@@ -595,51 +607,30 @@ public class ChangeMethodSignatureTool extends AbstractTool {
                 }
             }
 
+            String argText;
             if (oldIdx >= 0 && oldIdx < oldArgs.size()) {
-                newArgs.add(oldArgs.get(oldIdx).toString());
+                Expression oldArg = oldArgs.get(oldIdx);
+                argText = callSource.substring(oldArg.getStartPosition(),
+                    oldArg.getStartPosition() + oldArg.getLength());
             } else if (newParam.defaultValue != null) {
-                newArgs.add(newParam.defaultValue);
+                argText = newParam.defaultValue;
             } else {
-                newArgs.add("/* TODO: " + newParam.name + " */");
+                argText = "/* TODO: " + newParam.name + " */";
             }
+            argsRewrite.insertLast(
+                callRewrite.createStringPlaceholder(argText, ASTNode.SIMPLE_NAME), null);
+        }
+        SimpleName invocationName = invocationName(mi);
+        if (invocationName != null && !newName.equals(oldName)) {
+            callRewrite.replace(invocationName,
+                callRewrite.createStringPlaceholder(newName, ASTNode.SIMPLE_NAME), null);
         }
 
-        // Build the replacement call text. The header differs by node type:
-        //   MethodInvocation: optional qualifier + "." + methodName + "(args)"
-        //   SuperMethodInvocation: optional qualifier + "super." + methodName + "(args)"
-        //   ClassInstanceCreation: "new " + typeName + "(args)"
-        //   ConstructorInvocation: "this(args)"
-        //   SuperConstructorInvocation: optional qualifier + "super(args)"
-        StringBuilder newCall = new StringBuilder();
-        if (mi instanceof MethodInvocation methodInv) {
-            if (methodInv.getExpression() != null) {
-                newCall.append(methodInv.getExpression().toString()).append(".");
-            }
-            newCall.append(newName);
-        } else if (mi instanceof SuperMethodInvocation smi) {
-            if (smi.getQualifier() != null) {
-                newCall.append(smi.getQualifier().toString()).append(".");
-            }
-            newCall.append("super.").append(newName);
-        } else if (mi instanceof ClassInstanceCreation cic) {
-            if (cic.getExpression() != null) {
-                newCall.append(cic.getExpression().toString()).append(".");
-            }
-            newCall.append("new ").append(cic.getType().toString());
-        } else if (mi instanceof ConstructorInvocation) {
-            newCall.append("this");
-        } else if (mi instanceof SuperConstructorInvocation sci) {
-            if (sci.getExpression() != null) {
-                newCall.append(sci.getExpression().toString()).append(".");
-            }
-            newCall.append("super");
-        } else {
-            return;
-        }
-        newCall.append("(").append(String.join(", ", newArgs)).append(")");
-        if (mi instanceof ConstructorInvocation || mi instanceof SuperConstructorInvocation) {
-            newCall.append(";");
-        }
+        int callStart = mi.getStartPosition();
+        int callEnd = callStart + mi.getLength();
+        String newCallText = TextEditConverter.applyToSlice(
+            TextEditConverter.toEditMaps(callRewrite.rewriteAST(), callSource, ast),
+            callStart, callEnd, callSource);
 
         // Create edit
         String callFilePath = service.getPathUtils().formatPath(
@@ -647,17 +638,38 @@ public class ChangeMethodSignatureTool extends AbstractTool {
 
         Map<String, Object> callEdit = new LinkedHashMap<>();
         callEdit.put("type", "replace");
-        callEdit.put("startLine", ast.getLineNumber(mi.getStartPosition()) - 1);
-        callEdit.put("startColumn", ast.getColumnNumber(mi.getStartPosition()));
-        callEdit.put("endLine", ast.getLineNumber(mi.getStartPosition() + mi.getLength()) - 1);
-        callEdit.put("endColumn", ast.getColumnNumber(mi.getStartPosition() + mi.getLength()));
-        callEdit.put("startOffset", mi.getStartPosition());
-        callEdit.put("endOffset", mi.getStartPosition() + mi.getLength());
-        callEdit.put("oldText", mi.toString());
-        callEdit.put("newText", newCall.toString());
+        callEdit.put("startLine", ast.getLineNumber(callStart) - 1);
+        callEdit.put("startColumn", ast.getColumnNumber(callStart));
+        callEdit.put("endLine", ast.getLineNumber(callEnd) - 1);
+        callEdit.put("endColumn", ast.getColumnNumber(callEnd));
+        callEdit.put("startOffset", callStart);
+        callEdit.put("endOffset", callEnd);
+        callEdit.put("oldText", callSource.substring(callStart, callEnd));
+        callEdit.put("newText", newCallText);
         callEdit.put("isDeclaration", false);
 
         editsByFile.computeIfAbsent(callFilePath, k -> new ArrayList<>()).add(callEdit);
+    }
+
+    /** The arguments list property for each rewritable call-site node type. */
+    private static ChildListPropertyDescriptor argumentsProperty(ASTNode node) {
+        if (node instanceof MethodInvocation) return MethodInvocation.ARGUMENTS_PROPERTY;
+        if (node instanceof SuperMethodInvocation) return SuperMethodInvocation.ARGUMENTS_PROPERTY;
+        if (node instanceof ClassInstanceCreation) return ClassInstanceCreation.ARGUMENTS_PROPERTY;
+        if (node instanceof ConstructorInvocation) return ConstructorInvocation.ARGUMENTS_PROPERTY;
+        return SuperConstructorInvocation.ARGUMENTS_PROPERTY;
+    }
+
+    /**
+     * The renameable name node of a call site, or null where the call form has
+     * none (this/super constructor invocations) or where the "name" is the
+     * constructed type (class instance creation), which this tool does not
+     * rename at call sites.
+     */
+    private static SimpleName invocationName(ASTNode node) {
+        if (node instanceof MethodInvocation mi) return mi.getName();
+        if (node instanceof SuperMethodInvocation smi) return smi.getName();
+        return null;
     }
 
     private static boolean offsetWithin(ASTNode node, int offset) {

@@ -145,6 +145,53 @@ public final class TextEditConverter {
             "Unsupported TextEdit leaf: " + edit.getClass().getName() + " " + edit);
     }
 
+    /**
+     * Renders the text a source slice becomes after applying the given edit
+     * maps. Used when a tool's contract pins ONE edit spanning a whole node
+     * (a method signature, a call) while ASTRewrite produced fine-grained
+     * edits inside that span: the caller converts the rewrite, applies it to
+     * the node's slice here, and emits a single edit with the result.
+     *
+     * <p>Edits fully outside the slice are ignored; an edit crossing the
+     * slice boundary is an error (the aggregate would be incomplete).
+     */
+    public static String applyToSlice(List<Map<String, Object>> editMaps,
+                                      int sliceStart, int sliceEnd, String source) {
+        List<Map<String, Object>> inSlice = new ArrayList<>();
+        for (Map<String, Object> edit : editMaps) {
+            int start = ((Number) (edit.containsKey("offset")
+                ? edit.get("offset") : edit.get("startOffset"))).intValue();
+            int end = edit.containsKey("endOffset")
+                ? ((Number) edit.get("endOffset")).intValue() : start;
+            if (end <= sliceStart || start >= sliceEnd) {
+                continue;
+            }
+            if (start < sliceStart || end > sliceEnd) {
+                throw new IllegalStateException("Edit crosses slice boundary ["
+                    + sliceStart + "," + sliceEnd + "): " + edit);
+            }
+            inSlice.add(edit);
+        }
+        // Apply back-to-front so earlier offsets stay valid.
+        inSlice.sort((a, b) -> Integer.compare(
+            ((Number) (b.containsKey("offset") ? b.get("offset") : b.get("startOffset"))).intValue(),
+            ((Number) (a.containsKey("offset") ? a.get("offset") : a.get("startOffset"))).intValue()));
+
+        StringBuilder out = new StringBuilder(source.substring(sliceStart, sliceEnd));
+        for (Map<String, Object> edit : inSlice) {
+            String type = (String) edit.get("type");
+            if ("insert".equals(type)) {
+                int at = ((Number) edit.get("offset")).intValue() - sliceStart;
+                out.insert(at, (String) edit.get("newText"));
+            } else {
+                int from = ((Number) edit.get("startOffset")).intValue() - sliceStart;
+                int to = ((Number) edit.get("endOffset")).intValue() - sliceStart;
+                out.replace(from, to, "delete".equals(type) ? "" : (String) edit.get("newText"));
+            }
+        }
+        return out.toString();
+    }
+
     private static Map<String, Object> rangeEdit(String type, int offset, int length,
                                                  String newText, String source, CompilationUnit ast) {
         int end = offset + length;
