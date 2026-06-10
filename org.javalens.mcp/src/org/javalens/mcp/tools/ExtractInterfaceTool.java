@@ -9,10 +9,15 @@ import org.eclipse.jdt.core.ITypeParameter;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.Signature;
 import org.eclipse.jdt.core.dom.AST;
+import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTParser;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.TypeDeclaration;
+import org.eclipse.jdt.core.dom.rewrite.ASTRewrite;
+import org.eclipse.jdt.core.dom.rewrite.ListRewrite;
+import org.eclipse.text.edits.TextEdit;
 import org.javalens.core.IJdtService;
+import org.javalens.mcp.rewrite.TextEditConverter;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
 import org.slf4j.Logger;
@@ -212,44 +217,23 @@ public class ExtractInterfaceTool extends AbstractTool {
             // Find the type declaration in AST
             TypeDeclaration typeDecl = findTypeDeclaration(ast, type.getElementName());
 
-            // Build edit for adding 'implements' clause
+            // Build the implements-clause edit with ASTRewrite: appending to the
+            // type's super-interface list renders either a new ` implements X`
+            // clause or a `, X` continuation by construction — no brace scan or
+            // clause-position math.
             List<Map<String, Object>> edits = new ArrayList<>();
 
             if (typeDecl != null) {
-                // Check if class already has implements clause
-                @SuppressWarnings("unchecked")
-                List<?> existingInterfaces = typeDecl.superInterfaceTypes();
-                boolean hasImplements = !existingInterfaces.isEmpty();
-
                 String source = cu.getSource();
                 if (source != null) {
-                    // Find position to insert implements clause
-                    // This is after class name and type parameters, before '{'
-
-                    int classBodyStart = findClassBodyStart(source, typeDecl);
-                    if (classBodyStart > 0) {
-                        Map<String, Object> implementsEdit = new LinkedHashMap<>();
-                        implementsEdit.put("type", "insert");
-
-                        String implementsRef = interfaceName + classTypeArguments;
-                        if (hasImplements) {
-                            // Add to existing implements list
-                            // Find the last interface and insert after it
-                            int insertPos = findLastImplementsPosition(source, typeDecl);
-                            implementsEdit.put("offset", insertPos);
-                            implementsEdit.put("line", ast.getLineNumber(insertPos) - 1);
-                            implementsEdit.put("column", ast.getColumnNumber(insertPos));
-                            implementsEdit.put("newText", ", " + implementsRef);
-                        } else {
-                            // Add new implements clause before '{'
-                            implementsEdit.put("offset", classBodyStart);
-                            implementsEdit.put("line", ast.getLineNumber(classBodyStart) - 1);
-                            implementsEdit.put("column", ast.getColumnNumber(classBodyStart));
-                            implementsEdit.put("newText", " implements " + implementsRef);
-                        }
-
-                        edits.add(implementsEdit);
-                    }
+                    String implementsRef = interfaceName + classTypeArguments;
+                    ASTRewrite rewrite = ASTRewrite.create(ast.getAST());
+                    ListRewrite implementsList = rewrite.getListRewrite(typeDecl,
+                        TypeDeclaration.SUPER_INTERFACE_TYPES_PROPERTY);
+                    implementsList.insertLast(
+                        rewrite.createStringPlaceholder(implementsRef, ASTNode.SIMPLE_TYPE), null);
+                    TextEdit rewriteEdit = rewrite.rewriteAST();
+                    edits.addAll(TextEditConverter.toEditMaps(rewriteEdit, source, ast));
                 }
             }
 
@@ -355,35 +339,6 @@ public class ExtractInterfaceTool extends AbstractTool {
             }
         }
         return null;
-    }
-
-    private int findClassBodyStart(String source, TypeDeclaration typeDecl) {
-        int start = typeDecl.getStartPosition();
-        int end = start + typeDecl.getLength();
-
-        // Find the opening brace
-        for (int i = start; i < end && i < source.length(); i++) {
-            if (source.charAt(i) == '{') {
-                // Return position just before the brace
-                return i;
-            }
-        }
-        return -1;
-    }
-
-    private int findLastImplementsPosition(String source, TypeDeclaration typeDecl) {
-        @SuppressWarnings("unchecked")
-        List<?> interfaces = typeDecl.superInterfaceTypes();
-        if (interfaces.isEmpty()) {
-            return -1;
-        }
-
-        // Get the last interface
-        Object lastInterface = interfaces.get(interfaces.size() - 1);
-        if (lastInterface instanceof org.eclipse.jdt.core.dom.Type t) {
-            return t.getStartPosition() + t.getLength();
-        }
-        return -1;
     }
 
     /**
