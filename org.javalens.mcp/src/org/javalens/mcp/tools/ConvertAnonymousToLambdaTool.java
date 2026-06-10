@@ -2,7 +2,6 @@ package org.javalens.mcp.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import org.eclipse.jdt.core.ICompilationUnit;
-import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTParser;
@@ -15,17 +14,21 @@ import org.eclipse.jdt.core.dom.Expression;
 import org.eclipse.jdt.core.dom.ExpressionStatement;
 import org.eclipse.jdt.core.dom.IMethodBinding;
 import org.eclipse.jdt.core.dom.ITypeBinding;
+import org.eclipse.jdt.core.dom.LambdaExpression;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.NodeFinder;
 import org.eclipse.jdt.core.dom.ReturnStatement;
-import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
 import org.eclipse.jdt.core.dom.Statement;
 import org.eclipse.jdt.core.dom.SuperFieldAccess;
 import org.eclipse.jdt.core.dom.SuperMethodInvocation;
 import org.eclipse.jdt.core.dom.SuperMethodReference;
 import org.eclipse.jdt.core.dom.ThisExpression;
+import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
+import org.eclipse.jdt.core.dom.rewrite.ASTRewrite;
+import org.eclipse.text.edits.TextEdit;
 import org.javalens.core.IJdtService;
+import org.javalens.mcp.rewrite.TextEditConverter;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
 import org.slf4j.Logger;
@@ -185,25 +188,23 @@ public class ConvertAnonymousToLambdaTool extends AbstractTool {
                         + "differs in a lambda body. Manual review required.");
             }
 
-            // Build the lambda expression
-            String lambdaExpression = buildLambdaExpression(methodDecl, cu);
-            if (lambdaExpression == null) {
-                return ToolResponse.internalError("Failed to build lambda expression");
-            }
+            // Synthesize the lambda as a real LambdaExpression node and let
+            // ASTRewrite render it in place of the anonymous creation: parameter
+            // parentheses, the arrow, and body form (expression vs block) come
+            // from the node structure rather than string assembly.
+            String source = cu.getSource();
+            AST astFactory = ast.getAST();
+            ASTRewrite rewrite = ASTRewrite.create(astFactory);
+            LambdaExpression lambda = buildLambdaNode(methodDecl, source, astFactory, rewrite);
+            rewrite.replace(creation, lambda, null);
 
-            // Build the edit
-            List<Map<String, Object>> edits = new ArrayList<>();
-            Map<String, Object> replaceEdit = new LinkedHashMap<>();
-            replaceEdit.put("type", "replace");
-            replaceEdit.put("startLine", ast.getLineNumber(creation.getStartPosition()) - 1);
-            replaceEdit.put("startColumn", ast.getColumnNumber(creation.getStartPosition()));
-            replaceEdit.put("endLine", ast.getLineNumber(creation.getStartPosition() + creation.getLength()) - 1);
-            replaceEdit.put("endColumn", ast.getColumnNumber(creation.getStartPosition() + creation.getLength()));
-            replaceEdit.put("startOffset", creation.getStartPosition());
-            replaceEdit.put("endOffset", creation.getStartPosition() + creation.getLength());
-            replaceEdit.put("oldText", getNodeText(cu, creation));
-            replaceEdit.put("newText", lambdaExpression);
-            edits.add(replaceEdit);
+            TextEdit rewriteEdit = rewrite.rewriteAST();
+            List<Map<String, Object>> edits = TextEditConverter.toEditMaps(rewriteEdit, source, ast);
+            if (edits.size() != 1 || !"replace".equals(edits.get(0).get("type"))) {
+                return ToolResponse.internalError(
+                    "Unexpected rewrite shape for the lambda conversion: " + edits);
+            }
+            String lambdaExpression = (String) edits.get(0).get("newText");
 
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("filePath", service.getPathUtils().formatPath(path));
@@ -347,90 +348,52 @@ public class ConvertAnonymousToLambdaTool extends AbstractTool {
         return flag[0];
     }
 
-    private String buildLambdaExpression(MethodDeclaration method, ICompilationUnit cu) {
-        StringBuilder lambda = new StringBuilder();
+    /**
+     * Builds the replacement LambdaExpression: untyped parameters named after
+     * the SAM implementation's parameters (parentheses omitted for exactly
+     * one), and a body that is the return expression / sole expression where
+     * the expression form applies, or a block of the original statements
+     * (carried as source-slice placeholders) otherwise.
+     */
+    @SuppressWarnings("unchecked")
+    private LambdaExpression buildLambdaNode(MethodDeclaration method, String source,
+                                             AST astFactory, ASTRewrite rewrite) {
+        LambdaExpression lambda = astFactory.newLambdaExpression();
 
-        // Build parameter list
-        @SuppressWarnings("unchecked")
         List<SingleVariableDeclaration> params = method.parameters();
-
-        if (params.isEmpty()) {
-            lambda.append("()");
-        } else if (params.size() == 1) {
-            // Single parameter - can omit parentheses and type
-            lambda.append(params.get(0).getName().getIdentifier());
-        } else {
-            lambda.append("(");
-            for (int i = 0; i < params.size(); i++) {
-                if (i > 0) lambda.append(", ");
-                lambda.append(params.get(i).getName().getIdentifier());
-            }
-            lambda.append(")");
+        lambda.setParentheses(params.size() != 1);
+        for (SingleVariableDeclaration param : params) {
+            VariableDeclarationFragment fragment = astFactory.newVariableDeclarationFragment();
+            fragment.setName(astFactory.newSimpleName(param.getName().getIdentifier()));
+            lambda.parameters().add(fragment);
         }
 
-        lambda.append(" -> ");
-
-        // Build body
         Block body = method.getBody();
-        if (body == null) {
-            lambda.append("{}");
-            return lambda.toString();
-        }
+        List<Statement> statements = body == null
+            ? List.of() : (List<Statement>) body.statements();
 
-        @SuppressWarnings("unchecked")
-        List<Statement> statements = body.statements();
-
-        if (statements.isEmpty()) {
-            lambda.append("{}");
-        } else if (statements.size() == 1) {
-            Statement stmt = statements.get(0);
-
-            if (stmt instanceof ReturnStatement rs) {
-                Expression expr = rs.getExpression();
-                if (expr != null) {
-                    // Single return statement - use expression form
-                    lambda.append(expr.toString());
-                } else {
-                    // return; with no value
-                    lambda.append("{}");
-                }
-            } else if (stmt instanceof ExpressionStatement es) {
-                // Single expression statement (like method call)
-                lambda.append(es.getExpression().toString());
-            } else {
-                // Other single statement - use block form
-                lambda.append("{ ");
-                lambda.append(stmt.toString().trim());
-                lambda.append(" }");
-            }
+        if (statements.size() == 1 && statements.get(0) instanceof ReturnStatement rs
+                && rs.getExpression() != null) {
+            lambda.setBody(placeholderFor(rs.getExpression(), source, rewrite));
+        } else if (statements.size() == 1 && statements.get(0) instanceof ExpressionStatement es) {
+            lambda.setBody(placeholderFor(es.getExpression(), source, rewrite));
         } else {
-            // Multiple statements - use block form
-            lambda.append("{\n");
-            String indent = "        "; // Default indentation for lambda body
-
+            Block block = astFactory.newBlock();
             for (Statement stmt : statements) {
-                lambda.append(indent);
-                lambda.append(stmt.toString().trim());
-                lambda.append("\n");
+                if (statements.size() == 1 && stmt instanceof ReturnStatement rs
+                        && rs.getExpression() == null) {
+                    continue; // a lone `return;` becomes an empty block
+                }
+                block.statements().add(placeholderFor(stmt, source, rewrite));
             }
-
-            lambda.append("    }");
+            lambda.setBody(block);
         }
-
-        return lambda.toString();
+        return lambda;
     }
 
-    private String getNodeText(ICompilationUnit cu, ASTNode node) {
-        try {
-            String source = cu.getSource();
-            if (source != null) {
-                int start = node.getStartPosition();
-                int end = start + node.getLength();
-                return source.substring(start, end);
-            }
-        } catch (JavaModelException e) {
-            log.debug("Error getting node text: {}", e.getMessage());
-        }
-        return "";
+    private ASTNode placeholderFor(ASTNode original, String source, ASTRewrite rewrite) {
+        String text = source.substring(original.getStartPosition(),
+            original.getStartPosition() + original.getLength());
+        return rewrite.createStringPlaceholder(text, original.getNodeType());
     }
 }
