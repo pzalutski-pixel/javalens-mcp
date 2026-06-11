@@ -19,11 +19,13 @@ import org.eclipse.jdt.core.search.IJavaSearchConstants;
 import org.eclipse.jdt.core.search.SearchEngine;
 import org.eclipse.jdt.core.search.SearchPattern;
 import org.eclipse.jdt.core.search.TypeNameRequestor;
+import org.javalens.core.exceptions.ReloadRequiredException;
 import org.javalens.core.graph.ProjectGraphService;
 import org.javalens.core.project.BuildSystem;
 import org.javalens.core.project.ProjectImporter;
 import org.javalens.core.project.model.LoadWarning;
 import org.javalens.core.search.SearchService;
+import org.javalens.core.sync.DiskStampService;
 import org.javalens.core.workspace.WorkspaceManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -60,6 +62,9 @@ public class JdtServiceImpl implements IJdtService {
     private IJavaProject javaProject;
     private SearchService searchService;
     private ProjectGraphService projectGraphService;
+    private DiskStampService diskStampService;
+    private final java.util.Map<Path, org.eclipse.core.resources.IFolder> sourceRootFolders =
+        new java.util.LinkedHashMap<>();
     private Instant loadedAt;
 
     // Project info for health_check
@@ -127,8 +132,147 @@ public class JdtServiceImpl implements IJdtService {
         // race the background indexer and see zero results for symbols that do exist.
         waitForIndexReady();
 
+        initializeDiskSync();
+
         this.loadedAt = Instant.now();
         log.info("Project loaded successfully at {}", loadedAt);
+    }
+
+    /**
+     * Build the disk-truth stamps for #26's verify-and-repair: map each source
+     * root's linked folder to its external path, stamp every source file plus
+     * the build files. A failure here degrades to manual-sync behavior with a
+     * warning rather than failing the load.
+     */
+    private void initializeDiskSync() {
+        sourceRootFolders.clear();
+        try {
+            List<Path> rootPaths = new ArrayList<>();
+            for (IPackageFragmentRoot root : javaProject.getPackageFragmentRoots()) {
+                if (root.getKind() != IPackageFragmentRoot.K_SOURCE) continue;
+                if (!(root.getResource() instanceof org.eclipse.core.resources.IFolder folder)) continue;
+                IPath location = folder.getLocation();
+                if (location == null) continue;
+                Path external = Path.of(location.toOSString()).toAbsolutePath().normalize();
+                sourceRootFolders.put(external, folder);
+                rootPaths.add(external);
+            }
+            this.diskStampService = new DiskStampService(rootPaths, collectBuildFiles());
+            this.diskStampService.stampAll();
+        } catch (Exception e) {
+            log.warn("Disk-sync stamping failed; falling back to manual sync: {}", e.getMessage());
+            this.diskStampService = null;
+        }
+    }
+
+    private static final java.util.Set<String> BUILD_FILE_NAMES = java.util.Set.of(
+        "pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts",
+        "MODULE.bazel", "WORKSPACE", "WORKSPACE.bazel", "BUILD", "BUILD.bazel");
+    private static final java.util.Set<String> BUILD_WALK_SKIP_DIRS = java.util.Set.of(
+        "target", "build", "bin", ".git", "src", "node_modules");
+
+    /** All build files in the project tree (module poms included), skipping outputs and sources. */
+    private List<Path> collectBuildFiles() throws IOException {
+        List<Path> buildFiles = new ArrayList<>();
+        Files.walkFileTree(projectRoot, new java.nio.file.SimpleFileVisitor<>() {
+            @Override
+            public java.nio.file.FileVisitResult preVisitDirectory(Path dir,
+                    java.nio.file.attribute.BasicFileAttributes attrs) {
+                String name = dir.getFileName() == null ? "" : dir.getFileName().toString();
+                if (!dir.equals(projectRoot)
+                    && (BUILD_WALK_SKIP_DIRS.contains(name) || name.startsWith("bazel-"))) {
+                    return java.nio.file.FileVisitResult.SKIP_SUBTREE;
+                }
+                return java.nio.file.FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public java.nio.file.FileVisitResult visitFile(Path file,
+                    java.nio.file.attribute.BasicFileAttributes attrs) {
+                if (BUILD_FILE_NAMES.contains(file.getFileName().toString())) {
+                    buildFiles.add(file.toAbsolutePath().normalize());
+                }
+                return java.nio.file.FileVisitResult.CONTINUE;
+            }
+        });
+        return buildFiles;
+    }
+
+    /**
+     * #26 verify-and-repair: compare disk against the stamps; repair exactly
+     * what changed (scoped resource refresh, index barrier, derived-cache
+     * invalidation, restamp); return the repaired paths. Empty list = nothing
+     * had changed. Build-file changes are not repairable per-file and raise
+     * {@link ReloadRequiredException}; verification I/O failures propagate as
+     * {@link IOException} - callers must never answer around either.
+     */
+    public synchronized List<Path> ensureFresh()
+            throws IOException, CoreException, ReloadRequiredException {
+        if (diskStampService == null) {
+            return List.of(); // stamping unavailable (load-time warning already surfaced)
+        }
+        DiskStampService.ChangeSet changes = diskStampService.verify();
+        if (changes.isEmpty()) {
+            return List.of();
+        }
+        if (!changes.buildFilesChanged().isEmpty()) {
+            throw new ReloadRequiredException(changes.buildFilesChanged());
+        }
+
+        for (Path edited : changes.edited()) {
+            IFile file = resolveWorkspaceFile(edited);
+            if (file != null) {
+                file.refreshLocal(IResource.DEPTH_ZERO, new NullProgressMonitor());
+            }
+        }
+        // Adds and deletes change the resource tree shape: refresh the owning
+        // source-root link deeply so new packages and removals are both seen.
+        java.util.Set<org.eclipse.core.resources.IFolder> foldersToRefresh = new java.util.LinkedHashSet<>();
+        for (Path changed : concat(changes.added(), changes.deleted())) {
+            org.eclipse.core.resources.IFolder owner = owningSourceRootFolder(changed);
+            if (owner != null) {
+                foldersToRefresh.add(owner);
+            }
+        }
+        for (org.eclipse.core.resources.IFolder folder : foldersToRefresh) {
+            folder.refreshLocal(IResource.DEPTH_INFINITE, new NullProgressMonitor());
+        }
+
+        waitForIndexReady();
+        if (projectGraphService != null) {
+            projectGraphService.invalidate();
+        }
+
+        List<Path> repaired = concat(concat(changes.edited(), changes.added()), changes.deleted());
+        diskStampService.restamp(repaired);
+        log.info("Disk-sync repaired {} file(s): {}", repaired.size(), repaired);
+        return repaired;
+    }
+
+    private static List<Path> concat(List<Path> a, List<Path> b) {
+        List<Path> result = new ArrayList<>(a);
+        result.addAll(b);
+        return result;
+    }
+
+    /** Map an external file path to its workspace IFile through the linked source roots. */
+    private IFile resolveWorkspaceFile(Path externalPath) {
+        org.eclipse.core.resources.IFolder owner = owningSourceRootFolder(externalPath);
+        if (owner == null) {
+            return null;
+        }
+        Path root = Path.of(owner.getLocation().toOSString()).toAbsolutePath().normalize();
+        Path relative = root.relativize(externalPath);
+        return owner.getFile(new org.eclipse.core.runtime.Path(relative.toString().replace('\\', '/')));
+    }
+
+    private org.eclipse.core.resources.IFolder owningSourceRootFolder(Path externalPath) {
+        for (java.util.Map.Entry<Path, org.eclipse.core.resources.IFolder> entry : sourceRootFolders.entrySet()) {
+            if (externalPath.startsWith(entry.getKey())) {
+                return entry.getValue();
+            }
+        }
+        return null;
     }
 
     /**
