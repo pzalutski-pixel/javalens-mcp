@@ -69,6 +69,19 @@ public class AnalyzeDataFlowTool extends AbstractTool {
 
             Useful for understanding side effects before extracting methods.
 
+            Options:
+            - followCalls: opt-in interprocedural mode (default false). Tracks
+              two fact kinds across argument-to-parameter hops into project
+              callees and reports interproceduralFlows:
+              * null facts - locals assigned null; sink = a dereference of the
+                tracked value in a callee (potential NPE)
+              * taint facts - this method's parameters, propagated through
+                aliases and expressions; sink = the value escaping into a
+                non-project (binary) callee
+              May-analysis: reassignments do not kill facts. Returned values
+              are not tracked back into callers.
+            - maxCallDepth: call-edge bound for followCalls (default 2)
+
             Requires load_project to be called first.
             """;
     }
@@ -79,6 +92,8 @@ public class AnalyzeDataFlowTool extends AbstractTool {
             .required("filePath", "string", "File containing the method")
             .required("line", "integer", "Zero-based line number within the method")
             .required("column", "integer", "Zero-based column number")
+            .optional("followCalls", "boolean", "Track null/taint facts across method calls (default false)")
+            .optional("maxCallDepth", "integer", "Call-edge bound for followCalls (default 2, min 1)")
             .build();
     }
 
@@ -138,6 +153,16 @@ public class AnalyzeDataFlowTool extends AbstractTool {
             data.put("parameterCount", method.parameters().size());
             data.put("variables", variables);
             data.put("returnStatements", visitor.returnCount);
+
+            if (getBooleanParam(arguments, "followCalls", false)) {
+                int maxCallDepth = getIntParam(arguments, "maxCallDepth", 2);
+                if (maxCallDepth < 1) {
+                    return ToolResponse.invalidParameter("maxCallDepth", "must be >= 1");
+                }
+                data.put("followCalls", true);
+                data.put("interproceduralFlows",
+                    new InterproceduralFlowAnalyzer(maxCallDepth).analyze(method, ast));
+            }
 
             return ToolResponse.success(data, ResponseMeta.builder()
                 .suggestedNextTools(List.of(
