@@ -445,6 +445,12 @@ class ToolContractParityTest {
         findAffectedTestsArgs.put("column", 15);
         m.put("find_affected_tests", findAffectedTestsArgs);
 
+        ObjectNode getJpaModelArgs = objectMapper.createObjectNode();
+        m.put("get_jpa_model", getJpaModelArgs);
+
+        ObjectNode getHttpEndpointsArgs = objectMapper.createObjectNode();
+        m.put("get_http_endpoints", getHttpEndpointsArgs);
+
         ObjectNode getDeps = objectMapper.createObjectNode();
         m.put("get_dependency_graph", getDeps);
 

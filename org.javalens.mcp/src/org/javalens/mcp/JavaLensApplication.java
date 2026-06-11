@@ -30,6 +30,8 @@ import org.javalens.mcp.tools.GetCallHierarchyIncomingTool;
 import org.javalens.mcp.tools.GetCallHierarchyOutgoingTool;
 import org.javalens.mcp.tools.FindFieldWritesTool;
 import org.javalens.mcp.tools.FindAffectedTestsTool;
+import org.javalens.mcp.tools.GetHttpEndpointsTool;
+import org.javalens.mcp.tools.GetJpaModelTool;
 import org.javalens.mcp.tools.FindTestsTool;
 import org.javalens.mcp.tools.FindUnreachableCodeTool;
 import org.javalens.mcp.tools.FindUnusedCodeTool;
@@ -307,6 +309,8 @@ public class JavaLensApplication implements IApplication {
         toolRegistry.register(new AnalyzeControlFlowTool(() -> jdtService));
         toolRegistry.register(new AnalyzeDataFlowTool(() -> jdtService));
         toolRegistry.register(new GetDiRegistrationsTool(() -> jdtService));
+        toolRegistry.register(new GetJpaModelTool(() -> jdtService));
+        toolRegistry.register(new GetHttpEndpointsTool(() -> jdtService));
         toolRegistry.register(new FindReflectionUsageTool(() -> jdtService));
         toolRegistry.register(new FindLargeClassesTool(() -> jdtService));
         toolRegistry.register(new FindNamingViolationsTool(() -> jdtService));
