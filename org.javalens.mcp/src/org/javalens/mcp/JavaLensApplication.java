@@ -208,7 +208,8 @@ public class JavaLensApplication implements IApplication {
             () -> jdtService != null,
             () -> toolRegistry.getToolCount(),
             () -> loadingState,
-            () -> loadingError
+            () -> loadingError,
+            () -> jdtService
         ));
 
         // Register LoadProjectTool - stores the JdtService when a project is loaded

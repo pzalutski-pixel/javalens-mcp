@@ -338,6 +338,8 @@ class AbstractToolTest {
         @Override public org.eclipse.jdt.core.IJavaProject getJavaProject() { return null; }
         @Override public org.javalens.core.search.SearchService getSearchService() { return null; }
         @Override public org.javalens.core.graph.ProjectGraphService getProjectGraphService() { return null; }
+        @Override public java.util.List<java.nio.file.Path> ensureFresh() { return java.util.List.of(); }
+        @Override public org.javalens.core.sync.DiskSyncMode getDiskSyncMode() { return org.javalens.core.sync.DiskSyncMode.STRICT; }
         @Override public org.eclipse.jdt.core.ICompilationUnit getCompilationUnit(java.nio.file.Path p) { return null; }
         @Override public org.eclipse.jdt.core.IJavaElement getElementAtPosition(java.nio.file.Path p, int l, int c) { return null; }
         @Override public org.eclipse.jdt.core.IType getTypeAtPosition(java.nio.file.Path p, int l, int c) { return null; }

@@ -41,8 +41,26 @@ public class ErrorInfo {
     public static final String TIMEOUT = "TIMEOUT";
     public static final String INTERNAL_ERROR = "INTERNAL_ERROR";
     public static final String REFACTORING_FAILED = "REFACTORING_FAILED";
+    public static final String RELOAD_REQUIRED = "RELOAD_REQUIRED";
+    public static final String VERIFICATION_FAILED = "VERIFICATION_FAILED";
 
     // Factory methods for common errors
+    public static ErrorInfo reloadRequired(String message) {
+        return new ErrorInfo(
+            RELOAD_REQUIRED,
+            message,
+            "Call load_project to rebuild the model against the changed build configuration"
+        );
+    }
+
+    public static ErrorInfo verificationFailed(String message) {
+        return new ErrorInfo(
+            VERIFICATION_FAILED,
+            "Disk verification failed: " + message,
+            "The model's freshness could not be proven - call load_project to rebuild from disk"
+        );
+    }
+
     public static ErrorInfo projectNotLoaded() {
         return new ErrorInfo(
             PROJECT_NOT_LOADED,

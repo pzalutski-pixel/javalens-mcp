@@ -77,6 +77,21 @@ public class ToolResponse {
     }
 
     /**
+     * Build files changed on disk - only a full load_project restores a
+     * trustworthy model.
+     */
+    public static ToolResponse reloadRequired(String message) {
+        return error(ErrorInfo.reloadRequired(message));
+    }
+
+    /**
+     * Disk verification itself failed - an unverified answer is never given.
+     */
+    public static ToolResponse verificationFailed(String message) {
+        return error(ErrorInfo.verificationFailed(message));
+    }
+
+    /**
      * Create a project loading in progress response.
      * Used when auto-load is still running asynchronously.
      */

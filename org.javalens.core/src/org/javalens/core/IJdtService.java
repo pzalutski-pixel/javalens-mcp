@@ -4,9 +4,11 @@ import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IJavaProject;
 import org.eclipse.jdt.core.IType;
+import org.javalens.core.exceptions.ReloadRequiredException;
 import org.javalens.core.graph.ProjectGraphService;
 import org.javalens.core.project.model.LoadWarning;
 import org.javalens.core.search.SearchService;
+import org.javalens.core.sync.DiskSyncMode;
 
 import java.nio.file.Path;
 import java.util.List;
@@ -68,6 +70,27 @@ public interface IJdtService {
      * @return ProjectGraphService instance
      */
     ProjectGraphService getProjectGraphService();
+
+    /**
+     * Verify the loaded model against disk and repair exactly what changed
+     * (the #26 contract: every answer is true of disk at query time). A no-op
+     * under {@link DiskSyncMode#MANUAL}.
+     *
+     * @return the repaired paths; empty when nothing had changed
+     * @throws ReloadRequiredException when build files changed - only a full
+     *         load_project restores a trustworthy model
+     * @throws java.io.IOException when verification itself fails - callers
+     *         must surface this, never answer unverified
+     * @throws org.eclipse.core.runtime.CoreException when the workspace
+     *         refresh fails
+     */
+    List<java.nio.file.Path> ensureFresh()
+        throws java.io.IOException, org.eclipse.core.runtime.CoreException, ReloadRequiredException;
+
+    /**
+     * The active disk-sync integrity mode.
+     */
+    DiskSyncMode getDiskSyncMode();
 
     /**
      * Get the underlying Java project.

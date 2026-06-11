@@ -24,17 +24,27 @@ public class HealthCheckTool implements Tool {
     private final Supplier<Integer> toolCountSupplier;
     private final Supplier<ProjectLoadingState> loadingStateSupplier;
     private final Supplier<String> loadingErrorSupplier;
+    private final Supplier<org.javalens.core.IJdtService> serviceSupplier;
     private final Instant startTime;
 
     public HealthCheckTool(Supplier<Boolean> projectLoadedSupplier,
                            Supplier<Integer> toolCountSupplier,
                            Supplier<ProjectLoadingState> loadingStateSupplier,
-                           Supplier<String> loadingErrorSupplier) {
+                           Supplier<String> loadingErrorSupplier,
+                           Supplier<org.javalens.core.IJdtService> serviceSupplier) {
         this.projectLoadedSupplier = projectLoadedSupplier;
         this.toolCountSupplier = toolCountSupplier;
         this.loadingStateSupplier = loadingStateSupplier;
         this.loadingErrorSupplier = loadingErrorSupplier;
+        this.serviceSupplier = serviceSupplier;
         this.startTime = Instant.now();
+    }
+
+    /** Convenience for tests: only the service supplier matters. */
+    public HealthCheckTool(Supplier<org.javalens.core.IJdtService> serviceSupplier) {
+        this(() -> serviceSupplier.get() != null, () -> 0,
+            () -> serviceSupplier.get() != null ? ProjectLoadingState.LOADED : ProjectLoadingState.NOT_LOADED,
+            () -> null, serviceSupplier);
     }
 
     @Override
@@ -79,6 +89,14 @@ public class HealthCheckTool implements Tool {
         status.put("version", org.javalens.mcp.protocol.McpProtocolHandler.serverVersion());
         status.put("startedAt", startTime.toString());
         status.put("uptime", getUptimeString());
+
+        // Active disk-sync integrity contract (#26): strict = every answer
+        // content-verified against disk; manual = caller drives sync.
+        org.javalens.core.IJdtService service = serviceSupplier.get();
+        status.put("diskSync", service != null
+            ? service.getDiskSyncMode().toConfigValue()
+            : org.javalens.core.sync.DiskSyncMode.fromEnvironment(
+                System.getenv("JAVALENS_DISK_SYNC")).toConfigValue());
 
         // Project status with detailed loading state
         Map<String, Object> projectStatus = new LinkedHashMap<>();

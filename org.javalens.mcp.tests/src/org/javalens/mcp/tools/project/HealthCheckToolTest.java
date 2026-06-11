@@ -22,11 +22,11 @@ class HealthCheckToolTest {
     @BeforeEach
     void setUp() {
         toolWithProject = new HealthCheckTool(() -> true, () -> 56,
-            () -> ProjectLoadingState.LOADED, () -> null);
+            () -> ProjectLoadingState.LOADED, () -> null, () -> null);
         toolWithoutProject = new HealthCheckTool(() -> false, () -> 56,
-            () -> ProjectLoadingState.NOT_LOADED, () -> null);
+            () -> ProjectLoadingState.NOT_LOADED, () -> null, () -> null);
         toolLoading = new HealthCheckTool(() -> false, () -> 56,
-            () -> ProjectLoadingState.LOADING, () -> null);
+            () -> ProjectLoadingState.LOADING, () -> null, () -> null);
         objectMapper = new ObjectMapper();
     }
 
@@ -123,7 +123,7 @@ class HealthCheckToolTest {
         HealthCheckTool failedTool = new HealthCheckTool(
             () -> false, () -> 56,
             () -> ProjectLoadingState.FAILED,
-            () -> "Maven subprocess exited with code 1");
+            () -> "Maven subprocess exited with code 1", () -> null);
 
         ToolResponse r = failedTool.execute(objectMapper.createObjectNode());
         assertTrue(r.isSuccess());

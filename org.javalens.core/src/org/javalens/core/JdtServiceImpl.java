@@ -26,6 +26,7 @@ import org.javalens.core.project.ProjectImporter;
 import org.javalens.core.project.model.LoadWarning;
 import org.javalens.core.search.SearchService;
 import org.javalens.core.sync.DiskStampService;
+import org.javalens.core.sync.DiskSyncMode;
 import org.javalens.core.workspace.WorkspaceManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -73,10 +74,23 @@ public class JdtServiceImpl implements IJdtService {
     private List<String> packages;
     private BuildSystem buildSystem;
 
+    private DiskSyncMode diskSyncMode;
+
     public JdtServiceImpl() {
         this.workspaceManager = new WorkspaceManager();
         this.projectImporter = new ProjectImporter();
         this.timeoutSeconds = parseTimeout();
+        this.diskSyncMode = DiskSyncMode.fromEnvironment(System.getenv("JAVALENS_DISK_SYNC"));
+    }
+
+    @Override
+    public DiskSyncMode getDiskSyncMode() {
+        return diskSyncMode;
+    }
+
+    /** Test/config seam; production wiring reads JAVALENS_DISK_SYNC at construction. */
+    public void setDiskSyncMode(DiskSyncMode mode) {
+        this.diskSyncMode = mode;
     }
 
     private static int parseTimeout() {
@@ -206,10 +220,11 @@ public class JdtServiceImpl implements IJdtService {
      * {@link ReloadRequiredException}; verification I/O failures propagate as
      * {@link IOException} - callers must never answer around either.
      */
+    @Override
     public synchronized List<Path> ensureFresh()
             throws IOException, CoreException, ReloadRequiredException {
-        if (diskStampService == null) {
-            return List.of(); // stamping unavailable (load-time warning already surfaced)
+        if (diskSyncMode == DiskSyncMode.MANUAL || diskStampService == null) {
+            return List.of(); // manual mode, or stamping unavailable (load warning surfaced)
         }
         DiskStampService.ChangeSet changes = diskStampService.verify();
         if (changes.isEmpty()) {

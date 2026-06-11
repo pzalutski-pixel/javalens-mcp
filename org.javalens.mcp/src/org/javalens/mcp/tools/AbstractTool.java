@@ -94,6 +94,18 @@ public abstract class AbstractTool implements Tool {
                 default -> ToolResponse.projectNotLoaded();
             };
         }
+
+        // #26: verify the model against disk and repair the delta before any
+        // tool logic runs. Every answer from executeWithService is true of
+        // disk at query time; an unverifiable model never answers.
+        try {
+            service.ensureFresh();
+        } catch (org.javalens.core.exceptions.ReloadRequiredException e) {
+            return ToolResponse.reloadRequired(e.getMessage());
+        } catch (Exception e) {
+            return ToolResponse.verificationFailed(e.getMessage());
+        }
+
         return executeWithService(service, arguments);
     }
 
