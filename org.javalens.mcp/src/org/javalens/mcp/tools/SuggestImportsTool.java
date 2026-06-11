@@ -96,7 +96,9 @@ public class SuggestImportsTool extends AbstractTool {
             TypeNameMatchRequestor requestor = new TypeNameMatchRequestor() {
                 @Override
                 public void acceptTypeNameMatch(TypeNameMatch match) {
-                    if (candidates.size() >= maxResults * 2) return; // Collect extra for sorting
+                    // Collect extra for sorting; overflow-safe doubling (maxResults can be MAX_VALUE)
+                    int collectBudget = maxResults > Integer.MAX_VALUE / 2 ? Integer.MAX_VALUE : maxResults * 2;
+                    if (candidates.size() >= collectBudget) return;
 
                     try {
                         IType type = match.getType();

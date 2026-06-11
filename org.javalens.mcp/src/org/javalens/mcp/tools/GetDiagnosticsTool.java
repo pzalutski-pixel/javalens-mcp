@@ -81,6 +81,10 @@ public class GetDiagnosticsTool extends AbstractTool {
             int warningCount = 0;
             int filesChecked = 0;
 
+            // Collect one past the cap so "exactly at the cap" and "actually
+            // truncated" are distinguishable in the truncated flag.
+            int collectBudget = maxResults == Integer.MAX_VALUE ? maxResults : maxResults + 1;
+
             if (filePath != null && !filePath.isBlank()) {
                 // Check single file
                 Path path = Path.of(filePath);
@@ -89,30 +93,40 @@ public class GetDiagnosticsTool extends AbstractTool {
                     return ToolResponse.fileNotFound(filePath);
                 }
                 filesChecked = 1;
-                DiagnosticCounts counts = collectDiagnostics(service, cu, path, severity, maxResults, diagnostics);
+                DiagnosticCounts counts = collectDiagnostics(service, cu, path, severity, collectBudget, diagnostics);
                 errorCount = counts.errors;
                 warningCount = counts.warnings;
             } else {
                 // Check all files in the project
                 for (IPackageFragmentRoot root : service.getJavaProject().getPackageFragmentRoots()) {
-                    if (diagnostics.size() >= maxResults) break;
+                    if (diagnostics.size() >= collectBudget) break;
                     if (root.getKind() != IPackageFragmentRoot.K_SOURCE) continue;
 
                     for (IJavaElement child : root.getChildren()) {
-                        if (diagnostics.size() >= maxResults) break;
+                        if (diagnostics.size() >= collectBudget) break;
                         if (!(child instanceof IPackageFragment pkg)) continue;
 
                         for (ICompilationUnit cu : pkg.getCompilationUnits()) {
-                            if (diagnostics.size() >= maxResults) break;
+                            if (diagnostics.size() >= collectBudget) break;
                             filesChecked++;
 
                             Path cuPath = getCompilationUnitPath(cu);
                             DiagnosticCounts counts = collectDiagnostics(service, cu, cuPath, severity,
-                                maxResults - diagnostics.size(), diagnostics);
+                                collectBudget - diagnostics.size(), diagnostics);
                             errorCount += counts.errors;
                             warningCount += counts.warnings;
                         }
                     }
+                }
+            }
+
+            boolean truncated = diagnostics.size() > maxResults;
+            if (truncated) {
+                Map<String, Object> removed = diagnostics.remove(diagnostics.size() - 1);
+                if ("error".equals(removed.get("severity"))) {
+                    errorCount--;
+                } else {
+                    warningCount--;
                 }
             }
 
@@ -126,7 +140,7 @@ public class GetDiagnosticsTool extends AbstractTool {
             return ToolResponse.success(data, ResponseMeta.builder()
                 .totalCount(diagnostics.size())
                 .returnedCount(diagnostics.size())
-                .truncated(diagnostics.size() >= maxResults)
+                .truncated(truncated)
                 .suggestedNextTools(List.of(
                     "go_to_definition to navigate to error location",
                     "get_document_symbols to see file structure"

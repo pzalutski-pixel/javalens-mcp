@@ -10,11 +10,22 @@ import org.javalens.mcp.tools.AnalyzeDataFlowTool;
 import org.javalens.mcp.tools.AnalyzeFileTool;
 import org.javalens.mcp.tools.AnalyzeMethodTool;
 import org.javalens.mcp.tools.AnalyzeTypeTool;
+import org.javalens.mcp.tools.ApplyCleanupTool;
+import org.javalens.mcp.tools.ApplyQuickFixTool;
+import org.javalens.mcp.tools.ChangeMethodSignatureTool;
 import org.javalens.mcp.tools.ConvertAnonymousToLambdaTool;
+import org.javalens.mcp.tools.DiagnoseAndFixTool;
+import org.javalens.mcp.tools.EncapsulateFieldTool;
 import org.javalens.mcp.tools.ExtractConstantTool;
 import org.javalens.mcp.tools.ExtractInterfaceTool;
 import org.javalens.mcp.tools.ExtractMethodTool;
+import org.javalens.mcp.tools.ExtractSuperclassTool;
 import org.javalens.mcp.tools.ExtractVariableTool;
+import org.javalens.mcp.tools.FindAffectedTestsTool;
+import org.javalens.mcp.tools.IntroduceParameterObjectTool;
+import org.javalens.mcp.tools.MoveTypeToNewFileTool;
+import org.javalens.mcp.tools.PullUpTool;
+import org.javalens.mcp.tools.PushDownTool;
 import org.javalens.mcp.tools.FindAnnotationUsagesTool;
 import org.javalens.mcp.tools.FindCastsTool;
 import org.javalens.mcp.tools.FindCatchBlocksTool;
@@ -189,8 +200,149 @@ class ErrorCodeContractTest {
             Arguments.of("analyze_control_flow",
                 (Function<TestContext, Tool>) ctx -> new AnalyzeControlFlowTool(() -> ctx.service)),
             Arguments.of("analyze_data_flow",
-                (Function<TestContext, Tool>) ctx -> new AnalyzeDataFlowTool(() -> ctx.service))
+                (Function<TestContext, Tool>) ctx -> new AnalyzeDataFlowTool(() -> ctx.service)),
+            // 1.4.1 descriptor refactorings + compound tools (added by the 1.4.2 drift guard)
+            Arguments.of("apply_cleanup",
+                (Function<TestContext, Tool>) ctx -> new ApplyCleanupTool(() -> ctx.service)),
+            Arguments.of("apply_quick_fix",
+                (Function<TestContext, Tool>) ctx -> new ApplyQuickFixTool(() -> ctx.service)),
+            Arguments.of("change_method_signature",
+                (Function<TestContext, Tool>) ctx -> new ChangeMethodSignatureTool(() -> ctx.service)),
+            Arguments.of("diagnose_and_fix",
+                (Function<TestContext, Tool>) ctx -> new DiagnoseAndFixTool(() -> ctx.service)),
+            Arguments.of("encapsulate_field",
+                (Function<TestContext, Tool>) ctx -> new EncapsulateFieldTool(() -> ctx.service)),
+            Arguments.of("extract_superclass",
+                (Function<TestContext, Tool>) ctx -> new ExtractSuperclassTool(() -> ctx.service)),
+            Arguments.of("introduce_parameter_object",
+                (Function<TestContext, Tool>) ctx -> new IntroduceParameterObjectTool(() -> ctx.service)),
+            Arguments.of("move_type_to_new_file",
+                (Function<TestContext, Tool>) ctx -> new MoveTypeToNewFileTool(() -> ctx.service)),
+            Arguments.of("pull_up",
+                (Function<TestContext, Tool>) ctx -> new PullUpTool(() -> ctx.service)),
+            Arguments.of("push_down",
+                (Function<TestContext, Tool>) ctx -> new PushDownTool(() -> ctx.service)),
+            // 1.4.2 additions
+            Arguments.of("find_affected_tests",
+                (Function<TestContext, Tool>) ctx -> new FindAffectedTestsTool(() -> ctx.service))
         );
+    }
+
+    /** Reflectively build the full production registry against the given service. */
+    private static org.javalens.mcp.tools.ToolRegistry buildRegistry(JdtServiceImpl svc) throws Exception {
+        org.javalens.mcp.JavaLensApplication app = new org.javalens.mcp.JavaLensApplication();
+        java.lang.reflect.Field svcField =
+            org.javalens.mcp.JavaLensApplication.class.getDeclaredField("jdtService");
+        svcField.setAccessible(true);
+        svcField.set(app, svc);
+        java.lang.reflect.Field registryField =
+            org.javalens.mcp.JavaLensApplication.class.getDeclaredField("toolRegistry");
+        registryField.setAccessible(true);
+        org.javalens.mcp.tools.ToolRegistry registry = new org.javalens.mcp.tools.ToolRegistry();
+        registryField.set(app, registry);
+        java.lang.reflect.Method registerTools =
+            org.javalens.mcp.JavaLensApplication.class.getDeclaredMethod("registerTools");
+        registerTools.setAccessible(true);
+        registerTools.invoke(app);
+        return registry;
+    }
+
+    private static final java.util.Set<String> SERVICE_INDEPENDENT =
+        java.util.Set.of("health_check", "load_project");
+
+    @SuppressWarnings("unchecked")
+    private static java.util.List<String> requiredParams(Tool tool) {
+        Object required = tool.getInputSchema().get("required");
+        return required instanceof java.util.List<?> list
+            ? (java.util.List<String>) list : java.util.List.of();
+    }
+
+    @org.junit.jupiter.api.Test
+    @DisplayName("the required-params enumeration matches the live registry exactly (no drift)")
+    void enumerationMatchesRegistry() throws Exception {
+        java.util.Set<String> enumerated = toolsWithRequiredParams()
+            .map(args -> (String) args.get()[0])
+            .collect(java.util.stream.Collectors.toCollection(java.util.TreeSet::new));
+
+        java.util.Set<String> fromRegistry = new java.util.TreeSet<>();
+        org.javalens.mcp.tools.ToolRegistry registry = buildRegistry(service);
+        for (String name : registry.getToolNames()) {
+            if (SERVICE_INDEPENDENT.contains(name)) {
+                continue;
+            }
+            if (!requiredParams(registry.getTool(name).orElseThrow()).isEmpty()) {
+                fromRegistry.add(name);
+            }
+        }
+        assertEquals(fromRegistry, enumerated,
+            "toolsWithRequiredParams() must list exactly the registry's required-param tools; "
+                + "missing rows = drift, extra rows = stale");
+    }
+
+    @org.junit.jupiter.api.Test
+    @DisplayName("every service-dependent tool reports exactly PROJECT_NOT_LOADED without a service")
+    void noService_isExactlyProjectNotLoaded() throws Exception {
+        org.javalens.mcp.tools.ToolRegistry serviceless = buildRegistry(null);
+        java.util.Map<String, String> wrongCodes = new java.util.TreeMap<>();
+        for (String name : serviceless.getToolNames()) {
+            if (SERVICE_INDEPENDENT.contains(name)) {
+                continue;
+            }
+            var response = serviceless.getTool(name).orElseThrow()
+                .execute(objectMapper.createObjectNode());
+            String code = response.isSuccess() ? "<success>"
+                : response.getError() == null ? "<no error info>" : response.getError().getCode();
+            if (!"PROJECT_NOT_LOADED".equals(code)) {
+                wrongCodes.put(name, code);
+            }
+        }
+        assertEquals(java.util.Map.of(), wrongCodes,
+            "every service-dependent tool must report PROJECT_NOT_LOADED without a service");
+    }
+
+    @org.junit.jupiter.api.Test
+    @DisplayName("filePath-requiring tools report a documented input-error code for a nonexistent file")
+    void nonexistentFile_isDocumentedInputError() throws Exception {
+        java.util.Set<String> allowedCodes =
+            java.util.Set.of("FILE_NOT_FOUND", "SYMBOL_NOT_FOUND", "INVALID_PARAMETER");
+        java.util.Map<String, String> violations = new java.util.TreeMap<>();
+        java.util.Set<String> probed = new java.util.TreeSet<>();
+
+        org.javalens.mcp.tools.ToolRegistry registry = buildRegistry(service);
+        for (String name : registry.getToolNames()) {
+            if (SERVICE_INDEPENDENT.contains(name)) {
+                continue;
+            }
+            Tool tool = registry.getTool(name).orElseThrow();
+            java.util.List<String> required = requiredParams(tool);
+            if (!required.contains("filePath")) {
+                continue;
+            }
+            probed.add(name);
+
+            ObjectNode args = objectMapper.createObjectNode();
+            for (String param : required) {
+                if (param.equals("filePath")) {
+                    args.put("filePath", "no/such/Missing.java");
+                } else if (param.equals("line") || param.equals("column")
+                    || param.equals("endLine") || param.equals("endColumn")) {
+                    args.put(param, 0);
+                } else {
+                    args.put(param, "x");
+                }
+            }
+
+            var response = tool.execute(args);
+            String code = response.isSuccess() ? "<success>"
+                : response.getError() == null ? "<no error info>" : response.getError().getCode();
+            if (!allowedCodes.contains(code)) {
+                violations.put(name, code);
+            }
+        }
+
+        assertFalse(probed.isEmpty(), "probe found no filePath-requiring tools - audit the schema scan");
+        assertEquals(java.util.Map.of(), violations,
+            "nonexistent filePath must yield a documented input-error code " + allowedCodes);
     }
 
     @ParameterizedTest(name = "{0}: empty args → INVALID_PARAMETER")

@@ -6,6 +6,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ErrorInfo;
+import org.javalens.mcp.tools.AnalyzeChangeImpactTool;
+import org.javalens.mcp.tools.FindAffectedTestsTool;
 import org.javalens.mcp.tools.FindAnnotationUsagesTool;
 import org.javalens.mcp.tools.FindCastsTool;
 import org.javalens.mcp.tools.FindCatchBlocksTool;
@@ -16,12 +18,15 @@ import org.javalens.mcp.tools.FindMethodReferencesTool;
 import org.javalens.mcp.tools.FindReferencesTool;
 import org.javalens.mcp.tools.FindReflectionUsageTool;
 import org.javalens.mcp.tools.FindThrowsDeclarationsTool;
+import org.javalens.mcp.tools.FindUnreachableCodeTool;
 import org.javalens.mcp.tools.FindTypeArgumentsTool;
 import org.javalens.mcp.tools.FindTypeInstantiationsTool;
 import org.javalens.mcp.tools.GetCallHierarchyIncomingTool;
 import org.javalens.mcp.tools.GetDiRegistrationsTool;
 import org.javalens.mcp.tools.GetDiagnosticsTool;
 import org.javalens.mcp.tools.GetDocumentSymbolsTool;
+import org.javalens.mcp.tools.GetHttpEndpointsTool;
+import org.javalens.mcp.tools.GetJpaModelTool;
 import org.javalens.mcp.tools.SearchSymbolsTool;
 import org.javalens.mcp.tools.SuggestImportsTool;
 import org.javalens.mcp.tools.Tool;
@@ -141,8 +146,83 @@ class MaxResultsBoundaryContractTest {
                 ctx -> new GetDiRegistrationsTool(() -> ctx.service),  0, 1),
             row("suggest_imports",
                 ctx -> ctx.args().put("typeName", "List"),
-                ctx -> new SuggestImportsTool(() -> ctx.service),  0, 1)
+                ctx -> new SuggestImportsTool(() -> ctx.service),  0, 1),
+            // 1.4.2 additions (the #29 audit found these missing from the registry)
+            row("analyze_change_impact",
+                ctx -> argsAt(ctx, "src/main/java/com/example/Calculator.java", 14, 15)
+                    .put("transitive", true),
+                ctx -> new AnalyzeChangeImpactTool(() -> ctx.service),  0, 1),
+            row("find_unreachable_code",
+                ctx -> ctx.args(),
+                ctx -> new FindUnreachableCodeTool(() -> ctx.service),  0, 1),
+            row("find_affected_tests",
+                ctx -> argsAt(ctx, "src/main/java/com/example/Calculator.java", 14, 15),
+                ctx -> new FindAffectedTestsTool(() -> ctx.service),  0, 1),
+            row("get_jpa_model",
+                ctx -> ctx.args(),
+                ctx -> new GetJpaModelTool(() -> ctx.service),  0, 1),
+            row("get_http_endpoints",
+                ctx -> ctx.args(),
+                ctx -> new GetHttpEndpointsTool(() -> ctx.service),  0, 1)
         );
+    }
+
+    /**
+     * Tools whose maxResults caps PER CATEGORY (per reflection method / per
+     * annotation type): an aggregate-total cap below the total does not
+     * guarantee truncation, so the below-total case is skipped for them.
+     */
+    private static final java.util.Set<String> PER_CATEGORY_CAP =
+        java.util.Set.of("find_reflection_usage", "get_di_registrations");
+
+    @ParameterizedTest(name = "{0}: maxResults at total, total+1, total-1")
+    @MethodSource("provideToolArgs")
+    @DisplayName("maxResults at the exact total and one above return everything; one below truncates")
+    void totalBoundaries_exact(String toolName,
+                               Function<TestContext, ObjectNode> argsBuilder,
+                               Function<TestContext, Tool> toolBuilder,
+                               int minResultsAtZero, int scale) {
+        TestContext ctx = new TestContext(service, projectPath, objectMapper);
+
+        var reference = toolBuilder.apply(ctx)
+            .execute(argsBuilder.apply(ctx).put("maxResults", Integer.MAX_VALUE));
+        assertTrue(reference.isSuccess(),
+            toolName + ": reference call must succeed; got: " + describe(reference));
+        int total = reference.getMeta().getTotalCount();
+
+        var atTotal = toolBuilder.apply(ctx)
+            .execute(argsBuilder.apply(ctx).put("maxResults", total));
+        assertTrue(atTotal.isSuccess(),
+            toolName + " must succeed at maxResults=total; got: " + describe(atTotal));
+        assertTrue(Integer.valueOf(total).equals(atTotal.getMeta().getReturnedCount()),
+            toolName + ": maxResults=total(" + total + ") must return everything; got returnedCount="
+                + atTotal.getMeta().getReturnedCount());
+        if (!PER_CATEGORY_CAP.contains(toolName)) {
+            assertTrue(!Boolean.TRUE.equals(atTotal.getMeta().getTruncated()),
+                toolName + ": maxResults=total must not flag truncation");
+        }
+
+        var aboveTotal = toolBuilder.apply(ctx)
+            .execute(argsBuilder.apply(ctx).put("maxResults", total + 1));
+        assertTrue(aboveTotal.isSuccess(),
+            toolName + " must succeed at maxResults=total+1; got: " + describe(aboveTotal));
+        assertTrue(Integer.valueOf(total).equals(aboveTotal.getMeta().getReturnedCount()),
+            toolName + ": maxResults=total+1 must return everything; got returnedCount="
+                + aboveTotal.getMeta().getReturnedCount());
+        assertTrue(!Boolean.TRUE.equals(aboveTotal.getMeta().getTruncated()),
+            toolName + ": maxResults=total+1 must not flag truncation");
+
+        if (total >= 1 && !PER_CATEGORY_CAP.contains(toolName)) {
+            var belowTotal = toolBuilder.apply(ctx)
+                .execute(argsBuilder.apply(ctx).put("maxResults", total - 1));
+            assertTrue(belowTotal.isSuccess(),
+                toolName + " must succeed at maxResults=total-1; got: " + describe(belowTotal));
+            assertTrue(Integer.valueOf(total - 1).equals(belowTotal.getMeta().getReturnedCount()),
+                toolName + ": maxResults=total-1 must return exactly total-1(" + (total - 1)
+                    + "); got returnedCount=" + belowTotal.getMeta().getReturnedCount());
+            assertTrue(Boolean.TRUE.equals(belowTotal.getMeta().getTruncated()),
+                toolName + ": maxResults=total-1 must flag truncation");
+        }
     }
 
     @ParameterizedTest(name = "{0}: maxResults=0 → returnedCount<={3}")
