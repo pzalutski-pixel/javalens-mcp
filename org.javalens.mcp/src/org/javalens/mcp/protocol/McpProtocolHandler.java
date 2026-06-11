@@ -164,7 +164,28 @@ public class McpProtocolHandler {
         capabilities.put("tools", Map.of());  // We support tools
         result.put("capabilities", capabilities);
 
+        // The disk-sync contract the client can rely on (MCP `instructions`).
+        result.put("instructions", syncInstructions(
+            org.javalens.core.sync.DiskSyncMode.fromEnvironment(System.getenv("JAVALENS_DISK_SYNC"))));
+
         return result;
+    }
+
+    /**
+     * The mode-matched sync contract presented to the AI: the claim here must
+     * always equal the server's actual behavior.
+     */
+    public static String syncInstructions(org.javalens.core.sync.DiskSyncMode mode) {
+        if (mode == org.javalens.core.sync.DiskSyncMode.MANUAL) {
+            return "JavaLens disk sync is MANUAL: answers reflect the last load_project. "
+                + "After writing, adding, or deleting source files, call load_project again "
+                + "to refresh the model before trusting analysis results.";
+        }
+        return "JavaLens disk sync is STRICT: every answer is verified against the files on "
+            + "disk at query time - no reload is needed after editing, adding, or deleting "
+            + "source files. Call load_project only on first use, when a response reports "
+            + "RELOAD_REQUIRED (a build file like pom.xml changed, so the classpath must be "
+            + "rebuilt), or to rebuild everything from scratch.";
     }
 
     /**

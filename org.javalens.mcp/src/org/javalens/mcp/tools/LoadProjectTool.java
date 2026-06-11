@@ -56,6 +56,25 @@ public class LoadProjectTool implements Tool {
             2. Wait for project to load (may take a few seconds for large projects)
             3. Use health_check to verify project is loaded
             4. Begin using analysis tools (search_symbols, find_references, etc.)
+            """ + syncContract();
+    }
+
+    /** Mode-matched sync contract: the description's claim must equal the behavior. */
+    private static String syncContract() {
+        if (org.javalens.core.sync.DiskSyncMode.fromEnvironment(System.getenv("JAVALENS_DISK_SYNC"))
+                == org.javalens.core.sync.DiskSyncMode.MANUAL) {
+            return """
+
+                SYNC (manual mode): answers reflect the last load. After writing, adding,
+                or deleting source files, call load_project again to refresh the model.
+                """;
+        }
+        return """
+
+            SYNC (strict mode): answers are always verified against the files on disk -
+            no reload is needed after editing, adding, or deleting source files. Call
+            load_project only on first use, when a response reports RELOAD_REQUIRED
+            (a build file changed), or to rebuild everything from scratch.
             """;
     }
 

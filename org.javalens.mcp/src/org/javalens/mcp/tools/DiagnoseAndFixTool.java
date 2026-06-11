@@ -54,7 +54,7 @@ public class DiagnoseAndFixTool extends AbstractTool {
             USAGE: diagnose_and_fix(filePath="path/to/File.java")
             OUTPUT: problems (each with its chosen fix when one exists) and
             editsByFile with the computed edits. NOTHING is written - apply the
-            returned edits yourself, then reload the project.
+            returned edits yourself.
 
             A file with no fixable diagnostics returns empty problems/edits.
 
@@ -155,7 +155,9 @@ public class DiagnoseAndFixTool extends AbstractTool {
                 .totalCount(problems.size())
                 .returnedCount(problems.size())
                 .suggestedNextTools(totalEdits > 0
-                    ? List.of("Apply the edits, then load_project to refresh",
+                    ? List.of(service.getDiskSyncMode() == org.javalens.core.sync.DiskSyncMode.MANUAL
+                            ? "Apply the edits, then load_project to refresh"
+                            : "Apply the edits - the next query verifies against disk automatically",
                         "get_diagnostics to verify the problems are gone")
                     : List.of("No fixable problems - nothing to apply"))
                 .build());
