@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.javalens.core.IJdtService;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.tools.AnalyzeChangeImpactTool;
+import org.javalens.mcp.tools.FindAffectedTestsTool;
 import org.javalens.mcp.tools.FindUnreachableCodeTool;
 import org.javalens.mcp.tools.LoadProjectTool;
 import org.javalens.mcp.tools.ToolRegistry;
@@ -50,6 +51,7 @@ class ImpactAnalysisProtocolIntegrationTest {
         toolRegistry.register(new LoadProjectTool(service -> this.sharedService = service));
         toolRegistry.register(new FindUnreachableCodeTool(() -> this.sharedService));
         toolRegistry.register(new AnalyzeChangeImpactTool(() -> this.sharedService));
+        toolRegistry.register(new FindAffectedTestsTool(() -> this.sharedService));
 
         projectPath = helper.getFixturePath("reachability-maven");
     }
@@ -119,7 +121,7 @@ class ImpactAnalysisProtocolIntegrationTest {
         assertEquals(5, data.get("unreachableCount").asInt());
         assertEquals("com.reach.Main#main(String[])",
             data.get("roots").get("mainMethods").get(0).asText());
-        assertEquals(3, data.get("roots").get("testMethodCount").asInt());
+        assertEquals(4, data.get("roots").get("testMethodCount").asInt());
 
         Set<String> keys = new HashSet<>();
         for (JsonNode entry : data.get("unreachable")) {
@@ -147,7 +149,7 @@ class ImpactAnalysisProtocolIntegrationTest {
             """));
 
         assertTrue(payload.get("success").asBoolean());
-        assertEquals(13, payload.get("data").get("unreachableCount").asInt());
+        assertEquals(14, payload.get("data").get("unreachableCount").asInt());
     }
 
     @Test
@@ -167,7 +169,7 @@ class ImpactAnalysisProtocolIntegrationTest {
         assertTrue(payload.get("success").asBoolean(), () -> "tool failed: " + payload);
         JsonNode data = payload.get("data");
         assertEquals("prefix", data.get("symbol").asText());
-        assertEquals(4, data.get("totalAffectedMethods").asInt());
+        assertEquals(5, data.get("totalAffectedMethods").asInt());
 
         Set<String> methods = new HashSet<>();
         for (JsonNode method : data.get("affectedMethods")) {
@@ -175,6 +177,32 @@ class ImpactAnalysisProtocolIntegrationTest {
         }
         assertTrue(methods.contains("com.reach.Main#main(String[])"),
             "depth-4 caller through the interface hop must appear; got: " + methods);
+    }
+
+    @Test
+    @DisplayName("tools/call find_affected_tests returns covering tests with the disabled flag")
+    void toolsCall_findAffectedTests() throws Exception {
+        loadFixtureOverProtocol();
+
+        String prefixFile = projectPath.resolve("src/main/java/com/reach/EnglishGreeter.java")
+            .toString().replace("\\", "\\\\");
+        JsonNode payload = toolPayload(call(String.format("""
+            {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{
+                "name":"find_affected_tests",
+                "arguments":{"filePath":"%s","line":13,"column":20}
+            }}
+            """, prefixFile)));
+
+        assertTrue(payload.get("success").asBoolean(), () -> "tool failed: " + payload);
+        JsonNode data = payload.get("data");
+        assertEquals("prefix", data.get("symbol").asText());
+        assertEquals(2, data.get("testMethodCount").asInt());
+
+        JsonNode tests = data.get("testMethods");
+        assertEquals("greetsThroughInterface", tests.get(0).get("methodName").asText());
+        assertNull(tests.get(0).get("disabled"));
+        assertEquals("disabledGreeting", tests.get(1).get("methodName").asText());
+        assertTrue(tests.get(1).get("disabled").asBoolean());
     }
 
     @Test

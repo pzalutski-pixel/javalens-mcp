@@ -29,6 +29,7 @@ import org.javalens.mcp.tools.ValidateSyntaxTool;
 import org.javalens.mcp.tools.GetCallHierarchyIncomingTool;
 import org.javalens.mcp.tools.GetCallHierarchyOutgoingTool;
 import org.javalens.mcp.tools.FindFieldWritesTool;
+import org.javalens.mcp.tools.FindAffectedTestsTool;
 import org.javalens.mcp.tools.FindTestsTool;
 import org.javalens.mcp.tools.FindUnreachableCodeTool;
 import org.javalens.mcp.tools.FindUnusedCodeTool;
@@ -250,6 +251,7 @@ public class JavaLensApplication implements IApplication {
         toolRegistry.register(new FindTestsTool(() -> jdtService));
         toolRegistry.register(new FindUnusedCodeTool(() -> jdtService));
         toolRegistry.register(new FindUnreachableCodeTool(() -> jdtService));
+        toolRegistry.register(new FindAffectedTestsTool(() -> jdtService));
         toolRegistry.register(new FindPossibleBugsTool(() -> jdtService));
 
         // Refactoring tools

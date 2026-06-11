@@ -71,10 +71,11 @@ class AnalyzeChangeImpactTransitiveTest {
         assertEquals(List.of(
             "com.reach.App#run(String)",
             "com.reach.EnglishGreeter#greet(String)",
+            "com.reach.GreeterDispatchTest#disabledGreeting()",
             "com.reach.GreeterDispatchTest#greetsThroughInterface()",
             "com.reach.Main#main(String[])"),
             data.get("affectedMethods"));
-        assertEquals(4, data.get("totalAffectedMethods"));
+        assertEquals(5, data.get("totalAffectedMethods"));
     }
 
     @Test
@@ -126,8 +127,8 @@ class AnalyzeChangeImpactTransitiveTest {
             "com.reach.App#run(String)",
             "com.reach.EnglishGreeter#greet(String)"),
             data.get("affectedMethods"));
-        assertEquals(4, data.get("totalAffectedMethods"));
-        assertEquals(4, r.getMeta().getTotalCount());
+        assertEquals(5, data.get("totalAffectedMethods"));
+        assertEquals(5, r.getMeta().getTotalCount());
         assertEquals(2, r.getMeta().getReturnedCount());
         assertEquals(Boolean.TRUE, r.getMeta().getTruncated());
     }

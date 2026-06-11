@@ -65,6 +65,7 @@ class ProjectGraphServiceTest {
     private static final String TOT_VIA_HELPER = "com.reach.TestedOnlyTest#viaHelper()";
     private static final String TOT_HELPER = "com.reach.TestedOnlyTest#helper()";
     private static final String GDT_GREETS = "com.reach.GreeterDispatchTest#greetsThroughInterface()";
+    private static final String GDT_DISABLED = "com.reach.GreeterDispatchTest#disabledGreeting()";
 
     // Field keys
     private static final String F_GREETER = "com.reach.App#greeter";
@@ -90,7 +91,7 @@ class ProjectGraphServiceTest {
             Set.of(MAIN, APP_RUN, APP_DEFAULT_NAME, GREETER_GREET, EG_GREET, EG_PREFIX, EG_UNUSED,
                 ORPHAN_DEAD_METHOD, ORPHAN_DEAD_CHAIN, ONLY_FROM_TEST, BASE_HOOK,
                 CHILD_CTOR, CHILD_HOOK, CHILD_CREATE,
-                TOT_DOUBLES, TOT_VIA_HELPER, TOT_HELPER, GDT_GREETS),
+                TOT_DOUBLES, TOT_VIA_HELPER, TOT_HELPER, GDT_GREETS, GDT_DISABLED),
             keys(graph.nodes(NodeKind.METHOD)));
 
         assertEquals(
@@ -151,7 +152,9 @@ class ProjectGraphServiceTest {
             new GraphEdge(TOT_HELPER, ONLY_FROM_TEST, EdgeKind.CALLS),
             // GreeterDispatchTest
             new GraphEdge(GDT_GREETS, T_EG, EdgeKind.CREATES),
-            new GraphEdge(GDT_GREETS, GREETER_GREET, EdgeKind.CALLS));
+            new GraphEdge(GDT_GREETS, GREETER_GREET, EdgeKind.CALLS),
+            new GraphEdge(GDT_DISABLED, T_EG, EdgeKind.CREATES),
+            new GraphEdge(GDT_DISABLED, GREETER_GREET, EdgeKind.CALLS));
 
         assertEquals(expected, Set.copyOf(graph.edges()));
     }
@@ -243,7 +246,7 @@ class ProjectGraphServiceTest {
     @DisplayName("transitive callers climb override declarations: callers via the interface count")
     void transitiveCallersThroughOverride() {
         assertEquals(
-            Set.of(EG_GREET, APP_RUN, MAIN, GDT_GREETS),
+            Set.of(EG_GREET, APP_RUN, MAIN, GDT_GREETS, GDT_DISABLED),
             graph.transitiveCallers(EG_PREFIX));
     }
 
