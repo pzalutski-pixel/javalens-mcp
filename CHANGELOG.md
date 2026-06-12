@@ -11,6 +11,10 @@
   - **Fallback**: `JAVALENS_DISK_SYNC=manual` restores the pre-1.5.0 behavior *and* the pre-1.5.0 tool descriptions exactly (the stated contract always matches the delivered one; `health_check` reports the active mode as `diskSync`). When a build file changes (`pom.xml`, `build.gradle`, ...), the server does not guess — the query fails with `RELOAD_REQUIRED` naming the file, and a verification I/O failure fails with `VERIFICATION_FAILED` rather than answering unverified.
   - **Memory implications**: one session-local stamp map of `path → (size, mtime, hash)` — roughly 300–400 bytes per source file (≈0.1 MB at 300 files, ≈10 MB at 30,000; negligible next to JDT's own model). File contents are never retained (streamed hashing, constant memory) and stamps are never persisted — every `load_project` rebuilds them, so they cannot go stale across sessions.
 
+### Fixed
+
+- Projects declaring a compiler level outside JDT's supported range — legacy poms with `1.5`/`1.6`/`1.7`, levels newer than this JDT knows, or unparseable values — suffered silent diagnostic blindness: JDT responds to an unsupported compliance value by producing no reconcile problems at all, so `get_diagnostics` and `diagnose_and_fix` reported a clean project regardless of real errors, while `validate_syntax` (which never consults compiler options) still caught them (#30). Declared levels are now clamped into the supported range (floor 1.8, ceiling this JDT's newest) and the clamp surfaces as a `COMPLIANCE_LEVEL_UNSUPPORTED` load warning naming both levels.
+
 ## [1.4.2] - 2026-06-10
 
 ### Added
