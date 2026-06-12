@@ -300,6 +300,22 @@ public class ProjectImporter {
                 log.info("No compiler level declared; defaulting to runtime JVM major version {}", level);
             }
         }
+        // JDT only supports compliance 1.8 through its latest version. Legacy
+        // enterprise builds still declare 1.5/1.6/1.7 - applied verbatim, an
+        // unsupported value silently DISABLES reconcile problem detection:
+        // get_diagnostics reports a clean project regardless of real errors
+        // (issue #30). Clamp into the supported range and say so.
+        String clamped = clampToSupportedRange(level);
+        if (!clamped.equals(level)) {
+            warnings.add(new LoadWarning(
+                LoadWarning.COMPLIANCE_LEVEL_UNSUPPORTED,
+                "Declared Java source level " + level + " is outside JDT's supported range; "
+                    + "analyzing at " + clamped + " instead",
+                "JDT supports compliance 1.8 through " + JavaCore.latestSupportedJavaVersion()
+                    + ". Diagnostics reflect level " + clamped + "; code valid only under "
+                    + "the older level may show additional errors."));
+            level = clamped;
+        }
         javaProject.setOption(JavaCore.COMPILER_SOURCE, level);
         javaProject.setOption(JavaCore.COMPILER_COMPLIANCE, level);
         javaProject.setOption(JavaCore.COMPILER_CODEGEN_TARGET_PLATFORM, level);
@@ -309,6 +325,33 @@ public class ProjectImporter {
         // and the fix is silently never offered.
         javaProject.setOption(JavaCore.COMPILER_PB_UNUSED_IMPORT, JavaCore.WARNING);
         log.info("Applied Java source level {} from build metadata", level);
+    }
+
+    /**
+     * Clamp a declared compiler level into JDT's supported range: floor 1.8
+     * (older levels were removed from the compiler), ceiling
+     * {@link JavaCore#latestSupportedJavaVersion()}. Unparseable values fall
+     * back to the floor - a wrong-but-working level beats silent no-analysis.
+     */
+    static String clampToSupportedRange(String level) {
+        int feature;
+        try {
+            String normalized = level.trim();
+            if (normalized.startsWith("1.")) {
+                normalized = normalized.substring(2);
+            }
+            feature = (int) Double.parseDouble(normalized);
+        } catch (NumberFormatException e) {
+            return "1.8";
+        }
+        if (feature < 8) {
+            return "1.8";
+        }
+        int latest = Integer.parseInt(JavaCore.latestSupportedJavaVersion());
+        if (feature > latest) {
+            return JavaCore.latestSupportedJavaVersion();
+        }
+        return level;
     }
 
     /**

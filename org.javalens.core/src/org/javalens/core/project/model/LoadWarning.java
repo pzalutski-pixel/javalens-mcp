@@ -37,6 +37,14 @@ public record LoadWarning(String code, String message, String remediation, Strin
     public static final String BAZEL_NOT_BUILT = "BAZEL_NOT_BUILT";
     public static final String COMPLIANCE_LEVEL_UNKNOWN = "COMPLIANCE_LEVEL_UNKNOWN";
     /**
+     * The build files declare a compiler level outside JDT's supported range
+     * (below 1.8, or above the newest level this JDT knows). Applied verbatim,
+     * such a level silently disables reconcile problem detection — diagnostics
+     * would report a clean project regardless of real errors. The level is
+     * clamped into the supported range instead, and this warning says so.
+     */
+    public static final String COMPLIANCE_LEVEL_UNSUPPORTED = "COMPLIANCE_LEVEL_UNSUPPORTED";
+    /**
      * Annotation processors were declared by the project's build files but every candidate
      * jar failed the {@code Files.isRegularFile} probe at APT wiring time. APT is left
      * enabled with an empty factory path — analysis of processor-generated members will
