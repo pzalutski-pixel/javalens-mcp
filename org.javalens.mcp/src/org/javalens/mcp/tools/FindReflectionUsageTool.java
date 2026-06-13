@@ -117,8 +117,11 @@ public class FindReflectionUsageTool extends AbstractTool {
                         if (!methodName.equals(method.getElementName())) continue;
                         if (!method.exists()) continue;
 
+                        // Source-scoped: reflection-method references that matter are
+                        // the project's own call sites. The full-scope search leaked
+                        // classpath and workspace-metadata (target/work) matches.
                         org.javalens.core.search.SearchResult result =
-                            service.getSearchService().findAllReferences(method, maxResults);
+                            service.getSearchService().findAllReferencesInSources(method, maxResults);
                         labelTotalEncountered += result.totalEncountered();
 
                         List<Map<String, Object>> formatted = formatMatches(result.matches(), service);

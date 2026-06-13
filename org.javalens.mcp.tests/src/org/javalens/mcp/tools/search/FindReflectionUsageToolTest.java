@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.search;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.FindReflectionUsageTool;
@@ -22,12 +24,14 @@ class FindReflectionUsageToolTest {
     TestProjectHelper helper = new TestProjectHelper();
 
     private FindReflectionUsageTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new FindReflectionUsageTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
     }
 
@@ -62,7 +66,6 @@ class FindReflectionUsageToolTest {
         if (!calls.isEmpty()) {
             Map<String, Object> firstCall = calls.get(0);
             assertNotNull(firstCall.get("reflectionMethod"), "Should include reflection method label");
-            // filePath and line may be absent if match is in a binary JAR
         }
     }
 
@@ -343,6 +346,77 @@ class FindReflectionUsageToolTest {
                 "Field.get")) {
             assertTrue(summary.containsKey(expected),
                 "Expected " + expected + " in summary; got: " + summary.keySet());
+        }
+    }
+
+    // ========== Exact magnitude + scope isolation ==========
+
+    @Test
+    @DisplayName("Exactly seven reflection calls, all in DiAndReflectionPatterns.java, with the exact per-API summary")
+    void reflectionUsage_exactlySevenCallsAllInFixture() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("maxResults", 100);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+
+        // DiAndReflectionPatterns is the only file with reflection. Its call sites:
+        // Class.forName, getDeclaredConstructor(), Constructor.newInstance(), getMethod,
+        // Method.invoke, getDeclaredField, Field.get — seven (setAccessible is not in
+        // the detection table). No matches may come from the classpath or workspace.
+        assertEquals(7, ((Number) data.get("totalCalls")).intValue(),
+            "exactly seven reflection call sites; got: " + callsOf(r));
+        assertEquals(7, callsOf(r).size());
+
+        for (Map<String, Object> c : callsOf(r)) {
+            String fp = String.valueOf(c.get("filePath")).replace('\\', '/');
+            assertTrue(fp.endsWith("DiAndReflectionPatterns.java"),
+                "every reflection call is in the fixture source; got: " + fp);
+        }
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> summary = (Map<String, Object>) data.get("summary");
+        assertEquals(java.util.Set.of(
+            "Class.forName", "Class.getDeclaredConstructor", "Constructor.newInstance",
+            "Class.getMethod", "Method.invoke", "Class.getDeclaredField", "Field.get"),
+            summary.keySet(),
+            "exact set of detected reflection APIs; got: " + summary);
+        for (Map.Entry<String, Object> e : summary.entrySet()) {
+            assertEquals(1, ((Number) e.getValue()).intValue(),
+                "each API is called exactly once in the fixture; got: " + summary);
+        }
+    }
+
+    @Test
+    @DisplayName("No scope leak: every entry is a project .java file, never a target/work workspace path")
+    void noScopeLeak_allEntriesAreProjectSource() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("maxResults", 100);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        for (Map<String, Object> c : callsOf(r)) {
+            String fp = String.valueOf(c.get("filePath")).replace('\\', '/');
+            assertTrue(fp.endsWith(".java"), "entry must be a .java source file; got: " + fp);
+            assertFalse(fp.contains("target/work") || fp.contains("javalens-WS"),
+                "reflection search must not leak Eclipse workspace-metadata matches; got: " + fp);
+        }
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: exactly seven reflection calls, none leaked from target/work")
+    void envelope_exactlySeven_noLeak() {
+        JsonNode payload = envelope.payload("find_reflection_usage", envelope.args());
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "find_reflection_usage failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertEquals(7, data.get("totalCalls").asInt(),
+            "the seven reflection calls must survive the JSON-RPC envelope");
+        for (JsonNode c : data.get("reflectionCalls")) {
+            String fp = c.get("filePath").asText().replace('\\', '/');
+            assertFalse(fp.contains("target/work") || fp.contains("javalens-WS"),
+                "no workspace-metadata leak through the envelope; got: " + fp);
         }
     }
 }
