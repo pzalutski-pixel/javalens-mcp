@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.project;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.GetProjectStructureTool;
@@ -329,5 +331,37 @@ class GetProjectStructureToolTest {
             assertTrue(names.contains(expected),
                 expected + " must appear in the project structure; got: " + names);
         }
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: default package reports fileCount=1 and files=[NoPackage.java]")
+    void envelope_defaultPackage_exactFileList() throws Exception {
+        JdtServiceImpl svc = helper.loadProject("default-package");
+        EnvelopeHarness localEnvelope = new EnvelopeHarness(svc);
+        ObjectNode args = localEnvelope.args();
+        args.put("includeFiles", true);
+        JsonNode payload = localEnvelope.payload("get_project_structure", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "get_project_structure failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        JsonNode defaultPkg = null;
+        for (JsonNode root : data.get("sourceRoots")) {
+            for (JsonNode pkg : root.get("packages")) {
+                if ("(default package)".equals(pkg.get("name").asText())) {
+                    defaultPkg = pkg;
+                    break;
+                }
+            }
+        }
+        assertNotNull(defaultPkg, () -> "default package must surface through the envelope: " + data);
+        assertEquals(1, defaultPkg.get("fileCount").asInt(),
+            "default package fileCount=1 through the envelope");
+        JsonNode files = defaultPkg.get("files");
+        assertEquals(1, files.size(), "exactly one file through the envelope");
+        assertEquals("NoPackage.java", files.get(0).asText(),
+            "the default-package file is NoPackage.java through the envelope");
     }
 }
