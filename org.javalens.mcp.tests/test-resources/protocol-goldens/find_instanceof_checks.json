@@ -1,0 +1,29 @@
+{
+  "data" : {
+    "advice" : "Consider visitor pattern or polymorphism to replace instanceof chains",
+    "locations" : [ {
+      "column" : 27,
+      "context" : "if (obj instanceof Calculator) {",
+      "filePath" : "src/main/java/com/example/SearchPatterns.java",
+      "length" : 10,
+      "line" : 78,
+      "offset" : 2107
+    }, {
+      "column" : 27,
+      "context" : "if (obj instanceof Calculator) {",
+      "filePath" : "src/main/java/com/example/SearchPatterns.java",
+      "length" : 10,
+      "line" : 99,
+      "offset" : 2598
+    } ],
+    "totalCount" : 2,
+    "typeName" : "com.example.Calculator"
+  },
+  "meta" : {
+    "returnedCount" : 2,
+    "suggestedNextTools" : [ "find_casts to find related cast expressions", "get_type_hierarchy to understand inheritance" ],
+    "totalCount" : 2,
+    "truncated" : false
+  },
+  "success" : true
+}

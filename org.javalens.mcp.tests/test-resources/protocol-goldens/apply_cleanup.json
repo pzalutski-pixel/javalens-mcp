@@ -1,0 +1,12 @@
+{
+  "data" : {
+    "changed" : false,
+    "cleanupId" : "convert_loops",
+    "filePath" : "src/main/java/com/example/Calculator.java",
+    "source" : "package com.example;\r\n\r\n/**\r\n * Simple calculator for testing search and navigation tools.\r\n */\r\npublic class Calculator {\r\n    private int lastResult;\r\n\r\n    /**\r\n     * Adds two numbers.\r\n     * @param a first operand\r\n     * @param b second operand\r\n     * @return the sum\r\n     */\r\n    public int add(int a, int b) {\r\n        lastResult = a + b;\r\n        return lastResult;\r\n    }\r\n\r\n    /**\r\n     * Subtracts two numbers.\r\n     * @param a first operand\r\n     * @param b second operand\r\n     * @return the difference\r\n     */\r\n    public int subtract(int a, int b) {\r\n        lastResult = a - b;\r\n        return lastResult;\r\n    }\r\n\r\n    /**\r\n     * Multiplies two numbers.\r\n     * @param a first operand\r\n     * @param b second operand\r\n     * @return the product\r\n     */\r\n    public int multiply(int a, int b) {\r\n        lastResult = a * b;\r\n        return lastResult;\r\n    }\r\n\r\n    /**\r\n     * Gets the last calculation result.\r\n     * @return the last result\r\n     */\r\n    public int getLastResult() {\r\n        return lastResult;\r\n    }\r\n}\r\n"
+  },
+  "meta" : {
+    "suggestedNextTools" : [ "Nothing to clean up for this id", "get_diagnostics to verify no new problems" ]
+  },
+  "success" : true
+}

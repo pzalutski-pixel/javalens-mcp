@@ -1,0 +1,58 @@
+{
+  "data" : {
+    "callees" : {
+      "count" : 0,
+      "list" : [ ]
+    },
+    "callers" : {
+      "count" : 4,
+      "list" : [ {
+        "callLine" : 35,
+        "file" : "src/test/java/com/example/SampleTest.java",
+        "method" : "testAddition",
+        "qualifiedType" : "com.example.SampleTest",
+        "type" : "SampleTest"
+      }, {
+        "callLine" : 58,
+        "file" : "src/main/java/com/example/SearchPatterns.java",
+        "method" : "createObjects",
+        "qualifiedType" : "com.example.SearchPatterns",
+        "type" : "SearchPatterns"
+      }, {
+        "callLine" : 58,
+        "file" : "src/main/java/com/example/service/UserService.java",
+        "method" : "calculateSum",
+        "qualifiedType" : "com.example.service.UserService",
+        "type" : "UserService"
+      }, {
+        "callLine" : 80,
+        "file" : "src/main/java/com/example/SearchPatterns.java",
+        "method" : "performCasts",
+        "qualifiedType" : "com.example.SearchPatterns",
+        "type" : "SearchPatterns"
+      } ]
+    },
+    "method" : {
+      "constructor" : false,
+      "declaringType" : "com.example.Calculator",
+      "file" : "src/main/java/com/example/Calculator.java",
+      "line" : 8,
+      "modifiers" : [ "public" ],
+      "name" : "add",
+      "returnType" : "int",
+      "signature" : "add(int a, int b): int"
+    },
+    "overrides" : { },
+    "parameters" : [ {
+      "name" : "a",
+      "type" : "int"
+    }, {
+      "name" : "b",
+      "type" : "int"
+    } ]
+  },
+  "meta" : {
+    "suggestedNextTools" : [ "analyze_type for declaring type analysis", "find_references for all usages", "go_to_definition to navigate to a callee" ]
+  },
+  "success" : true
+}

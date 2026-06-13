@@ -1,0 +1,22 @@
+{
+  "data" : {
+    "symbol" : "add",
+    "symbolType" : "SourceMethod",
+    "testMethodCount" : 1,
+    "testMethods" : [ {
+      "className" : "SampleTest",
+      "filePath" : "src/test/java/com/example/SampleTest.java",
+      "framework" : "JUnit5",
+      "key" : "com.example.SampleTest#testAddition()",
+      "line" : 34,
+      "methodName" : "testAddition"
+    } ]
+  },
+  "meta" : {
+    "returnedCount" : 1,
+    "suggestedNextTools" : [ "analyze_change_impact with transitive=true for the full blast radius", "find_tests for the project's whole test inventory" ],
+    "totalCount" : 1,
+    "truncated" : false
+  },
+  "success" : true
+}

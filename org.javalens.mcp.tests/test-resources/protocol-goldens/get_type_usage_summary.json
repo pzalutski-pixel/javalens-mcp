@@ -1,0 +1,101 @@
+{
+  "data" : {
+    "kind" : "class",
+    "totalUsages" : 10,
+    "typeName" : "com.example.Calculator",
+    "usages" : {
+      "casts" : {
+        "count" : 1,
+        "locations" : [ {
+          "column" : 31,
+          "context" : "Calculator calc = (Calculator) obj;",
+          "filePath" : "src/main/java/com/example/SearchPatterns.java",
+          "length" : 10,
+          "line" : 79,
+          "offset" : 2153
+        } ]
+      },
+      "instanceofChecks" : {
+        "count" : 2,
+        "locations" : [ {
+          "column" : 27,
+          "context" : "if (obj instanceof Calculator) {",
+          "filePath" : "src/main/java/com/example/SearchPatterns.java",
+          "length" : 10,
+          "line" : 78,
+          "offset" : 2107
+        }, {
+          "column" : 27,
+          "context" : "if (obj instanceof Calculator) {",
+          "filePath" : "src/main/java/com/example/SearchPatterns.java",
+          "length" : 10,
+          "line" : 99,
+          "offset" : 2598
+        } ]
+      },
+      "instantiations" : {
+        "count" : 5,
+        "locations" : [ {
+          "column" : 22,
+          "context" : "calcs.add(new Calculator());",
+          "filePath" : "src/main/java/com/example/SearchPatterns.java",
+          "length" : 10,
+          "line" : 211,
+          "offset" : 6016
+        }, {
+          "column" : 23,
+          "context" : "return new Calculator();",
+          "filePath" : "src/main/java/com/example/SearchPatterns.java",
+          "length" : 10,
+          "line" : 226,
+          "offset" : 6350
+        }, {
+          "column" : 25,
+          "context" : "calculator = new Calculator();",
+          "filePath" : "src/test/java/com/example/SampleTest.java",
+          "length" : 10,
+          "line" : 25,
+          "offset" : 716
+        }, {
+          "column" : 30,
+          "context" : "Calculator calc = new Calculator();",
+          "filePath" : "src/main/java/com/example/SearchPatterns.java",
+          "length" : 10,
+          "line" : 57,
+          "offset" : 1574
+        }, {
+          "column" : 30,
+          "context" : "this.calculator = new Calculator();",
+          "filePath" : "src/main/java/com/example/service/UserService.java",
+          "length" : 10,
+          "line" : 19,
+          "offset" : 483
+        } ]
+      },
+      "typeArguments" : {
+        "count" : 2,
+        "locations" : [ {
+          "column" : 13,
+          "context" : "List<Calculator> calcs = new ArrayList<>();",
+          "filePath" : "src/main/java/com/example/SearchPatterns.java",
+          "length" : 10,
+          "line" : 210,
+          "offset" : 5954
+        }, {
+          "column" : 17,
+          "context" : "private List<Calculator> calculatorList;",
+          "filePath" : "src/main/java/com/example/SearchPatterns.java",
+          "length" : 10,
+          "line" : 26,
+          "offset" : 825
+        } ]
+      }
+    }
+  },
+  "meta" : {
+    "returnedCount" : 10,
+    "suggestedNextTools" : [ "analyze_type for complete type analysis", "find_references for all reference types", "get_type_hierarchy to understand inheritance" ],
+    "totalCount" : 10
+  },
+  "success" : true
+}

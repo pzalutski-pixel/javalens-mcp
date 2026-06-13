@@ -29,7 +29,7 @@
                     <!-- Attach the Lombok agent (=ECJ) so the MCP tools can be
                          exercised against a Lombok project the way the shipped
                          server runs; lombok.jar is staged into target/ below. -->
-                    <argLine>-Xmx2048m -javaagent:${project.build.directory}/lombok/lombok.jar=ECJ -Djavalens.test.fixtures=${project.basedir}/../org.javalens.core.tests/test-resources/sample-projects</argLine>
+                    <argLine>-Xmx2048m -javaagent:${project.build.directory}/lombok/lombok.jar=ECJ -Djavalens.test.fixtures=${project.basedir}/../org.javalens.core.tests/test-resources/sample-projects -Djavalens.regen.goldens=${javalens.regen.goldens}</argLine>
                     <providerHint>junit5</providerHint>
                     <trimStackTrace>false</trimStackTrace>
                     <failIfNoTests>false</failIfNoTests>

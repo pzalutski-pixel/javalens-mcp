@@ -1,0 +1,61 @@
+{
+  "data" : {
+    "editsByFile" : {
+      "src/main/java/com/example/RefactoringTarget.java" : [ {
+        "endColumn" : 49,
+        "endLine" : 79,
+        "endOffset" : 1984,
+        "isDeclaration" : false,
+        "newText" : "formatMessage(\"Items\", 5)",
+        "oldText" : "formatMessage(\"Items\", 5)",
+        "startColumn" : 24,
+        "startLine" : 79,
+        "startOffset" : 1959,
+        "type" : "replace"
+      }, {
+        "endColumn" : 53,
+        "endLine" : 81,
+        "endOffset" : 2077,
+        "isDeclaration" : false,
+        "newText" : "formatMessage(\"Total\", 10)",
+        "oldText" : "formatMessage(\"Total\", 10)",
+        "startColumn" : 27,
+        "startLine" : 81,
+        "startOffset" : 2051,
+        "type" : "replace"
+      }, {
+        "endColumn" : 58,
+        "endLine" : 71,
+        "endOffset" : 1788,
+        "isDeclaration" : true,
+        "newSignature" : "String formatMessage(String message, int count)",
+        "oldSignature" : "String formatMessage(String message, int count)",
+        "startColumn" : 11,
+        "startLine" : 71,
+        "startOffset" : 1741,
+        "type" : "replace"
+      } ]
+    },
+    "filesAffected" : 1,
+    "newName" : "formatMessage",
+    "newParameterCount" : 2,
+    "newParameters" : [ {
+      "name" : "count",
+      "type" : "int"
+    }, {
+      "name" : "message",
+      "type" : "String"
+    } ],
+    "newReturnType" : "String",
+    "oldName" : "formatMessage",
+    "oldParameterCount" : 2,
+    "oldReturnType" : "String",
+    "totalEdits" : 3
+  },
+  "meta" : {
+    "returnedCount" : 3,
+    "suggestedNextTools" : [ "Apply the text edits to complete the signature change", "get_diagnostics to verify no errors" ],
+    "totalCount" : 3
+  },
+  "success" : true
+}

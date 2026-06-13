@@ -1,0 +1,69 @@
+{
+  "data" : {
+    "diagnostics" : {
+      "errorCount" : 0,
+      "hasProblems" : false,
+      "warningCount" : 0
+    },
+    "hierarchy" : { },
+    "members" : {
+      "constructorCount" : 0,
+      "constructors" : [ ],
+      "fieldCount" : 1,
+      "fields" : [ {
+        "line" : 6,
+        "modifiers" : [ "private" ],
+        "name" : "lastResult",
+        "type" : "int"
+      } ],
+      "methodCount" : 4,
+      "methods" : [ {
+        "line" : 19,
+        "modifiers" : [ "public" ],
+        "name" : "subtract",
+        "returnType" : "int",
+        "signature" : "subtract(int a, int b): int"
+      }, {
+        "line" : 30,
+        "modifiers" : [ "public" ],
+        "name" : "multiply",
+        "returnType" : "int",
+        "signature" : "multiply(int a, int b): int"
+      }, {
+        "line" : 41,
+        "modifiers" : [ "public" ],
+        "name" : "getLastResult",
+        "returnType" : "int",
+        "signature" : "getLastResult(): int"
+      }, {
+        "line" : 8,
+        "modifiers" : [ "public" ],
+        "name" : "add",
+        "returnType" : "int",
+        "signature" : "add(int a, int b): int"
+      } ],
+      "nestedTypeCount" : 0,
+      "nestedTypes" : [ ]
+    },
+    "type" : {
+      "file" : "src/main/java/com/example/Calculator.java",
+      "kind" : "class",
+      "line" : 2,
+      "modifiers" : [ "public" ],
+      "name" : "Calculator",
+      "package" : "com.example",
+      "qualifiedName" : "com.example.Calculator"
+    },
+    "usages" : {
+      "casts" : 1,
+      "instanceofChecks" : 2,
+      "instantiations" : 5,
+      "total" : 10,
+      "typeArguments" : 2
+    }
+  },
+  "meta" : {
+    "suggestedNextTools" : [ "analyze_method for detailed method analysis", "find_references for specific symbol usages", "get_call_hierarchy_incoming for method callers" ]
+  },
+  "success" : true
+}

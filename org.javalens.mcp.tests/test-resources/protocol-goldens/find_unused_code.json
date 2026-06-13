@@ -1,0 +1,126 @@
+{
+  "data" : {
+    "totalUnused" : 16,
+    "unusedFieldCount" : 12,
+    "unusedItems" : [ {
+      "column" : 16,
+      "filePath" : "src/main/java/com/example/AnnotationUsages.java",
+      "kind" : "field",
+      "line" : 10,
+      "name" : "markedField",
+      "type" : "int"
+    }, {
+      "column" : 16,
+      "filePath" : "src/main/java/com/example/UnusedCode.java",
+      "kind" : "field",
+      "line" : 8,
+      "name" : "unusedField",
+      "type" : "int"
+    }, {
+      "column" : 16,
+      "filePath" : "src/main/java/com/example/UnusedCode.java",
+      "kind" : "method",
+      "line" : 29,
+      "name" : "unusedPrivateMethodWithReturn",
+      "signature" : "unusedPrivateMethodWithReturn()"
+    }, {
+      "column" : 17,
+      "filePath" : "src/main/java/com/example/InterfaceExtractTarget.java",
+      "kind" : "method",
+      "line" : 69,
+      "name" : "helper",
+      "signature" : "helper()"
+    }, {
+      "column" : 17,
+      "filePath" : "src/main/java/com/example/UnusedCode.java",
+      "kind" : "method",
+      "line" : 22,
+      "name" : "unusedPrivateMethod",
+      "signature" : "unusedPrivateMethod()"
+    }, {
+      "column" : 17,
+      "filePath" : "src/test/java/com/example/SampleTest.java",
+      "kind" : "method",
+      "line" : 94,
+      "name" : "privateHelper",
+      "signature" : "privateHelper()"
+    }, {
+      "column" : 19,
+      "filePath" : "src/main/java/com/example/DiAndReflectionPatterns.java",
+      "kind" : "field",
+      "line" : 12,
+      "name" : "Bad_Field_Name",
+      "type" : "String"
+    }, {
+      "column" : 19,
+      "filePath" : "src/main/java/com/example/TypeKindsFixture.java",
+      "kind" : "field",
+      "line" : 134,
+      "name" : "labelFromInitializer",
+      "type" : "String"
+    }, {
+      "column" : 19,
+      "filePath" : "src/main/java/com/example/UnusedCode.java",
+      "kind" : "field",
+      "line" : 11,
+      "name" : "unusedStringField",
+      "type" : "String"
+    }, {
+      "column" : 25,
+      "filePath" : "src/main/java/com/example/SearchPatterns.java",
+      "kind" : "field",
+      "line" : 24,
+      "name" : "stringList",
+      "type" : "List<String>"
+    }, {
+      "column" : 29,
+      "filePath" : "src/main/java/com/example/DiAndReflectionPatterns.java",
+      "kind" : "field",
+      "line" : 15,
+      "name" : "badConstant",
+      "type" : "int"
+    }, {
+      "column" : 29,
+      "filePath" : "src/main/java/com/example/DiAndReflectionPatterns.java",
+      "kind" : "field",
+      "line" : 18,
+      "name" : "GOOD_CONSTANT",
+      "type" : "int"
+    }, {
+      "column" : 29,
+      "filePath" : "src/main/java/com/example/RefactoringTarget.java",
+      "kind" : "field",
+      "line" : 19,
+      "name" : "MAX_SIZE",
+      "type" : "int"
+    }, {
+      "column" : 29,
+      "filePath" : "src/main/java/com/example/SearchPatterns.java",
+      "kind" : "field",
+      "line" : 26,
+      "name" : "calculatorList",
+      "type" : "List<Calculator>"
+    }, {
+      "column" : 30,
+      "filePath" : "src/main/java/com/example/SearchPatterns.java",
+      "kind" : "field",
+      "line" : 21,
+      "name" : "serialVersionUID",
+      "type" : "long"
+    }, {
+      "column" : 33,
+      "filePath" : "src/main/java/com/example/SearchPatterns.java",
+      "kind" : "field",
+      "line" : 25,
+      "name" : "stringIntMap",
+      "type" : "Map<String,Integer>"
+    } ],
+    "unusedMethodCount" : 4
+  },
+  "meta" : {
+    "returnedCount" : 16,
+    "suggestedNextTools" : [ "Consider removing unused code to improve maintainability" ],
+    "totalCount" : 16
+  },
+  "success" : true
+}

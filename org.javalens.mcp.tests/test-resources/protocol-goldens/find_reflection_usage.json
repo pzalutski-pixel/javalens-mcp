@@ -1,0 +1,4252 @@
+{
+  "data" : {
+    "reflectionCalls" : [ {
+      "column" : 21,
+      "context" : "return clazz.getDeclaredConstructor().newInstance();",
+      "filePath" : "src/main/java/com/example/DiAndReflectionPatterns.java",
+      "length" : 24,
+      "line" : 27,
+      "offset" : 815,
+      "reflectionMethod" : "Class.getDeclaredConstructor"
+    }, {
+      "column" : 21,
+      "context" : "return field.get(target);",
+      "filePath" : "src/main/java/com/example/DiAndReflectionPatterns.java",
+      "length" : 11,
+      "line" : 38,
+      "offset" : 1278,
+      "reflectionMethod" : "Field.get"
+    }, {
+      "column" : 40,
+      "context" : "Field field = target.getClass().getDeclaredField(fieldName);",
+      "filePath" : "src/main/java/com/example/DiAndReflectionPatterns.java",
+      "length" : 27,
+      "line" : 36,
+      "offset" : 1193,
+      "reflectionMethod" : "Class.getDeclaredField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 10,
+      "offset" : 18809,
+      "reflectionMethod" : "Field.get"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 100,
+      "offset" : 44963,
+      "reflectionMethod" : "Class.getDeclaredMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 109,
+      "offset" : 22502,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 11,
+      "offset" : 12313,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 11,
+      "offset" : 1677,
+      "reflectionMethod" : "Class.getFields"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 11,
+      "offset" : 21390,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 11,
+      "offset" : 3087,
+      "reflectionMethod" : "Class.getFields"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 11,
+      "offset" : 31554,
+      "reflectionMethod" : "Class.getFields"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 11,
+      "offset" : 32669,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 11,
+      "offset" : 3766,
+      "reflectionMethod" : "Class.getFields"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 11,
+      "offset" : 4500,
+      "reflectionMethod" : "Class.getFields"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 11,
+      "offset" : 5011,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 11,
+      "offset" : 5198,
+      "reflectionMethod" : "Class.getFields"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 11,
+      "offset" : 52241,
+      "reflectionMethod" : "Class.getFields"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 11,
+      "offset" : 59399,
+      "reflectionMethod" : "Class.getFields"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 11,
+      "offset" : 5955,
+      "reflectionMethod" : "Class.getFields"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 11,
+      "offset" : 9256,
+      "reflectionMethod" : "Class.getFields"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 11,
+      "offset" : 9549,
+      "reflectionMethod" : "Class.getFields"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 111,
+      "offset" : 20936,
+      "reflectionMethod" : "Class.getDeclaredMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 112,
+      "offset" : 4779,
+      "reflectionMethod" : "Class.getDeclaredMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 118,
+      "offset" : 6806,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 118,
+      "offset" : 7735,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 12,
+      "offset" : 13177,
+      "reflectionMethod" : "Field.set"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 12,
+      "offset" : 15133,
+      "reflectionMethod" : "Class.getMethods"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 12,
+      "offset" : 15512,
+      "reflectionMethod" : "Class.getMethods"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 12,
+      "offset" : 169640,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 12,
+      "offset" : 17012,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 12,
+      "offset" : 18432,
+      "reflectionMethod" : "Class.getMethods"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 12,
+      "offset" : 19040,
+      "reflectionMethod" : "Class.getMethods"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 12,
+      "offset" : 22173,
+      "reflectionMethod" : "Class.getMethods"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 12,
+      "offset" : 2227,
+      "reflectionMethod" : "Class.getMethods"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 12,
+      "offset" : 22720,
+      "reflectionMethod" : "Class.getMethods"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 12,
+      "offset" : 23131,
+      "reflectionMethod" : "Class.getMethods"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 12,
+      "offset" : 24599,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 12,
+      "offset" : 2731,
+      "reflectionMethod" : "Class.getMethods"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 12,
+      "offset" : 3008,
+      "reflectionMethod" : "Class.getMethods"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 12,
+      "offset" : 31036,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 12,
+      "offset" : 31378,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 12,
+      "offset" : 3206,
+      "reflectionMethod" : "Class.getMethods"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 12,
+      "offset" : 32581,
+      "reflectionMethod" : "Class.getMethods"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 12,
+      "offset" : 3554,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 12,
+      "offset" : 40814,
+      "reflectionMethod" : "Class.getMethods"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 12,
+      "offset" : 4311,
+      "reflectionMethod" : "Class.getMethods"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 12,
+      "offset" : 4641,
+      "reflectionMethod" : "Field.set"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 12,
+      "offset" : 5033,
+      "reflectionMethod" : "Class.getMethods"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 12,
+      "offset" : 5084,
+      "reflectionMethod" : "Class.getMethods"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 12,
+      "offset" : 53407,
+      "reflectionMethod" : "Class.getMethods"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 12,
+      "offset" : 63078,
+      "reflectionMethod" : "Class.getMethods"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 12,
+      "offset" : 6806,
+      "reflectionMethod" : "Class.getMethods"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 12,
+      "offset" : 7127,
+      "reflectionMethod" : "Class.getMethods"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 12,
+      "offset" : 7501,
+      "reflectionMethod" : "Class.getMethods"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 12,
+      "offset" : 7604,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 12,
+      "offset" : 7817,
+      "reflectionMethod" : "Class.getMethods"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 12,
+      "offset" : 9222,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 12,
+      "offset" : 9690,
+      "reflectionMethod" : "Class.getMethods"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 12,
+      "offset" : 9986,
+      "reflectionMethod" : "Class.getFields"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 121,
+      "offset" : 54440,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 121,
+      "offset" : 9763,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 123,
+      "offset" : 7017,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 10209,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 102279,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 10239,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 103113,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 103964,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 10796,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 10818,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 11170,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 11410,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 11540,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 11768,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 119597,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 12296,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 128374,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 128537,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 13498,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 13901,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 14043,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 15030,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 1672,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 16733,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 16951,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 17295,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 18285,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 18324,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 1871,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 19124,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 19306,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 20241,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 21307,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 21330,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 21339,
+      "reflectionMethod" : "Class.getField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 2134,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 21918,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 21997,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 2270,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 23546,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 23552,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 23761,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 243607,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 27702,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 2779,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 2819,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 2907,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 29373,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 3127,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 3130,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 31381,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 31674,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 3207,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 3243,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 32723,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 33052,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 3330,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 3655,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 3655,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 3715,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 37199,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 38170,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 38418,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 3914,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 39824,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 4055,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 4153,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 41838,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 44069,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 44146,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 4653,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 47108,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 4778,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 4805,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 4821,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 4922,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 4983,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 5009,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 50419,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 5043,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 5093,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 5235,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 5272,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 52847,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 54146,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 54607,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 56319,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 57794,
+      "reflectionMethod" : "Field.get"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 5807,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 58278,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 58317,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 5861,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 5875,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 5957,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 59712,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 60138,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 60429,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 6166,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 6539,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 6882,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 69745,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 7225,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 7482,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 7662,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 7825,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 7949,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 7999,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 81440,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 8251,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 8310,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 8657,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 8672,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 9338,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 9628,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 9694,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 13,
+      "offset" : 9868,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 132,
+      "offset" : 59119,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 137,
+      "offset" : 6805,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 14,
+      "offset" : 1538,
+      "reflectionMethod" : "Class.getField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 14,
+      "offset" : 18794,
+      "reflectionMethod" : "Class.getField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 14,
+      "offset" : 20247,
+      "reflectionMethod" : "Field.set"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 14,
+      "offset" : 2307,
+      "reflectionMethod" : "Class.getField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 14,
+      "offset" : 25130,
+      "reflectionMethod" : "Field.get"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 14,
+      "offset" : 25654,
+      "reflectionMethod" : "Class.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 14,
+      "offset" : 30093,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 14,
+      "offset" : 6486,
+      "reflectionMethod" : "Class.getField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 14,
+      "offset" : 9145,
+      "reflectionMethod" : "Field.set"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 141,
+      "offset" : 5270,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 142,
+      "offset" : 5680,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 142,
+      "offset" : 7505,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 145,
+      "offset" : 58812,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 145,
+      "offset" : 5910,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 149,
+      "offset" : 8176,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 15,
+      "offset" : 11686,
+      "reflectionMethod" : "Class.getConstructors"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 15,
+      "offset" : 2108,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 15,
+      "offset" : 22276,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 15,
+      "offset" : 23433,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 15,
+      "offset" : 4954,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 15,
+      "offset" : 58414,
+      "reflectionMethod" : "Class.getConstructors"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 15,
+      "offset" : 69326,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 15,
+      "offset" : 7348,
+      "reflectionMethod" : "Field.get"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 15,
+      "offset" : 7506,
+      "reflectionMethod" : "Field.set"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 150,
+      "offset" : 7940,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 151,
+      "offset" : 9280,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 152,
+      "offset" : 9520,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 155,
+      "offset" : 69787,
+      "reflectionMethod" : "Class.getDeclaredMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 101544,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 10184,
+      "reflectionMethod" : "Field.get"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 11393,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 128357,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 128520,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 12930,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 14059,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 14232,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 160830,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 1854,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 1976,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 19958,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 20224,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 2117,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 2253,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 22887,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 23468,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 23641,
+      "reflectionMethod" : "Field.get"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 2506,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 28295,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 2873,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 30223,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 30300,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 30390,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 30426,
+      "reflectionMethod" : "Class.getField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 31971,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 3261,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 3330,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 3455,
+      "reflectionMethod" : "Class.getField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 3492,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 35095,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 3611,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 4502,
+      "reflectionMethod" : "Field.set"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 45636,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 4777,
+      "reflectionMethod" : "Field.set"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 4788,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 4834,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 4992,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 5023,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 52620,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 5300,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 53746,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 5484,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 5725,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 5790,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 5793,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 5824,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 5874,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 59207,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 59312,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 6042,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 6090,
+      "reflectionMethod" : "Field.set"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 6149,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 6219,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 6714,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 6825,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 6825,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 7371,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 77087,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 8501,
+      "reflectionMethod" : "Class.getField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 8986,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 9133,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 9161,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 16,
+      "offset" : 9471,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 160,
+      "offset" : 4672,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 160,
+      "offset" : 9032,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 167,
+      "offset" : 8762,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 169,
+      "offset" : 4041,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 17,
+      "offset" : 10602,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 17,
+      "offset" : 1703,
+      "reflectionMethod" : "Class.getConstructors"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 17,
+      "offset" : 18398,
+      "reflectionMethod" : "Class.getConstructors"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 17,
+      "offset" : 2098,
+      "reflectionMethod" : "Class.getConstructors"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 17,
+      "offset" : 22646,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 17,
+      "offset" : 23001,
+      "reflectionMethod" : "Class.getConstructors"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 17,
+      "offset" : 23443,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 17,
+      "offset" : 2547,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 17,
+      "offset" : 2734,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 17,
+      "offset" : 3795,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 17,
+      "offset" : 3925,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 17,
+      "offset" : 3984,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 17,
+      "offset" : 42373,
+      "reflectionMethod" : "Class.getConstructors"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 17,
+      "offset" : 4290,
+      "reflectionMethod" : "Field.set"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 17,
+      "offset" : 43858,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 17,
+      "offset" : 46186,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 17,
+      "offset" : 48942,
+      "reflectionMethod" : "Class.getConstructors"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 17,
+      "offset" : 5338,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 17,
+      "offset" : 5438,
+      "reflectionMethod" : "Class.getConstructors"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 17,
+      "offset" : 55389,
+      "reflectionMethod" : "Class.getConstructors"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 17,
+      "offset" : 5639,
+      "reflectionMethod" : "Class.getConstructors"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 17,
+      "offset" : 82133,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 17,
+      "offset" : 82446,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 176,
+      "offset" : 5008,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 18,
+      "offset" : 10278,
+      "reflectionMethod" : "Field.get"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 18,
+      "offset" : 10295,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 18,
+      "offset" : 10400,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 18,
+      "offset" : 11001,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 18,
+      "offset" : 111806,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 18,
+      "offset" : 12179,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 18,
+      "offset" : 2182,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 18,
+      "offset" : 2309,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 18,
+      "offset" : 24640,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 18,
+      "offset" : 2530,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 18,
+      "offset" : 2536,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 18,
+      "offset" : 2536,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 18,
+      "offset" : 2540,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 18,
+      "offset" : 25415,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 18,
+      "offset" : 2542,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 18,
+      "offset" : 2738,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 18,
+      "offset" : 27828,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 18,
+      "offset" : 28549,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 18,
+      "offset" : 2963,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 18,
+      "offset" : 3086,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 18,
+      "offset" : 3098,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 18,
+      "offset" : 3510,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 18,
+      "offset" : 4045,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 18,
+      "offset" : 5236,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 18,
+      "offset" : 57163,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 18,
+      "offset" : 57872,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 18,
+      "offset" : 5856,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 18,
+      "offset" : 6954,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 18,
+      "offset" : 73223,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 18,
+      "offset" : 75718,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 18,
+      "offset" : 7638,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 18,
+      "offset" : 7869,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 18,
+      "offset" : 7886,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 18,
+      "offset" : 8590,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 18,
+      "offset" : 8971,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 18,
+      "offset" : 9146,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 19,
+      "offset" : 10996,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 19,
+      "offset" : 13849,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 19,
+      "offset" : 13953,
+      "reflectionMethod" : "Class.getDeclaredFields"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 19,
+      "offset" : 169190,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 19,
+      "offset" : 18427,
+      "reflectionMethod" : "Class.getDeclaredFields"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 19,
+      "offset" : 22423,
+      "reflectionMethod" : "Class.getDeclaredFields"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 19,
+      "offset" : 22558,
+      "reflectionMethod" : "Class.getDeclaredFields"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 19,
+      "offset" : 23830,
+      "reflectionMethod" : "Class.getDeclaredFields"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 19,
+      "offset" : 24121,
+      "reflectionMethod" : "Class.getDeclaredFields"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 19,
+      "offset" : 24545,
+      "reflectionMethod" : "Class.getDeclaredFields"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 19,
+      "offset" : 2507,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 19,
+      "offset" : 2592,
+      "reflectionMethod" : "Class.getField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 19,
+      "offset" : 26386,
+      "reflectionMethod" : "Class.getDeclaredFields"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 19,
+      "offset" : 26405,
+      "reflectionMethod" : "Class.getDeclaredFields"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 19,
+      "offset" : 27633,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 19,
+      "offset" : 27692,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 19,
+      "offset" : 29427,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 19,
+      "offset" : 29486,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 19,
+      "offset" : 3191,
+      "reflectionMethod" : "Class.getDeclaredFields"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 19,
+      "offset" : 3593,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 19,
+      "offset" : 36022,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 19,
+      "offset" : 37439,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 19,
+      "offset" : 41934,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 19,
+      "offset" : 4458,
+      "reflectionMethod" : "Class.getField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 19,
+      "offset" : 45731,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 19,
+      "offset" : 4585,
+      "reflectionMethod" : "Class.getField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 19,
+      "offset" : 4637,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 19,
+      "offset" : 47103,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 19,
+      "offset" : 48368,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 19,
+      "offset" : 5088,
+      "reflectionMethod" : "Class.getField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 19,
+      "offset" : 52174,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 19,
+      "offset" : 55326,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 19,
+      "offset" : 56576,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 19,
+      "offset" : 56635,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 19,
+      "offset" : 58780,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 19,
+      "offset" : 58989,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 19,
+      "offset" : 5988,
+      "reflectionMethod" : "Class.getDeclaredFields"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 19,
+      "offset" : 64050,
+      "reflectionMethod" : "Class.getDeclaredFields"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 19,
+      "offset" : 66926,
+      "reflectionMethod" : "Class.getDeclaredFields"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 19,
+      "offset" : 7195,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 19,
+      "offset" : 8581,
+      "reflectionMethod" : "Field.set"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 19,
+      "offset" : 8641,
+      "reflectionMethod" : "Class.getDeclaredFields"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 19,
+      "offset" : 9247,
+      "reflectionMethod" : "Class.getDeclaredFields"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 193,
+      "offset" : 8601,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 195,
+      "offset" : 5897,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 195,
+      "offset" : 7222,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 198,
+      "offset" : 15205,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 198,
+      "offset" : 17314,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 20,
+      "offset" : 11865,
+      "reflectionMethod" : "Class.getDeclaredMethods"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 20,
+      "offset" : 12460,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 20,
+      "offset" : 17578,
+      "reflectionMethod" : "Class.getDeclaredMethods"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 20,
+      "offset" : 2043,
+      "reflectionMethod" : "Class.getDeclaredMethods"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 20,
+      "offset" : 3429,
+      "reflectionMethod" : "Class.getDeclaredMethods"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 20,
+      "offset" : 40863,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 20,
+      "offset" : 40924,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 20,
+      "offset" : 4200,
+      "reflectionMethod" : "Class.getField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 20,
+      "offset" : 4219,
+      "reflectionMethod" : "Class.getDeclaredMethods"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 20,
+      "offset" : 5627,
+      "reflectionMethod" : "Class.getDeclaredMethods"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 20,
+      "offset" : 5752,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 20,
+      "offset" : 58610,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 20,
+      "offset" : 6020,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 20,
+      "offset" : 6162,
+      "reflectionMethod" : "Class.getDeclaredMethods"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 20,
+      "offset" : 6280,
+      "reflectionMethod" : "Class.getDeclaredMethods"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 20,
+      "offset" : 65886,
+      "reflectionMethod" : "Class.getDeclaredMethods"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 20,
+      "offset" : 6759,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 20,
+      "offset" : 8499,
+      "reflectionMethod" : "Class.getDeclaredMethods"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 200,
+      "offset" : 4401,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 21,
+      "offset" : 11869,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 21,
+      "offset" : 19996,
+      "reflectionMethod" : "Class.getDeclaredField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 21,
+      "offset" : 22321,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 21,
+      "offset" : 23171,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 21,
+      "offset" : 25741,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 21,
+      "offset" : 25804,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 21,
+      "offset" : 30477,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 21,
+      "offset" : 30540,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 21,
+      "offset" : 3058,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 21,
+      "offset" : 34432,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 21,
+      "offset" : 38305,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 21,
+      "offset" : 43703,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 21,
+      "offset" : 44640,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 21,
+      "offset" : 44703,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 21,
+      "offset" : 46128,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 21,
+      "offset" : 46195,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 21,
+      "offset" : 4753,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 21,
+      "offset" : 4836,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 21,
+      "offset" : 5022,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 21,
+      "offset" : 6111,
+      "reflectionMethod" : "Field.set"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 21,
+      "offset" : 6181,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 21,
+      "offset" : 6239,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 21,
+      "offset" : 7260,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 216,
+      "offset" : 4863,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 22,
+      "offset" : 10803,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 22,
+      "offset" : 12805,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 22,
+      "offset" : 1541,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 22,
+      "offset" : 17708,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 22,
+      "offset" : 31078,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 22,
+      "offset" : 3394,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 22,
+      "offset" : 4417,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 22,
+      "offset" : 4577,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 22,
+      "offset" : 6078,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 22,
+      "offset" : 6079,
+      "reflectionMethod" : "Class.getDeclaredField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 22,
+      "offset" : 8252,
+      "reflectionMethod" : "Class.getDeclaredField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 22,
+      "offset" : 8278,
+      "reflectionMethod" : "Class.getDeclaredField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 22,
+      "offset" : 8680,
+      "reflectionMethod" : "Class.getField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 22,
+      "offset" : 8858,
+      "reflectionMethod" : "Class.getDeclaredField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 22,
+      "offset" : 9277,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 23,
+      "offset" : 10211,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 23,
+      "offset" : 10451,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 23,
+      "offset" : 10781,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 23,
+      "offset" : 11021,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 23,
+      "offset" : 11253,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 23,
+      "offset" : 12898,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 23,
+      "offset" : 169209,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 23,
+      "offset" : 35829,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 23,
+      "offset" : 36035,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 23,
+      "offset" : 36265,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 23,
+      "offset" : 36566,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 23,
+      "offset" : 36763,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 23,
+      "offset" : 36979,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 23,
+      "offset" : 49685,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 23,
+      "offset" : 49752,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 23,
+      "offset" : 50957,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 23,
+      "offset" : 5687,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 23,
+      "offset" : 58484,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 23,
+      "offset" : 58735,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 23,
+      "offset" : 59046,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 23,
+      "offset" : 63072,
+      "reflectionMethod" : "Class.getDeclaredField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 23,
+      "offset" : 69871,
+      "reflectionMethod" : "Field.set"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 23,
+      "offset" : 7260,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 23,
+      "offset" : 9990,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 230,
+      "offset" : 3712,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 233,
+      "offset" : 8427,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 235,
+      "offset" : 3432,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 235,
+      "offset" : 4687,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 24,
+      "offset" : 143413,
+      "reflectionMethod" : "Class.getDeclaredConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 24,
+      "offset" : 14858,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 24,
+      "offset" : 14992,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 24,
+      "offset" : 15117,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 24,
+      "offset" : 1548,
+      "reflectionMethod" : "Class.getDeclaredConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 24,
+      "offset" : 16566,
+      "reflectionMethod" : "Class.getDeclaredConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 24,
+      "offset" : 16942,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 24,
+      "offset" : 1828,
+      "reflectionMethod" : "Class.getDeclaredField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 24,
+      "offset" : 18299,
+      "reflectionMethod" : "Class.getDeclaredConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 24,
+      "offset" : 18402,
+      "reflectionMethod" : "Class.getDeclaredConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 24,
+      "offset" : 217483,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 24,
+      "offset" : 2287,
+      "reflectionMethod" : "Class.getDeclaredConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 24,
+      "offset" : 24529,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 24,
+      "offset" : 2469,
+      "reflectionMethod" : "Class.getDeclaredField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 24,
+      "offset" : 2746,
+      "reflectionMethod" : "Class.getDeclaredConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 24,
+      "offset" : 3105,
+      "reflectionMethod" : "Class.getDeclaredConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 24,
+      "offset" : 3218,
+      "reflectionMethod" : "Class.getDeclaredConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 24,
+      "offset" : 32351,
+      "reflectionMethod" : "Class.getDeclaredField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 24,
+      "offset" : 34930,
+      "reflectionMethod" : "Class.getDeclaredConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 24,
+      "offset" : 37174,
+      "reflectionMethod" : "Class.getDeclaredConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 24,
+      "offset" : 39799,
+      "reflectionMethod" : "Class.getDeclaredConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 24,
+      "offset" : 3996,
+      "reflectionMethod" : "Class.getDeclaredConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 24,
+      "offset" : 43665,
+      "reflectionMethod" : "Class.getDeclaredField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 24,
+      "offset" : 57780,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 24,
+      "offset" : 57849,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 24,
+      "offset" : 58292,
+      "reflectionMethod" : "Class.getDeclaredConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 24,
+      "offset" : 59198,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 24,
+      "offset" : 59271,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 24,
+      "offset" : 5932,
+      "reflectionMethod" : "Class.getDeclaredConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 24,
+      "offset" : 6868,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 24,
+      "offset" : 69616,
+      "reflectionMethod" : "Class.getDeclaredField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 24,
+      "offset" : 7457,
+      "reflectionMethod" : "Class.getDeclaredConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 24,
+      "offset" : 7637,
+      "reflectionMethod" : "Class.getDeclaredConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 24,
+      "offset" : 8272,
+      "reflectionMethod" : "Class.getField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 24,
+      "offset" : 8285,
+      "reflectionMethod" : "Class.getDeclaredConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 24,
+      "offset" : 8668,
+      "reflectionMethod" : "Class.getDeclaredField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 24,
+      "offset" : 8761,
+      "reflectionMethod" : "Class.getDeclaredConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 24,
+      "offset" : 9603,
+      "reflectionMethod" : "Class.getDeclaredConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 24,
+      "offset" : 9746,
+      "reflectionMethod" : "Class.getDeclaredField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 25,
+      "offset" : 11530,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 25,
+      "offset" : 12920,
+      "reflectionMethod" : "Class.getDeclaredField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 25,
+      "offset" : 14501,
+      "reflectionMethod" : "Class.getDeclaredConstructors"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 25,
+      "offset" : 15127,
+      "reflectionMethod" : "Class.getDeclaredConstructors"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 25,
+      "offset" : 2039,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 25,
+      "offset" : 23433,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 25,
+      "offset" : 23744,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 25,
+      "offset" : 2690,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 25,
+      "offset" : 43277,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 25,
+      "offset" : 43348,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 25,
+      "offset" : 4480,
+      "reflectionMethod" : "Field.set"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 25,
+      "offset" : 5585,
+      "reflectionMethod" : "Class.getDeclaredField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 25,
+      "offset" : 63556,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 25,
+      "offset" : 68289,
+      "reflectionMethod" : "Class.getDeclaredConstructors"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 25,
+      "offset" : 7014,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 25,
+      "offset" : 7313,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 25,
+      "offset" : 74147,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 25,
+      "offset" : 8762,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 25,
+      "offset" : 8944,
+      "reflectionMethod" : "Class.getDeclaredConstructors"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 25,
+      "offset" : 9605,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 26,
+      "offset" : 17908,
+      "reflectionMethod" : "Class.getDeclaredField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 26,
+      "offset" : 18845,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 26,
+      "offset" : 35112,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 26,
+      "offset" : 82753,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 26,
+      "offset" : 8442,
+      "reflectionMethod" : "Class.getField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 26,
+      "offset" : 8692,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 27,
+      "offset" : 13660,
+      "reflectionMethod" : "Class.getDeclaredField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 27,
+      "offset" : 13860,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 27,
+      "offset" : 14828,
+      "reflectionMethod" : "Class.getDeclaredField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 27,
+      "offset" : 14843,
+      "reflectionMethod" : "Class.getDeclaredField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 27,
+      "offset" : 167746,
+      "reflectionMethod" : "Class.getDeclaredField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 27,
+      "offset" : 20224,
+      "reflectionMethod" : "Class.getDeclaredField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 27,
+      "offset" : 23225,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 27,
+      "offset" : 23536,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 27,
+      "offset" : 3236,
+      "reflectionMethod" : "Class.getDeclaredField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 27,
+      "offset" : 3373,
+      "reflectionMethod" : "Class.getDeclaredField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 27,
+      "offset" : 4090,
+      "reflectionMethod" : "Class.getDeclaredField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 27,
+      "offset" : 4722,
+      "reflectionMethod" : "Class.getDeclaredField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 27,
+      "offset" : 5154,
+      "reflectionMethod" : "Class.getDeclaredField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 27,
+      "offset" : 57182,
+      "reflectionMethod" : "Class.getDeclaredField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 27,
+      "offset" : 7230,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 27,
+      "offset" : 74087,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 27,
+      "offset" : 8527,
+      "reflectionMethod" : "Class.getField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 27,
+      "offset" : 9852,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 279,
+      "offset" : 20365,
+      "reflectionMethod" : "Class.getDeclaredMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 28,
+      "offset" : 10056,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 28,
+      "offset" : 10476,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 28,
+      "offset" : 12986,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 28,
+      "offset" : 144108,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 28,
+      "offset" : 161239,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 28,
+      "offset" : 178359,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 28,
+      "offset" : 178519,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 28,
+      "offset" : 2013,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 28,
+      "offset" : 216277,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 28,
+      "offset" : 23330,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 28,
+      "offset" : 23641,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 28,
+      "offset" : 29913,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 28,
+      "offset" : 30240,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 28,
+      "offset" : 3360,
+      "reflectionMethod" : "Field.get"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 28,
+      "offset" : 3585,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 28,
+      "offset" : 35892,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 28,
+      "offset" : 3709,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 28,
+      "offset" : 4002,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 28,
+      "offset" : 43050,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 28,
+      "offset" : 43447,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 28,
+      "offset" : 4377,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 28,
+      "offset" : 44192,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 28,
+      "offset" : 4487,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 28,
+      "offset" : 45016,
+      "reflectionMethod" : "Class.getDeclaredConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 28,
+      "offset" : 45396,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 28,
+      "offset" : 45406,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 28,
+      "offset" : 47416,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 28,
+      "offset" : 52488,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 28,
+      "offset" : 54264,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 28,
+      "offset" : 54341,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 28,
+      "offset" : 60349,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 28,
+      "offset" : 62475,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 28,
+      "offset" : 8355,
+      "reflectionMethod" : "Class.getField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 28,
+      "offset" : 9001,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 29,
+      "offset" : 10044,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 29,
+      "offset" : 13453,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 29,
+      "offset" : 16815,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 29,
+      "offset" : 19487,
+      "reflectionMethod" : "Class.getDeclaredMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 29,
+      "offset" : 20526,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 29,
+      "offset" : 21577,
+      "reflectionMethod" : "Class.getDeclaredMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 29,
+      "offset" : 2227,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 29,
+      "offset" : 23611,
+      "reflectionMethod" : "Class.getField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 29,
+      "offset" : 2715,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 29,
+      "offset" : 30779,
+      "reflectionMethod" : "Class.getDeclaredConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 29,
+      "offset" : 4186,
+      "reflectionMethod" : "Class.getDeclaredField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 29,
+      "offset" : 8215,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 29,
+      "offset" : 8703,
+      "reflectionMethod" : "Class.getField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 29,
+      "offset" : 9166,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 30,
+      "offset" : 10551,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 30,
+      "offset" : 10867,
+      "reflectionMethod" : "Field.set"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 30,
+      "offset" : 11444,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 30,
+      "offset" : 4469,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 30,
+      "offset" : 5781,
+      "reflectionMethod" : "Class.getDeclaredConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 30,
+      "offset" : 6723,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 30,
+      "offset" : 7189,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 30,
+      "offset" : 78492,
+      "reflectionMethod" : "Class.getField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 30,
+      "offset" : 7929,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 30,
+      "offset" : 9176,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 31,
+      "offset" : 12367,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 31,
+      "offset" : 15948,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 31,
+      "offset" : 3088,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 31,
+      "offset" : 41799,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 31,
+      "offset" : 48023,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 31,
+      "offset" : 4874,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 31,
+      "offset" : 49714,
+      "reflectionMethod" : "Class.getDeclaredMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 31,
+      "offset" : 6420,
+      "reflectionMethod" : "Class.getDeclaredField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 31,
+      "offset" : 7293,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 31,
+      "offset" : 82150,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 31,
+      "offset" : 82286,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 31,
+      "offset" : 8613,
+      "reflectionMethod" : "Class.getField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 32,
+      "offset" : 11125,
+      "reflectionMethod" : "Field.set"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 32,
+      "offset" : 15626,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 32,
+      "offset" : 16409,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 32,
+      "offset" : 22671,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 32,
+      "offset" : 2697,
+      "reflectionMethod" : "Class.getDeclaredField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 32,
+      "offset" : 28673,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 32,
+      "offset" : 40639,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 32,
+      "offset" : 45133,
+      "reflectionMethod" : "Class.getDeclaredField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 32,
+      "offset" : 5113,
+      "reflectionMethod" : "Class.getDeclaredMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 32,
+      "offset" : 6059,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 32,
+      "offset" : 6398,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 33,
+      "offset" : 10387,
+      "reflectionMethod" : "Field.set"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 33,
+      "offset" : 11744,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 33,
+      "offset" : 16703,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 33,
+      "offset" : 2531,
+      "reflectionMethod" : "Class.getDeclaredMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 33,
+      "offset" : 29824,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 33,
+      "offset" : 36633,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 33,
+      "offset" : 39863,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 33,
+      "offset" : 4081,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 33,
+      "offset" : 4114,
+      "reflectionMethod" : "Class.getDeclaredField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 33,
+      "offset" : 4307,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 33,
+      "offset" : 46194,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 33,
+      "offset" : 4922,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 33,
+      "offset" : 5086,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 33,
+      "offset" : 56466,
+      "reflectionMethod" : "Class.getDeclaredMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 33,
+      "offset" : 57656,
+      "reflectionMethod" : "Class.getDeclaredMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 33,
+      "offset" : 6052,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 33,
+      "offset" : 8921,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 33,
+      "offset" : 9366,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 34,
+      "offset" : 10995,
+      "reflectionMethod" : "Field.set"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 34,
+      "offset" : 11671,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 34,
+      "offset" : 11704,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 34,
+      "offset" : 12149,
+      "reflectionMethod" : "Class.getDeclaredMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 34,
+      "offset" : 15504,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 34,
+      "offset" : 16814,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 34,
+      "offset" : 19198,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 34,
+      "offset" : 2236,
+      "reflectionMethod" : "Class.getDeclaredConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 34,
+      "offset" : 28997,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 34,
+      "offset" : 29175,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 34,
+      "offset" : 33894,
+      "reflectionMethod" : "Class.getDeclaredMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 34,
+      "offset" : 40562,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 34,
+      "offset" : 4497,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 34,
+      "offset" : 4752,
+      "reflectionMethod" : "Class.getDeclaredMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 34,
+      "offset" : 55270,
+      "reflectionMethod" : "Class.getDeclaredConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 34,
+      "offset" : 6556,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 34,
+      "offset" : 7185,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 34,
+      "offset" : 8707,
+      "reflectionMethod" : "Class.getDeclaredConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 346,
+      "offset" : 13927,
+      "reflectionMethod" : "Class.getDeclaredConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 347,
+      "offset" : 16032,
+      "reflectionMethod" : "Class.getDeclaredConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 35,
+      "offset" : 10645,
+      "reflectionMethod" : "Field.set"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 35,
+      "offset" : 12070,
+      "reflectionMethod" : "Class.getDeclaredMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 35,
+      "offset" : 34042,
+      "reflectionMethod" : "Class.getDeclaredMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 35,
+      "offset" : 44478,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 35,
+      "offset" : 7392,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 35,
+      "offset" : 80607,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 36,
+      "offset" : 10001,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 36,
+      "offset" : 13840,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 36,
+      "offset" : 2026,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 36,
+      "offset" : 22249,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 36,
+      "offset" : 22342,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 36,
+      "offset" : 2331,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 36,
+      "offset" : 24037,
+      "reflectionMethod" : "Class.getDeclaredConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 36,
+      "offset" : 30562,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 36,
+      "offset" : 3096,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 36,
+      "offset" : 4916,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 36,
+      "offset" : 4960,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 36,
+      "offset" : 5936,
+      "reflectionMethod" : "Class.getDeclaredConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 36,
+      "offset" : 64746,
+      "reflectionMethod" : "Class.getDeclaredField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 36,
+      "offset" : 8362,
+      "reflectionMethod" : "Class.getDeclaredField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 37,
+      "offset" : 10515,
+      "reflectionMethod" : "Field.set"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 37,
+      "offset" : 15944,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 37,
+      "offset" : 16610,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 37,
+      "offset" : 4727,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 37,
+      "offset" : 6563,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 38,
+      "offset" : 2082,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 38,
+      "offset" : 41699,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 39,
+      "offset" : 22155,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 39,
+      "offset" : 62392,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 39,
+      "offset" : 6659,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 39,
+      "offset" : 81060,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 40,
+      "offset" : 25058,
+      "reflectionMethod" : "Class.getField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 40,
+      "offset" : 25379,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 40,
+      "offset" : 6758,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 40,
+      "offset" : 7008,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 40,
+      "offset" : 8612,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 41,
+      "offset" : 17510,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 41,
+      "offset" : 3009,
+      "reflectionMethod" : "Class.getDeclaredMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 41,
+      "offset" : 53960,
+      "reflectionMethod" : "Class.getDeclaredConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 41,
+      "offset" : 6835,
+      "reflectionMethod" : "Class.getDeclaredField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 41,
+      "offset" : 82669,
+      "reflectionMethod" : "Class.getDeclaredConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 41,
+      "offset" : 8946,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 42,
+      "offset" : 13293,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 42,
+      "offset" : 19542,
+      "reflectionMethod" : "Class.getDeclaredMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 42,
+      "offset" : 37639,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 42,
+      "offset" : 61933,
+      "reflectionMethod" : "Class.getDeclaredField"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 42,
+      "offset" : 9727,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 43,
+      "offset" : 14174,
+      "reflectionMethod" : "Class.getDeclaredMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 43,
+      "offset" : 2987,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 43,
+      "offset" : 3458,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 43,
+      "offset" : 4272,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 43,
+      "offset" : 4609,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 43,
+      "offset" : 4723,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 44,
+      "offset" : 22065,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 44,
+      "offset" : 57431,
+      "reflectionMethod" : "Class.getDeclaredMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 44,
+      "offset" : 9703,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 45,
+      "offset" : 47708,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 45,
+      "offset" : 8141,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 45,
+      "offset" : 9446,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 46,
+      "offset" : 31621,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 46,
+      "offset" : 4282,
+      "reflectionMethod" : "Class.getDeclaredMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 47,
+      "offset" : 18879,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 47,
+      "offset" : 74841,
+      "reflectionMethod" : "Class.getDeclaredMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 47,
+      "offset" : 82052,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 48,
+      "offset" : 11438,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 48,
+      "offset" : 1893,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 48,
+      "offset" : 4815,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 48,
+      "offset" : 6071,
+      "reflectionMethod" : "Class.getDeclaredConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 49,
+      "offset" : 45263,
+      "reflectionMethod" : "Class.getDeclaredMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 50,
+      "offset" : 102794,
+      "reflectionMethod" : "Class.getDeclaredMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 50,
+      "offset" : 10311,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 50,
+      "offset" : 21982,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 51,
+      "offset" : 31722,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 52,
+      "offset" : 35835,
+      "reflectionMethod" : "Class.getDeclaredMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 52,
+      "offset" : 3639,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 52,
+      "offset" : 39703,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 52,
+      "offset" : 70528,
+      "reflectionMethod" : "Class.getDeclaredMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 53,
+      "offset" : 6146,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 54,
+      "offset" : 14143,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 54,
+      "offset" : 4524,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 55,
+      "offset" : 2150,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 55,
+      "offset" : 28875,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 55,
+      "offset" : 5182,
+      "reflectionMethod" : "Class.getDeclaredMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 56,
+      "offset" : 4910,
+      "reflectionMethod" : "Class.getDeclaredConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 59,
+      "offset" : 102467,
+      "reflectionMethod" : "Class.getDeclaredMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 59,
+      "offset" : 6249,
+      "reflectionMethod" : "Class.getDeclaredMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 6,
+      "offset" : 46643,
+      "reflectionMethod" : "Field.get"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 61,
+      "offset" : 51033,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 61,
+      "offset" : 51148,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 61,
+      "offset" : 56399,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 62,
+      "offset" : 4625,
+      "reflectionMethod" : "Class.getDeclaredMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 63,
+      "offset" : 10282,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 63,
+      "offset" : 70720,
+      "reflectionMethod" : "Class.getDeclaredMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 64,
+      "offset" : 10796,
+      "reflectionMethod" : "Class.getDeclaredMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 64,
+      "offset" : 10852,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 64,
+      "offset" : 36102,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 65,
+      "offset" : 58448,
+      "reflectionMethod" : "Class.getDeclaredMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 65,
+      "offset" : 69582,
+      "reflectionMethod" : "Class.getDeclaredMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 66,
+      "offset" : 15050,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 66,
+      "offset" : 37042,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 67,
+      "offset" : 3532,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 67,
+      "offset" : 5609,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 68,
+      "offset" : 151947,
+      "reflectionMethod" : "Class.getDeclaredMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 68,
+      "offset" : 27496,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 68,
+      "offset" : 29290,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 68,
+      "offset" : 36332,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 68,
+      "offset" : 6843,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 69,
+      "offset" : 10522,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 69,
+      "offset" : 2021,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 69,
+      "offset" : 5723,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 7,
+      "offset" : 4377,
+      "reflectionMethod" : "Field.get"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 70,
+      "offset" : 11092,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 70,
+      "offset" : 11320,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 70,
+      "offset" : 36830,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 70,
+      "offset" : 6959,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 71,
+      "offset" : 27374,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 71,
+      "offset" : 29168,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 72,
+      "offset" : 25598,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 75,
+      "offset" : 25470,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 75,
+      "offset" : 30206,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 75,
+      "offset" : 58561,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 79,
+      "offset" : 70309,
+      "reflectionMethod" : "Class.getDeclaredMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 79,
+      "offset" : 7267,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 8,
+      "offset" : 6123,
+      "reflectionMethod" : "Field.get"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 81,
+      "offset" : 43490,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 81,
+      "offset" : 6464,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 82,
+      "offset" : 74559,
+      "reflectionMethod" : "Class.getDeclaredMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 84,
+      "offset" : 6634,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 86,
+      "offset" : 30952,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 86,
+      "offset" : 3833,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 87,
+      "offset" : 6291,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 87,
+      "offset" : 70082,
+      "reflectionMethod" : "Class.getDeclaredMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 89,
+      "offset" : 5504,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 9,
+      "offset" : 14088,
+      "reflectionMethod" : "Method.invoke"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 9,
+      "offset" : 1883,
+      "reflectionMethod" : "Field.get"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 9,
+      "offset" : 22148,
+      "reflectionMethod" : "Field.get"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 9,
+      "offset" : 2612,
+      "reflectionMethod" : "Field.get"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 9,
+      "offset" : 30520,
+      "reflectionMethod" : "Field.get"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 9,
+      "offset" : 3376,
+      "reflectionMethod" : "Field.get"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 9,
+      "offset" : 3513,
+      "reflectionMethod" : "Field.get"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 9,
+      "offset" : 3515,
+      "reflectionMethod" : "Field.get"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 9,
+      "offset" : 4255,
+      "reflectionMethod" : "Field.get"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 9,
+      "offset" : 4478,
+      "reflectionMethod" : "Field.get"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 9,
+      "offset" : 4605,
+      "reflectionMethod" : "Field.get"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 9,
+      "offset" : 52430,
+      "reflectionMethod" : "Field.get"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 9,
+      "offset" : 5485,
+      "reflectionMethod" : "Field.get"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 9,
+      "offset" : 5671,
+      "reflectionMethod" : "Field.get"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 9,
+      "offset" : 59538,
+      "reflectionMethod" : "Field.get"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 9,
+      "offset" : 62210,
+      "reflectionMethod" : "Field.get"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 9,
+      "offset" : 6722,
+      "reflectionMethod" : "Field.get"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 9,
+      "offset" : 7291,
+      "reflectionMethod" : "Field.get"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 9,
+      "offset" : 78523,
+      "reflectionMethod" : "Field.get"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 9,
+      "offset" : 8297,
+      "reflectionMethod" : "Field.get"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 9,
+      "offset" : 8384,
+      "reflectionMethod" : "Field.get"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 9,
+      "offset" : 8423,
+      "reflectionMethod" : "Field.get"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 9,
+      "offset" : 8469,
+      "reflectionMethod" : "Field.get"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 9,
+      "offset" : 8555,
+      "reflectionMethod" : "Field.get"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 9,
+      "offset" : 8591,
+      "reflectionMethod" : "Field.get"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 9,
+      "offset" : 8645,
+      "reflectionMethod" : "Field.get"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 9,
+      "offset" : 8733,
+      "reflectionMethod" : "Field.get"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 9,
+      "offset" : 8737,
+      "reflectionMethod" : "Field.get"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 90,
+      "offset" : 2038,
+      "reflectionMethod" : "Class.forName"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 91,
+      "offset" : 228099,
+      "reflectionMethod" : "Class.getDeclaredMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 93,
+      "offset" : 168841,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 94,
+      "offset" : 16445,
+      "reflectionMethod" : "Class.getConstructor"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 94,
+      "offset" : 23029,
+      "reflectionMethod" : "Class.getDeclaredMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 94,
+      "offset" : 30760,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 97,
+      "offset" : 3679,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 97,
+      "offset" : 51019,
+      "reflectionMethod" : "Constructor.newInstance"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 97,
+      "offset" : 8586,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 98,
+      "offset" : 41856,
+      "reflectionMethod" : "Class.getMethod"
+    }, {
+      "filePath" : "C:/Users/pzalu/Documents/javalens/org.javalens.mcp.tests/target/work/data/javalens-WS",
+      "length" : 98,
+      "offset" : 70923,
+      "reflectionMethod" : "Class.getDeclaredMethod"
+    } ],
+    "summary" : {
+      "Class.forName" : 100,
+      "Class.getConstructor" : 100,
+      "Class.getConstructors" : 11,
+      "Class.getDeclaredConstructor" : 35,
+      "Class.getDeclaredConstructors" : 4,
+      "Class.getDeclaredField" : 37,
+      "Class.getDeclaredFields" : 15,
+      "Class.getDeclaredMethod" : 42,
+      "Class.getDeclaredMethods" : 10,
+      "Class.getField" : 23,
+      "Class.getFields" : 12,
+      "Class.getMethod" : 100,
+      "Class.getMethods" : 23,
+      "Class.newInstance" : 72,
+      "Constructor.newInstance" : 100,
+      "Field.get" : 39,
+      "Field.set" : 19,
+      "Method.invoke" : 100
+    },
+    "totalCalls" : 1071
+  },
+  "meta" : {
+    "returnedCount" : 842,
+    "suggestedNextTools" : [ "analyze_change_impact to assess risk of renaming reflected types", "get_symbol_info at a reflection call site for context" ],
+    "totalCount" : 1071,
+    "truncated" : true
+  },
+  "success" : true
+}

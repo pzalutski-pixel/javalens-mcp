@@ -1,0 +1,25 @@
+{
+  "data" : {
+    "affectedPackages" : [ "com.example.cycledemo.a", "com.example.cycledemo.b", "com.example.staticcycle.x", "com.example.staticcycle.y" ],
+    "cycleCount" : 2,
+    "cycles" : [ {
+      "length" : 2,
+      "packages" : [ "com.example.cycledemo.a", "com.example.cycledemo.b" ],
+      "path" : "com.example.cycledemo.a -> com.example.cycledemo.b -> com.example.cycledemo.a",
+      "severity" : "medium"
+    }, {
+      "length" : 2,
+      "packages" : [ "com.example.staticcycle.x", "com.example.staticcycle.y" ],
+      "path" : "com.example.staticcycle.x -> com.example.staticcycle.y -> com.example.staticcycle.x",
+      "severity" : "medium"
+    } ],
+    "hasCycles" : true,
+    "suggestions" : [ "Apply dependency inversion principle (DIP)", "Consider introducing interfaces to break dependency cycles" ]
+  },
+  "meta" : {
+    "returnedCount" : 2,
+    "suggestedNextTools" : [ "get_dependency_graph to analyze specific packages" ],
+    "totalCount" : 2
+  },
+  "success" : true
+}

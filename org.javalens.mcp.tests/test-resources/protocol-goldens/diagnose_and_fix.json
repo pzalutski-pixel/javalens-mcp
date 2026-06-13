@@ -1,0 +1,15 @@
+{
+  "data" : {
+    "editsByFile" : { },
+    "filePath" : "C:\\Users\\pzalu\\Documents\\javalens\\org.javalens.mcp.tests\\..\\org.javalens.core.tests\\test-resources\\sample-projects\\simple-maven\\src\\main\\java\\com\\example\\Calculator.java",
+    "problemCount" : 0,
+    "problems" : [ ],
+    "totalEdits" : 0
+  },
+  "meta" : {
+    "returnedCount" : 0,
+    "suggestedNextTools" : [ "No fixable problems - nothing to apply" ],
+    "totalCount" : 0
+  },
+  "success" : true
+}

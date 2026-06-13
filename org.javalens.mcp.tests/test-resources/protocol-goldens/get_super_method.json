@@ -1,0 +1,17 @@
+{
+  "data" : {
+    "message" : "This method does not override or implement any method",
+    "method" : {
+      "declaringType" : "com.example.Calculator",
+      "filePath" : "src/main/java/com/example/Calculator.java",
+      "line" : 8,
+      "modifiers" : [ "public" ],
+      "name" : "add",
+      "signature" : "add(int a, int b): int"
+    }
+  },
+  "meta" : {
+    "suggestedNextTools" : [ "find_implementations to find overriding methods", "get_type_hierarchy for inheritance chain" ]
+  },
+  "success" : true
+}

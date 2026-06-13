@@ -1,0 +1,40 @@
+{
+  "data" : {
+    "containingType" : "Calculator",
+    "locations" : [ {
+      "column" : 17,
+      "context" : "calc.add(1, 2);",
+      "filePath" : "src/main/java/com/example/SearchPatterns.java",
+      "line" : 80,
+      "referenceKind" : "METHOD_INVOCATION"
+    }, {
+      "column" : 26,
+      "context" : "int result = calc.add(1, 2);",
+      "filePath" : "src/main/java/com/example/SearchPatterns.java",
+      "line" : 58,
+      "referenceKind" : "METHOD_INVOCATION"
+    }, {
+      "column" : 26,
+      "context" : "return calculator.add(a, b);",
+      "filePath" : "src/main/java/com/example/service/UserService.java",
+      "line" : 58,
+      "referenceKind" : "METHOD_INVOCATION"
+    }, {
+      "column" : 32,
+      "context" : "int result = calculator.add(2, 3);",
+      "filePath" : "src/test/java/com/example/SampleTest.java",
+      "line" : 35,
+      "referenceKind" : "METHOD_INVOCATION"
+    } ],
+    "symbol" : "add",
+    "symbolKind" : "method",
+    "totalCount" : 4
+  },
+  "meta" : {
+    "returnedCount" : 4,
+    "suggestedNextTools" : [ "get_type_hierarchy for type symbols", "go_to_definition to see the symbol definition" ],
+    "totalCount" : 4,
+    "truncated" : false
+  },
+  "success" : true
+}

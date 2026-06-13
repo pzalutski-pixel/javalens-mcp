@@ -1,0 +1,13 @@
+{
+  "data" : {
+    "endpointCount" : 0,
+    "endpoints" : [ ]
+  },
+  "meta" : {
+    "returnedCount" : 0,
+    "suggestedNextTools" : [ "analyze_method on a handler for its callers and callees", "find_affected_tests to see which tests cover a handler" ],
+    "totalCount" : 0,
+    "truncated" : false
+  },
+  "success" : true
+}

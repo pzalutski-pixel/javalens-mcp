@@ -1,0 +1,7 @@
+{
+  "error" : {
+    "code" : "INVALID_PARAMETER",
+    "message" : "Invalid parameter 'positions': All positions must be >= 0"
+  },
+  "success" : false
+}

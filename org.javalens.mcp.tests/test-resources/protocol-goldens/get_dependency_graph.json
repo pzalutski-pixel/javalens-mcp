@@ -1,0 +1,7 @@
+{
+  "error" : {
+    "code" : "INVALID_PARAMETER",
+    "message" : "Invalid parameter 'scope': Required (type or package)"
+  },
+  "success" : false
+}

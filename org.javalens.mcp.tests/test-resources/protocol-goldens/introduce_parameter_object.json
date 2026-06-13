@@ -1,0 +1,62 @@
+{
+  "data" : {
+    "className" : "AddParameters",
+    "createdFiles" : [ ],
+    "editsByFile" : {
+      "src/main/java/com/example/Calculator.java" : [ {
+        "endColumn" : 26,
+        "endLine" : 15,
+        "endOffset" : 348,
+        "newText" : "public static class AddParameters {\r\n\t\tprivate int a;\r\n\t\tprivate int b;\r\n\r\n\t\tpublic AddParameters(int a, int b) {\r\n\t\t\tthis.a = a;\r\n\t\t\tthis.b = b;\r\n\t\t}\r\n\r\n\t\tpublic int getA() {\r\n\t\t\treturn a;\r\n\t\t}\r\n\r\n\t\tpublic int getB() {\r\n\t\t\treturn b;\r\n\t\t}\r\n\t}\r\n\r\n\t/**\r\n     * Adds two numbers.\r\n     * @param parameterObject TODO\r\n     * @return the sum\r\n     */\r\n    public int add(AddParameters parameterObject) {\r\n        lastResult = parameterObject.getA() + parameterObject.getB()",
+        "oldText" : "/**\r\n     * Adds two numbers.\r\n     * @param a first operand\r\n     * @param b second operand\r\n     * @return the sum\r\n     */\r\n    public int add(int a, int b) {\r\n        lastResult = a + b",
+        "startColumn" : 4,
+        "startLine" : 8,
+        "startOffset" : 159,
+        "type" : "replace"
+      } ],
+      "src/main/java/com/example/SearchPatterns.java" : [ {
+        "endColumn" : 25,
+        "endLine" : 80,
+        "endOffset" : 2196,
+        "newText" : "import com.example.Calculator.AddParameters;\r\n\r\n/**\r\n * Test fixture for fine-grained search tools.\r\n * Contains various code patterns for annotation, instantiation, cast,\r\n * instanceof, throws, catch, method reference, and type argument searches.\r\n */\r\n@Deprecated\r\npublic class SearchPatterns implements Serializable {\r\n\r\n    private static final long serialVersionUID = 1L;\r\n\r\n    // Type arguments - List<String>, Map<String, Integer>\r\n    private List<String> stringList;\r\n    private Map<String, Integer> stringIntMap;\r\n    private List<Calculator> calculatorList;\r\n\r\n    /**\r\n     * Method with annotation - Override.\r\n     */\r\n    @Override\r\n    public String toString() {\r\n        return \"SearchPatterns\";\r\n    }\r\n\r\n    /**\r\n     * Deprecated method with annotation.\r\n     */\r\n    @Deprecated\r\n    public void deprecatedMethod() {\r\n        // Empty deprecated method\r\n    }\r\n\r\n    /**\r\n     * Method with type instantiations.\r\n     */\r\n    public void createObjects() {\r\n        // ArrayList instantiation\r\n        List<String> list = new ArrayList<>();\r\n        list.add(\"test\");\r\n\r\n        // HashMap instantiation\r\n        Map<String, Integer> map = new HashMap<>();\r\n        map.put(\"key\", 1);\r\n\r\n        // Calculator instantiation (project type)\r\n        Calculator calc = new Calculator();\r\n        int result = calc.add(new AddParameters(1, 2));\r\n    }\r\n\r\n    /**\r\n     * Method with type casts.\r\n     */\r\n    public void performCasts(Object obj) {\r\n        // Cast to String\r\n        if (obj instanceof String) {\r\n            String str = (String) obj;\r\n            System.out.println(str);\r\n        }\r\n\r\n        // Cast to List\r\n        if (obj instanceof List) {\r\n            List<?> list = (List<?>) obj;\r\n            System.out.println(list.size());\r\n        }\r\n\r\n        // Cast to Calculator\r\n        if (obj instanceof Calculator) {\r\n            Calculator calc = (Calculator) obj;\r\n            calc.add(new AddParameters(1, 2)",
+        "oldText" : "/**\r\n * Test fixture for fine-grained search tools.\r\n * Contains various code patterns for annotation, instantiation, cast,\r\n * instanceof, throws, catch, method reference, and type argument searches.\r\n */\r\n@Deprecated\r\npublic class SearchPatterns implements Serializable {\r\n\r\n    private static final long serialVersionUID = 1L;\r\n\r\n    // Type arguments - List<String>, Map<String, Integer>\r\n    private List<String> stringList;\r\n    private Map<String, Integer> stringIntMap;\r\n    private List<Calculator> calculatorList;\r\n\r\n    /**\r\n     * Method with annotation - Override.\r\n     */\r\n    @Override\r\n    public String toString() {\r\n        return \"SearchPatterns\";\r\n    }\r\n\r\n    /**\r\n     * Deprecated method with annotation.\r\n     */\r\n    @Deprecated\r\n    public void deprecatedMethod() {\r\n        // Empty deprecated method\r\n    }\r\n\r\n    /**\r\n     * Method with type instantiations.\r\n     */\r\n    public void createObjects() {\r\n        // ArrayList instantiation\r\n        List<String> list = new ArrayList<>();\r\n        list.add(\"test\");\r\n\r\n        // HashMap instantiation\r\n        Map<String, Integer> map = new HashMap<>();\r\n        map.put(\"key\", 1);\r\n\r\n        // Calculator instantiation (project type)\r\n        Calculator calc = new Calculator();\r\n        int result = calc.add(1, 2);\r\n    }\r\n\r\n    /**\r\n     * Method with type casts.\r\n     */\r\n    public void performCasts(Object obj) {\r\n        // Cast to String\r\n        if (obj instanceof String) {\r\n            String str = (String) obj;\r\n            System.out.println(str);\r\n        }\r\n\r\n        // Cast to List\r\n        if (obj instanceof List) {\r\n            List<?> list = (List<?>) obj;\r\n            System.out.println(list.size());\r\n        }\r\n\r\n        // Cast to Calculator\r\n        if (obj instanceof Calculator) {\r\n            Calculator calc = (Calculator) obj;\r\n            calc.add(1, 2",
+        "startColumn" : 0,
+        "startLine" : 13,
+        "startOffset" : 329,
+        "type" : "replace"
+      } ],
+      "src/main/java/com/example/service/UserService.java" : [ {
+        "endColumn" : 34,
+        "endLine" : 58,
+        "endOffset" : 1476,
+        "newText" : "com.example.Calculator.AddParameters;\r\n\r\nimport java.util.ArrayList;\r\nimport java.util.List;\r\n\r\n/**\r\n * Service class for user operations.\r\n * Used to test cross-file references and imports.\r\n */\r\npublic class UserService {\r\n    private final List<String> users;\r\n    private final Calculator calculator;\r\n\r\n    /**\r\n     * Creates a new UserService.\r\n     */\r\n    public UserService() {\r\n        this.users = new ArrayList<>();\r\n        this.calculator = new Calculator();\r\n    }\r\n\r\n    /**\r\n     * Adds a user to the service.\r\n     * @param username the username to add\r\n     * @return true if added successfully\r\n     */\r\n    public boolean addUser(String username) {\r\n        if (username == null || username.isEmpty()) {\r\n            return false;\r\n        }\r\n        return users.add(username);\r\n    }\r\n\r\n    /**\r\n     * Removes a user from the service.\r\n     * @param username the username to remove\r\n     * @return true if removed successfully\r\n     */\r\n    public boolean removeUser(String username) {\r\n        return users.remove(username);\r\n    }\r\n\r\n    /**\r\n     * Gets the number of users.\r\n     * @return user count\r\n     */\r\n    public int getUserCount() {\r\n        return users.size();\r\n    }\r\n\r\n    /**\r\n     * Calculates the sum of two values (using Calculator).\r\n     * @param a first value\r\n     * @param b second value\r\n     * @return the sum\r\n     */\r\n    public int calculateSum(int a, int b) {\r\n        return calculator.add(new AddParameters(a, b)",
+        "oldText" : "java.util.ArrayList;\r\nimport java.util.List;\r\n\r\n/**\r\n * Service class for user operations.\r\n * Used to test cross-file references and imports.\r\n */\r\npublic class UserService {\r\n    private final List<String> users;\r\n    private final Calculator calculator;\r\n\r\n    /**\r\n     * Creates a new UserService.\r\n     */\r\n    public UserService() {\r\n        this.users = new ArrayList<>();\r\n        this.calculator = new Calculator();\r\n    }\r\n\r\n    /**\r\n     * Adds a user to the service.\r\n     * @param username the username to add\r\n     * @return true if added successfully\r\n     */\r\n    public boolean addUser(String username) {\r\n        if (username == null || username.isEmpty()) {\r\n            return false;\r\n        }\r\n        return users.add(username);\r\n    }\r\n\r\n    /**\r\n     * Removes a user from the service.\r\n     * @param username the username to remove\r\n     * @return true if removed successfully\r\n     */\r\n    public boolean removeUser(String username) {\r\n        return users.remove(username);\r\n    }\r\n\r\n    /**\r\n     * Gets the number of users.\r\n     * @return user count\r\n     */\r\n    public int getUserCount() {\r\n        return users.size();\r\n    }\r\n\r\n    /**\r\n     * Calculates the sum of two values (using Calculator).\r\n     * @param a first value\r\n     * @param b second value\r\n     * @return the sum\r\n     */\r\n    public int calculateSum(int a, int b) {\r\n        return calculator.add(a, b",
+        "startColumn" : 7,
+        "startLine" : 3,
+        "startOffset" : 71,
+        "type" : "replace"
+      } ],
+      "src/test/java/com/example/SampleTest.java" : [ {
+        "endColumn" : 40,
+        "endLine" : 35,
+        "endOffset" : 894,
+        "newText" : "com.example.Calculator.AddParameters;\r\n\r\nimport java.util.stream.Stream;\r\n\r\n/**\r\n * Sample test class for testing FindTestsTool.\r\n * Contains JUnit 5 annotations.\r\n */\r\npublic class SampleTest {\r\n\r\n    private Calculator calculator;\r\n\r\n    @BeforeEach\r\n    void setUp() {\r\n        calculator = new Calculator();\r\n    }\r\n\r\n    @AfterEach\r\n    void tearDown() {\r\n        calculator = null;\r\n    }\r\n\r\n    @Test\r\n    void testAddition() {\r\n        int result = calculator.add(new AddParameters(2, 3)",
+        "oldText" : "java.util.stream.Stream;\r\n\r\n/**\r\n * Sample test class for testing FindTestsTool.\r\n * Contains JUnit 5 annotations.\r\n */\r\npublic class SampleTest {\r\n\r\n    private Calculator calculator;\r\n\r\n    @BeforeEach\r\n    void setUp() {\r\n        calculator = new Calculator();\r\n    }\r\n\r\n    @AfterEach\r\n    void tearDown() {\r\n        calculator = null;\r\n    }\r\n\r\n    @Test\r\n    void testAddition() {\r\n        int result = calculator.add(2, 3",
+        "startColumn" : 7,
+        "startLine" : 13,
+        "startOffset" : 466,
+        "type" : "replace"
+      } ]
+    },
+    "filesAffected" : 4,
+    "methodName" : "add",
+    "parameterName" : "parameterObject",
+    "totalEdits" : 4
+  },
+  "meta" : {
+    "returnedCount" : 4,
+    "suggestedNextTools" : [ "Apply the text edits to complete the refactoring", "get_diagnostics to verify no errors" ],
+    "totalCount" : 4
+  },
+  "success" : true
+}

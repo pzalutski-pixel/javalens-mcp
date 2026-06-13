@@ -1,0 +1,8 @@
+{
+  "error" : {
+    "code" : "SYMBOL_NOT_FOUND",
+    "hint" : "Use search_symbols to find available symbols",
+    "message" : "Symbol not found: No variable at position"
+  },
+  "success" : false
+}

@@ -1,0 +1,14 @@
+{
+  "data" : {
+    "locations" : [ ],
+    "totalCount" : 0,
+    "typeName" : "com.example.Calculator"
+  },
+  "meta" : {
+    "returnedCount" : 0,
+    "suggestedNextTools" : [ "find_throws_declarations to find sources of this exception", "get_type_hierarchy to see exception hierarchy" ],
+    "totalCount" : 0,
+    "truncated" : false
+  },
+  "success" : true
+}

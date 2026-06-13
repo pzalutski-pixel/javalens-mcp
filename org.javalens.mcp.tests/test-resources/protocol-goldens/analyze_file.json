@@ -1,0 +1,33 @@
+{
+  "data" : {
+    "diagnostics" : {
+      "errorCount" : 0,
+      "errors" : [ ],
+      "hasProblems" : false,
+      "warningCount" : 0,
+      "warnings" : [ ]
+    },
+    "file" : {
+      "lineCount" : 49,
+      "package" : "com.example",
+      "path" : "src/main/java/com/example/Calculator.java"
+    },
+    "importCount" : 0,
+    "imports" : [ ],
+    "typeCount" : 1,
+    "types" : [ {
+      "fieldCount" : 1,
+      "kind" : "class",
+      "line" : 2,
+      "methodCount" : 4,
+      "modifiers" : [ "public" ],
+      "name" : "Calculator",
+      "nestedTypeCount" : 0,
+      "qualifiedName" : "com.example.Calculator"
+    } ]
+  },
+  "meta" : {
+    "suggestedNextTools" : [ "analyze_method for detailed method analysis", "analyze_type for detailed type analysis", "find_references to find usages" ]
+  },
+  "success" : true
+}

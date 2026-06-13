@@ -1,0 +1,8 @@
+{
+  "error" : {
+    "code" : "SYMBOL_NOT_FOUND",
+    "hint" : "Use search_symbols to find available symbols",
+    "message" : "Symbol not found: No method found at C:\\Users\\pzalu\\Documents\\javalens\\org.javalens.mcp.tests\\..\\org.javalens.core.tests\\test-resources\\sample-projects\\simple-maven\\src\\main\\java\\com\\example\\Calculator.java:0:0"
+  },
+  "success" : false
+}

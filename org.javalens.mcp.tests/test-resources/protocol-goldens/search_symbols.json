@@ -1,0 +1,26 @@
+{
+  "data" : {
+    "pagination" : {
+      "hasMore" : false,
+      "offset" : 0,
+      "returned" : 1
+    },
+    "query" : "Calculator",
+    "results" : [ {
+      "column" : 13,
+      "filePath" : "src/main/java/com/example/Calculator.java",
+      "kind" : "class",
+      "line" : 5,
+      "name" : "Calculator",
+      "package" : "com.example",
+      "qualifiedName" : "com.example.Calculator"
+    } ]
+  },
+  "meta" : {
+    "returnedCount" : 1,
+    "suggestedNextTools" : [ "find_references to see all usages", "get_symbol_info at a result location for detailed info", "get_type_members for type results" ],
+    "totalCount" : 1,
+    "truncated" : false
+  },
+  "success" : true
+}

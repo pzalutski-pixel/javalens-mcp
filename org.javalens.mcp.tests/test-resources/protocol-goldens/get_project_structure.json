@@ -1,0 +1,65 @@
+{
+  "data" : {
+    "projectName" : "javalens-WS",
+    "projectRoot" : "C:\\Users\\pzalu\\Documents\\javalens\\org.javalens.core.tests\\test-resources\\sample-projects\\simple-maven",
+    "sourceRoots" : [ {
+      "packageCount" : 11,
+      "packages" : [ {
+        "fileCount" : 0,
+        "name" : "(default package)"
+      }, {
+        "fileCount" : 0,
+        "name" : "com"
+      }, {
+        "fileCount" : 0,
+        "name" : "com.example.cycledemo"
+      }, {
+        "fileCount" : 0,
+        "name" : "com.example.staticcycle"
+      }, {
+        "fileCount" : 1,
+        "name" : "com.example.cycledemo.a"
+      }, {
+        "fileCount" : 1,
+        "name" : "com.example.cycledemo.b"
+      }, {
+        "fileCount" : 1,
+        "name" : "com.example.service"
+      }, {
+        "fileCount" : 1,
+        "name" : "com.example.staticcycle.x"
+      }, {
+        "fileCount" : 1,
+        "name" : "com.example.staticcycle.y"
+      }, {
+        "fileCount" : 5,
+        "name" : "com.example.genericunused"
+      }, {
+        "fileCount" : 58,
+        "name" : "com.example"
+      } ],
+      "path" : "/javalens-WS/src-0-src-main-java"
+    }, {
+      "packageCount" : 3,
+      "packages" : [ {
+        "fileCount" : 0,
+        "name" : "(default package)"
+      }, {
+        "fileCount" : 0,
+        "name" : "com"
+      }, {
+        "fileCount" : 3,
+        "name" : "com.example"
+      } ],
+      "path" : "/javalens-WS/src-1-src-test-java"
+    } ],
+    "totalFiles" : 71,
+    "totalPackages" : 14
+  },
+  "meta" : {
+    "returnedCount" : 14,
+    "suggestedNextTools" : [ "get_classpath_info for dependencies", "get_document_symbols to explore a file", "search_symbols to find types" ],
+    "totalCount" : 14
+  },
+  "success" : true
+}

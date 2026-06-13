@@ -1,0 +1,12 @@
+{
+  "data" : {
+    "buildSystem" : "maven",
+    "classpathEntryCount" : 3,
+    "loaded" : true,
+    "packageCount" : 7,
+    "packages" : [ "com.example", "com.example.cycledemo.a", "com.example.cycledemo.b", "com.example.genericunused", "com.example.service", "com.example.staticcycle.x", "com.example.staticcycle.y" ],
+    "projectPath" : "",
+    "sourceFileCount" : 71
+  },
+  "success" : true
+}

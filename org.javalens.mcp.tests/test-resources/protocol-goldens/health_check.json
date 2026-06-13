@@ -1,0 +1,34 @@
+{
+  "data" : {
+    "capabilities" : {
+      "diagnostics" : true,
+      "findImplementations" : true,
+      "findReferences" : true,
+      "refactoring" : true,
+      "typeHierarchy" : true
+    },
+    "configuration" : {
+      "absolutePaths" : false,
+      "timeoutSeconds" : 30
+    },
+    "diskSync" : "strict",
+    "java" : {
+      "vendor" : "Eclipse Adoptium",
+      "version" : "21.0.10"
+    },
+    "message" : "JavaLens MCP Server is operational",
+    "os" : {
+      "arch" : "amd64",
+      "name" : "Windows 11"
+    },
+    "project" : {
+      "loaded" : false,
+      "message" : "No project loaded. Use load_project to load a Java project.",
+      "status" : "not_loaded"
+    },
+    "status" : "Waiting for project",
+    "toolCount" : 75,
+    "version" : "1.5.1"
+  },
+  "success" : true
+}

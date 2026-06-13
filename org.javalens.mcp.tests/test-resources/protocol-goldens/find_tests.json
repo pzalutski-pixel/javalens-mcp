@@ -1,0 +1,78 @@
+{
+  "data" : {
+    "testClassCount" : 4,
+    "testClasses" : [ {
+      "className" : "Junit4SampleTest",
+      "filePath" : "src/test/java/com/example/Junit4SampleTest.java",
+      "framework" : "JUnit4",
+      "line" : 13,
+      "testMethodCount" : 2,
+      "testMethods" : [ {
+        "line" : 25,
+        "name" : "testAddition"
+      }, {
+        "line" : 29,
+        "name" : "testSubtraction"
+      } ]
+    }, {
+      "className" : "NestedGroup",
+      "filePath" : "src/test/java/com/example/SampleTest.java",
+      "line" : 103,
+      "testMethodCount" : 2,
+      "testMethods" : [ {
+        "line" : 106,
+        "name" : "nestedTestOne"
+      }, {
+        "line" : 110,
+        "name" : "nestedTestTwo"
+      } ]
+    }, {
+      "className" : "SampleTest",
+      "filePath" : "src/test/java/com/example/SampleTest.java",
+      "framework" : "JUnit5",
+      "line" : 19,
+      "testMethodCount" : 6,
+      "testMethods" : [ {
+        "displayName" : "Custom display name for this test",
+        "line" : 66,
+        "name" : "testWithCustomDisplayName"
+      }, {
+        "displayName" : "Test multiplication of two numbers",
+        "line" : 47,
+        "name" : "testMultiplication"
+      }, {
+        "line" : 34,
+        "name" : "testAddition"
+      }, {
+        "line" : 40,
+        "name" : "testSubtraction"
+      }, {
+        "line" : 72,
+        "name" : "testParameterized"
+      }, {
+        "line" : 77,
+        "name" : "dynamicTestsFromFactory"
+      } ]
+    }, {
+      "className" : "TestngSampleTest",
+      "filePath" : "src/test/java/com/example/TestngSampleTest.java",
+      "framework" : "TestNG",
+      "line" : 9,
+      "testMethodCount" : 2,
+      "testMethods" : [ {
+        "line" : 20,
+        "name" : "scenarioOne"
+      }, {
+        "line" : 24,
+        "name" : "scenarioTwo"
+      } ]
+    } ],
+    "testMethodCount" : 12
+  },
+  "meta" : {
+    "returnedCount" : 4,
+    "suggestedNextTools" : [ "find_references to find what a test covers", "get_document_symbols to explore a test class" ],
+    "totalCount" : 4
+  },
+  "success" : true
+}

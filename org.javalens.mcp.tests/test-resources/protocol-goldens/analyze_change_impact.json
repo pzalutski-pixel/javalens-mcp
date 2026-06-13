@@ -1,0 +1,66 @@
+{
+  "data" : {
+    "affectedFiles" : [ {
+      "filePath" : "src/main/java/com/example/SearchPatterns.java",
+      "referenceCount" : 2
+    }, {
+      "filePath" : "src/main/java/com/example/service/UserService.java",
+      "referenceCount" : 1
+    }, {
+      "filePath" : "src/test/java/com/example/SampleTest.java",
+      "referenceCount" : 1
+    } ],
+    "callSites" : [ {
+      "column" : 17,
+      "context" : "calc.add(1, 2);",
+      "depth" : 1,
+      "enclosingMethod" : "performCasts",
+      "enclosingType" : "com.example.SearchPatterns",
+      "filePath" : "src/main/java/com/example/SearchPatterns.java",
+      "length" : 9,
+      "line" : 80,
+      "offset" : 2188
+    }, {
+      "column" : 26,
+      "context" : "int result = calc.add(1, 2);",
+      "depth" : 1,
+      "enclosingMethod" : "createObjects",
+      "enclosingType" : "com.example.SearchPatterns",
+      "filePath" : "src/main/java/com/example/SearchPatterns.java",
+      "length" : 9,
+      "line" : 58,
+      "offset" : 1615
+    }, {
+      "column" : 26,
+      "context" : "return calculator.add(a, b);",
+      "depth" : 1,
+      "enclosingMethod" : "calculateSum",
+      "enclosingType" : "com.example.service.UserService",
+      "filePath" : "src/main/java/com/example/service/UserService.java",
+      "length" : 9,
+      "line" : 58,
+      "offset" : 1468
+    }, {
+      "column" : 32,
+      "context" : "int result = calculator.add(2, 3);",
+      "depth" : 1,
+      "enclosingMethod" : "testAddition",
+      "enclosingType" : "com.example.SampleTest",
+      "filePath" : "src/test/java/com/example/SampleTest.java",
+      "length" : 9,
+      "line" : 35,
+      "offset" : 886
+    } ],
+    "depth" : 1,
+    "directReferences" : 4,
+    "symbol" : "add",
+    "symbolType" : "SourceMethod",
+    "totalReferences" : 4
+  },
+  "meta" : {
+    "returnedCount" : 4,
+    "suggestedNextTools" : [ "find_references for simple reference list without grouping", "rename_symbol for safe renaming across all affected files" ],
+    "totalCount" : 4
+  },
+  "success" : true
+}

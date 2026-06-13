@@ -1,0 +1,12 @@
+{
+  "data" : {
+    "errorCount" : 0,
+    "errors" : [ ],
+    "fileName" : "Calculator.java",
+    "valid" : true
+  },
+  "meta" : {
+    "suggestedNextTools" : [ "get_diagnostics for type checking", "get_document_symbols to explore structure" ]
+  },
+  "success" : true
+}

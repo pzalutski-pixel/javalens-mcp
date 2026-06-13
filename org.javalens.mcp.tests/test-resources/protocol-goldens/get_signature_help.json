@@ -1,0 +1,21 @@
+{
+  "data" : {
+    "activeParameter" : 0,
+    "activeSignature" : 0,
+    "signatures" : [ {
+      "documentation" : "Adds two numbers.",
+      "label" : "add(int a, int b): int",
+      "parameters" : [ {
+        "label" : "int a"
+      }, {
+        "label" : "int b"
+      } ]
+    } ]
+  },
+  "meta" : {
+    "returnedCount" : 1,
+    "suggestedNextTools" : [ "find_references to find usages", "get_javadoc for full documentation" ],
+    "totalCount" : 1
+  },
+  "success" : true
+}

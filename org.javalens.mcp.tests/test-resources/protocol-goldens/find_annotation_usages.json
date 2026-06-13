@@ -1,0 +1,14 @@
+{
+  "data" : {
+    "locations" : [ ],
+    "totalCount" : 0,
+    "typeName" : "com.example.Calculator"
+  },
+  "meta" : {
+    "returnedCount" : 0,
+    "suggestedNextTools" : [ "find_references for all references (not just annotations)", "get_symbol_info at a usage location for details" ],
+    "totalCount" : 0,
+    "truncated" : false
+  },
+  "success" : true
+}

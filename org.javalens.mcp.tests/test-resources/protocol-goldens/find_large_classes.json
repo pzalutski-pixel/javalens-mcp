@@ -1,0 +1,32 @@
+{
+  "data" : {
+    "largeClasses" : [ {
+      "fieldCount" : 11,
+      "file" : "src/main/java/com/example/LargeClass.java",
+      "lineCount" : 36,
+      "methodCount" : 21,
+      "typeName" : "LargeClass",
+      "violations" : [ "fields: 11 > 10", "methods: 21 > 20" ]
+    }, {
+      "fieldCount" : 6,
+      "file" : "src/main/java/com/example/DiAndReflectionPatterns.java",
+      "lineCount" : 111,
+      "methodCount" : 23,
+      "typeName" : "DiAndReflectionPatterns",
+      "violations" : [ "methods: 23 > 20" ]
+    } ],
+    "thresholds" : {
+      "maxFields" : 10,
+      "maxLines" : 300,
+      "maxMethods" : 20
+    },
+    "totalClassesScanned" : 73,
+    "totalViolations" : 2
+  },
+  "meta" : {
+    "returnedCount" : 2,
+    "suggestedNextTools" : [ "analyze_type for full type analysis", "get_complexity_metrics for detailed method-level metrics" ],
+    "totalCount" : 2
+  },
+  "success" : true
+}

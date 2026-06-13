@@ -1,0 +1,15 @@
+{
+  "data" : {
+    "callees" : [ ],
+    "declaringClass" : "com.example.Calculator",
+    "method" : "add",
+    "signature" : "add(int, int)",
+    "totalCallees" : 0
+  },
+  "meta" : {
+    "returnedCount" : 0,
+    "suggestedNextTools" : [ "get_call_hierarchy_incoming to see who calls this method", "go_to_definition to navigate to a called method" ],
+    "totalCount" : 0
+  },
+  "success" : true
+}

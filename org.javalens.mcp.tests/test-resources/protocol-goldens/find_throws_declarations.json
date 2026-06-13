@@ -1,0 +1,7 @@
+{
+  "error" : {
+    "code" : "INVALID_PARAMETER",
+    "message" : "Invalid parameter 'typeName': Type name is required"
+  },
+  "success" : false
+}

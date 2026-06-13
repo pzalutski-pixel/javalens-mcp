@@ -1,0 +1,14 @@
+{
+  "data" : {
+    "filePath" : "src/main/java/com/example/Calculator.java",
+    "hasChanges" : false,
+    "organizedImportBlock" : "",
+    "totalImports" : 0,
+    "unusedImports" : [ ],
+    "usedImports" : 0
+  },
+  "meta" : {
+    "suggestedNextTools" : [ "get_diagnostics to check for remaining issues", "get_document_symbols to see file structure" ]
+  },
+  "success" : true
+}

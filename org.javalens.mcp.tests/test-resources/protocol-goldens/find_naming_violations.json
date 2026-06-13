@@ -1,0 +1,13 @@
+{
+  "data" : {
+    "filesScanned" : 1,
+    "totalViolations" : 0,
+    "violations" : [ ]
+  },
+  "meta" : {
+    "returnedCount" : 0,
+    "suggestedNextTools" : [ "rename_symbol to fix a naming violation" ],
+    "totalCount" : 0
+  },
+  "success" : true
+}

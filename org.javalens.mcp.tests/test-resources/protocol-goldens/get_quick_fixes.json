@@ -1,0 +1,15 @@
+{
+  "data" : {
+    "filePath" : "src/main/java/com/example/Calculator.java",
+    "fixes" : [ ],
+    "line" : 0,
+    "problemCount" : 0,
+    "problems" : [ ]
+  },
+  "meta" : {
+    "returnedCount" : 0,
+    "suggestedNextTools" : [ "apply_quick_fix with fixId to apply a fix", "get_diagnostics to see all problems" ],
+    "totalCount" : 0
+  },
+  "success" : true
+}

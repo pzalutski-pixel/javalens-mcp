@@ -1,0 +1,21 @@
+{
+  "data" : {
+    "beans" : [ ],
+    "components" : [ ],
+    "configurations" : [ ],
+    "injectionPoints" : [ ],
+    "summary" : {
+      "beans" : 0,
+      "components" : 0,
+      "configurations" : 0,
+      "injectionPoints" : 0
+    }
+  },
+  "meta" : {
+    "returnedCount" : 0,
+    "suggestedNextTools" : [ "analyze_type for details on a registered component", "find_references to trace a specific dependency" ],
+    "totalCount" : 0,
+    "truncated" : false
+  },
+  "success" : true
+}

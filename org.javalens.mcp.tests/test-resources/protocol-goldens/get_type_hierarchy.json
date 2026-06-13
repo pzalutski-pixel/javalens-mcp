@@ -1,0 +1,28 @@
+{
+  "data" : {
+    "interfaces" : [ ],
+    "subtypes" : [ ],
+    "superclasses" : [ {
+      "kind" : "class",
+      "name" : "Object",
+      "qualifiedName" : "java.lang.Object"
+    } ],
+    "totalInterfaces" : 0,
+    "totalSubtypes" : 0,
+    "totalSuperclasses" : 1,
+    "type" : {
+      "filePath" : "src/main/java/com/example/Calculator.java",
+      "kind" : "class",
+      "line" : 2,
+      "name" : "Calculator",
+      "qualifiedName" : "com.example.Calculator"
+    }
+  },
+  "meta" : {
+    "returnedCount" : 1,
+    "suggestedNextTools" : [ "find_implementations to find all implementors", "find_references to see where type is used", "get_type_members to see members of a specific type" ],
+    "totalCount" : 1,
+    "truncated" : false
+  },
+  "success" : true
+}

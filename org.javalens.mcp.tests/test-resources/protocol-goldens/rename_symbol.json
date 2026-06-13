@@ -1,0 +1,61 @@
+{
+  "data" : {
+    "editsByFile" : {
+      "src/main/java/com/example/Calculator.java" : [ {
+        "column" : 15,
+        "endColumn" : 18,
+        "endOffset" : 304,
+        "line" : 14,
+        "newText" : "addRenamed",
+        "oldText" : "add",
+        "startOffset" : 301
+      } ],
+      "src/main/java/com/example/SearchPatterns.java" : [ {
+        "column" : 17,
+        "endColumn" : 20,
+        "endOffset" : 2191,
+        "line" : 80,
+        "newText" : "addRenamed",
+        "oldText" : "add",
+        "startOffset" : 2188
+      }, {
+        "column" : 26,
+        "endColumn" : 29,
+        "endOffset" : 1618,
+        "line" : 58,
+        "newText" : "addRenamed",
+        "oldText" : "add",
+        "startOffset" : 1615
+      } ],
+      "src/main/java/com/example/service/UserService.java" : [ {
+        "column" : 26,
+        "endColumn" : 29,
+        "endOffset" : 1471,
+        "line" : 58,
+        "newText" : "addRenamed",
+        "oldText" : "add",
+        "startOffset" : 1468
+      } ],
+      "src/test/java/com/example/SampleTest.java" : [ {
+        "column" : 32,
+        "endColumn" : 35,
+        "endOffset" : 889,
+        "line" : 35,
+        "newText" : "addRenamed",
+        "oldText" : "add",
+        "startOffset" : 886
+      } ]
+    },
+    "filesAffected" : 4,
+    "newName" : "addRenamed",
+    "oldName" : "add",
+    "symbolKind" : "method",
+    "totalEdits" : 5
+  },
+  "meta" : {
+    "returnedCount" : 5,
+    "suggestedNextTools" : [ "Apply the text edits to complete the rename", "get_diagnostics to verify no errors after rename" ],
+    "totalCount" : 5
+  },
+  "success" : true
+}

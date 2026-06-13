@@ -1,0 +1,28 @@
+{
+  "data" : {
+    "locations" : [ {
+      "column" : 13,
+      "context" : "List<Calculator> calcs = new ArrayList<>();",
+      "filePath" : "src/main/java/com/example/SearchPatterns.java",
+      "length" : 10,
+      "line" : 210,
+      "offset" : 5954
+    }, {
+      "column" : 17,
+      "context" : "private List<Calculator> calculatorList;",
+      "filePath" : "src/main/java/com/example/SearchPatterns.java",
+      "length" : 10,
+      "line" : 26,
+      "offset" : 825
+    } ],
+    "totalCount" : 2,
+    "typeName" : "com.example.Calculator"
+  },
+  "meta" : {
+    "returnedCount" : 2,
+    "suggestedNextTools" : [ "find_references for all type references", "find_type_instantiations to find object creation" ],
+    "totalCount" : 2,
+    "truncated" : false
+  },
+  "success" : true
+}

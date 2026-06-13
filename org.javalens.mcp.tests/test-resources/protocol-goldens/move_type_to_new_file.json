@@ -1,0 +1,7 @@
+{
+  "error" : {
+    "code" : "INVALID_PARAMETER",
+    "message" : "Invalid parameter 'position': No type at position"
+  },
+  "success" : false
+}

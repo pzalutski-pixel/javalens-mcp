@@ -1,0 +1,66 @@
+{
+  "data" : {
+    "file" : {
+      "blankLines" : 5,
+      "codeLOC" : 19,
+      "commentLines" : 25,
+      "path" : "src/main/java/com/example/Calculator.java",
+      "physicalLOC" : 49
+    },
+    "methods" : [ {
+      "cognitiveComplexity" : 0,
+      "cyclomaticComplexity" : 1,
+      "line" : 19,
+      "name" : "subtract",
+      "parameterCount" : 2,
+      "physicalLOC" : 10,
+      "risk" : "low",
+      "type" : "Calculator"
+    }, {
+      "cognitiveComplexity" : 0,
+      "cyclomaticComplexity" : 1,
+      "line" : 30,
+      "name" : "multiply",
+      "parameterCount" : 2,
+      "physicalLOC" : 10,
+      "risk" : "low",
+      "type" : "Calculator"
+    }, {
+      "cognitiveComplexity" : 0,
+      "cyclomaticComplexity" : 1,
+      "line" : 41,
+      "name" : "getLastResult",
+      "parameterCount" : 0,
+      "physicalLOC" : 7,
+      "risk" : "low",
+      "type" : "Calculator"
+    }, {
+      "cognitiveComplexity" : 0,
+      "cyclomaticComplexity" : 1,
+      "line" : 8,
+      "name" : "add",
+      "parameterCount" : 2,
+      "physicalLOC" : 10,
+      "risk" : "low",
+      "type" : "Calculator"
+    } ],
+    "riskAssessment" : {
+      "highRiskMethods" : 0,
+      "lowRiskMethods" : 4,
+      "mediumRiskMethods" : 0
+    },
+    "summary" : {
+      "averageMethodCC" : 1.0,
+      "maxMethodCC" : 1,
+      "methodCount" : 4,
+      "totalCognitiveComplexity" : 0,
+      "totalCyclomaticComplexity" : 4
+    }
+  },
+  "meta" : {
+    "returnedCount" : 4,
+    "suggestedNextTools" : [ "get_dependency_graph to analyze dependencies" ],
+    "totalCount" : 4
+  },
+  "success" : true
+}

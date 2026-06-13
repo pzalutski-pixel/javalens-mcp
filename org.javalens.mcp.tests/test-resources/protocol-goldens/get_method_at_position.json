@@ -1,0 +1,25 @@
+{
+  "data" : {
+    "declaringType" : "com.example.Calculator",
+    "filePath" : "src/main/java/com/example/Calculator.java",
+    "isConstructor" : false,
+    "isMainMethod" : false,
+    "line" : 8,
+    "modifiers" : [ "public" ],
+    "name" : "add",
+    "parameterCount" : 2,
+    "parameters" : [ {
+      "name" : "a",
+      "type" : "int"
+    }, {
+      "name" : "b",
+      "type" : "int"
+    } ],
+    "returnType" : "int",
+    "signature" : "add(int a, int b): int"
+  },
+  "meta" : {
+    "suggestedNextTools" : [ "find_references to find all callers", "get_call_hierarchy_incoming for call hierarchy", "get_super_method for overridden method" ]
+  },
+  "success" : true
+}

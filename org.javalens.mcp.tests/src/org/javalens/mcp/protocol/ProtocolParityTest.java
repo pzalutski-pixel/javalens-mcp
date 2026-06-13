@@ -80,14 +80,26 @@ class ProtocolParityTest {
         helper.afterEach(null);
     }
 
+    /** Literal anchor: the exact number of tools the MCP surface must expose. */
+    private static final int EXPECTED_TOOL_COUNT = 75;
+
     @Test
-    @DisplayName("every registered tool has a known-valid input (the gate)")
-    void everyRegisteredToolHasAnInput() {
-        Set<String> missing = new TreeSet<>(registry.getToolNames());
-        missing.removeAll(inputs.keySet());
-        assertTrue(missing.isEmpty(),
-            "Tools registered with no ToolInvocationInputs entry - add one so protocol "
-                + "parity covers them: " + missing);
+    @DisplayName("registration anchor: exactly 75 tools, and the registry set equals the covered set")
+    void registrationAnchor() {
+        // A LITERAL count, not derived from the registry - so a tool deleted
+        // from registerTools() (count drops 75->74) fails here instead of
+        // shipping green (the count-derived assertions elsewhere cannot).
+        assertEquals(EXPECTED_TOOL_COUNT, registry.getToolNames().size(),
+            "the registered tool count changed - if intentional, update EXPECTED_TOOL_COUNT and "
+                + "ToolInvocationInputs; otherwise a tool was added/removed from registerTools()");
+
+        // Bidirectional set equality catches a SWAP (one removed, one added,
+        // count unchanged): the real registry must equal the covered set.
+        Set<String> registered = new TreeSet<>(registry.getToolNames());
+        Set<String> covered = new TreeSet<>(inputs.keySet());
+        assertEquals(covered, registered,
+            "the set of registered tools diverged from the covered/known set - a tool was added "
+                + "without an input, or removed from the registry while still listed");
     }
 
     @Test

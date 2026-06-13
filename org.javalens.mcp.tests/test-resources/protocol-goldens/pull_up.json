@@ -1,0 +1,7 @@
+{
+  "error" : {
+    "code" : "INVALID_PARAMETER",
+    "message" : "Invalid parameter 'member': Declaring type has no project superclass to pull into"
+  },
+  "success" : false
+}

@@ -1,0 +1,17 @@
+{
+  "data" : {
+    "editsByFile" : { },
+    "fieldName" : "userName",
+    "filesAffected" : 0,
+    "getterName" : "getUserName",
+    "setterName" : "setUserName",
+    "totalEdits" : 0,
+    "warnings" : [ "A method 'getUserName' already exists in sub-type 'RefactoringTarget'." ]
+  },
+  "meta" : {
+    "returnedCount" : 0,
+    "suggestedNextTools" : [ "Apply the text edits to complete the encapsulation", "get_diagnostics to verify no errors" ],
+    "totalCount" : 0
+  },
+  "success" : true
+}

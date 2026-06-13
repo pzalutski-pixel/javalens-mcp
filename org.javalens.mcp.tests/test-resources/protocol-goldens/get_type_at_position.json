@@ -1,0 +1,19 @@
+{
+  "data" : {
+    "fieldCount" : 1,
+    "filePath" : "src/main/java/com/example/Calculator.java",
+    "isAnonymous" : false,
+    "isLocal" : false,
+    "kind" : "class",
+    "line" : 2,
+    "methodCount" : 4,
+    "modifiers" : [ "public" ],
+    "name" : "Calculator",
+    "nestedTypeCount" : 0,
+    "qualifiedName" : "com.example.Calculator"
+  },
+  "meta" : {
+    "suggestedNextTools" : [ "find_implementations for implementors", "get_type_hierarchy for inheritance chain", "get_type_members for all members" ]
+  },
+  "success" : true
+}

@@ -1,0 +1,36 @@
+{
+  "data" : {
+    "classEdits" : [ {
+      "column" : 23,
+      "line" : 5,
+      "newText" : " implements ICalculator",
+      "offset" : 120,
+      "type" : "insert"
+    } ],
+    "className" : "Calculator",
+    "extractedMethods" : [ {
+      "name" : "add",
+      "signature" : "int add(int a, int b)"
+    }, {
+      "name" : "getLastResult",
+      "signature" : "int getLastResult()"
+    }, {
+      "name" : "multiply",
+      "signature" : "int multiply(int a, int b)"
+    }, {
+      "name" : "subtract",
+      "signature" : "int subtract(int a, int b)"
+    } ],
+    "interfaceContent" : "package com.example;\n\npublic interface ICalculator {\n\n    int add(int a, int b);\n\n    int subtract(int a, int b);\n\n    int multiply(int a, int b);\n\n    int getLastResult();\n\n}\n",
+    "interfaceFilePath" : "src/main/java/com/example/ICalculator.java",
+    "interfaceName" : "ICalculator",
+    "packageName" : "com.example",
+    "sourceFilePath" : "src/main/java/com/example/Calculator.java"
+  },
+  "meta" : {
+    "returnedCount" : 4,
+    "suggestedNextTools" : [ "Apply the classEdits to add implements clause", "Create the interface file with the provided content", "get_diagnostics to verify no errors" ],
+    "totalCount" : 4
+  },
+  "success" : true
+}

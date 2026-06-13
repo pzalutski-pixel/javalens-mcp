@@ -1,0 +1,617 @@
+{
+  "data" : {
+    "roots" : {
+      "mainMethods" : [ "com.example.HelloWorld#main(String[])" ],
+      "testMethodCount" : 15
+    },
+    "unreachable" : [ {
+      "filePath" : "src/main/java/com/example/Animal.java",
+      "key" : "com.example.Animal",
+      "kind" : "type",
+      "line" : 5,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/Animal.java",
+      "key" : "com.example.Animal#move()",
+      "kind" : "method",
+      "line" : 11,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/Animal.java",
+      "key" : "com.example.Animal#speak()",
+      "kind" : "method",
+      "line" : 7,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/Animal.java",
+      "key" : "com.example.Dog",
+      "kind" : "type",
+      "line" : 19,
+      "visibility" : "package"
+    }, {
+      "filePath" : "src/main/java/com/example/Animal.java",
+      "key" : "com.example.Dog#speak()",
+      "kind" : "method",
+      "line" : 22,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/AnnotationUsages.java",
+      "key" : "com.example.AnnotationUsages",
+      "kind" : "type",
+      "line" : 7,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/AnnotationUsages.java",
+      "key" : "com.example.AnnotationUsages#AnnotationUsages()",
+      "kind" : "method",
+      "line" : 13,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/AnnotationUsages.java",
+      "key" : "com.example.AnnotationUsages#markedField",
+      "kind" : "field",
+      "line" : 10,
+      "visibility" : "private"
+    }, {
+      "filePath" : "src/main/java/com/example/AnnotationUsages.java",
+      "key" : "com.example.AnnotationUsages#markedMethod()",
+      "kind" : "method",
+      "line" : 17,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/AnnotationUsages.java",
+      "key" : "com.example.AnnotationUsages#markedParameter(int)",
+      "kind" : "method",
+      "line" : 30,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/AnnotationUsages.java",
+      "key" : "com.example.AnnotationUsages#repeatedLabels()",
+      "kind" : "method",
+      "line" : 27,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/AnnotationUsages.java",
+      "key" : "com.example.AnnotationUsages#repeatedTags()",
+      "kind" : "method",
+      "line" : 22,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/AnnotationUsages.java",
+      "key" : "com.example.AnnotationUsages#typeUseUsage()",
+      "kind" : "method",
+      "line" : 35,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/AnonymousClassExamples.java",
+      "key" : "com.example.AnonymousClassExamples",
+      "kind" : "type",
+      "line" : 11,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/AnonymousClassExamples.java",
+      "key" : "com.example.AnonymousClassExamples#blockBodyExample()",
+      "kind" : "method",
+      "line" : 97,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/AnonymousClassExamples.java",
+      "key" : "com.example.AnonymousClassExamples#comparatorExample()",
+      "kind" : "method",
+      "line" : 31,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/AnonymousClassExamples.java",
+      "key" : "com.example.AnonymousClassExamples#instanceField",
+      "kind" : "field",
+      "line" : 13,
+      "visibility" : "private"
+    }, {
+      "filePath" : "src/main/java/com/example/AnonymousClassExamples.java",
+      "key" : "com.example.AnonymousClassExamples#multipleMethodsExample()",
+      "kind" : "method",
+      "line" : 83,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/AnonymousClassExamples.java",
+      "key" : "com.example.AnonymousClassExamples#nonFunctionalInterface()",
+      "kind" : "method",
+      "line" : 125,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/AnonymousClassExamples.java",
+      "key" : "com.example.AnonymousClassExamples#simpleRunnable()",
+      "kind" : "method",
+      "line" : 18,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/AnonymousClassExamples.java",
+      "key" : "com.example.AnonymousClassExamples#singleParam()",
+      "kind" : "method",
+      "line" : 44,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/AnonymousClassExamples.java",
+      "key" : "com.example.AnonymousClassExamples#withFieldDeclaredInBody()",
+      "kind" : "method",
+      "line" : 156,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/AnonymousClassExamples.java",
+      "key" : "com.example.AnonymousClassExamples#withOuterThis()",
+      "kind" : "method",
+      "line" : 70,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/AnonymousClassExamples.java",
+      "key" : "com.example.AnonymousClassExamples#withReturn()",
+      "kind" : "method",
+      "line" : 112,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/AnonymousClassExamples.java",
+      "key" : "com.example.AnonymousClassExamples#withSuperMethodInvocation()",
+      "kind" : "method",
+      "line" : 141,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/AnonymousClassExamples.java",
+      "key" : "com.example.AnonymousClassExamples#withThisReference()",
+      "kind" : "method",
+      "line" : 57,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/AnonymousShapeUser.java",
+      "key" : "com.example.AnonymousShapeUser",
+      "kind" : "type",
+      "line" : 2,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/AnonymousShapeUser.java",
+      "key" : "com.example.AnonymousShapeUser#anonymousFillable()",
+      "kind" : "method",
+      "line" : 13,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/AnonymousShapeUser.java",
+      "key" : "com.example.AnonymousShapeUser#anonymousShape()",
+      "kind" : "method",
+      "line" : 4,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/AnonymousShapeUser.java",
+      "key" : "com.example.AnonymousShapeUser.InnerShape",
+      "kind" : "type",
+      "line" : 27,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/AnonymousShapeUser.java",
+      "key" : "com.example.AnonymousShapeUser.InnerShape#draw()",
+      "kind" : "method",
+      "line" : 29,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/AnonymousShapeUser.java",
+      "key" : "com.example.AnonymousShapeUser.NonStaticInnerShape",
+      "kind" : "type",
+      "line" : 34,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/AnonymousShapeUser.java",
+      "key" : "com.example.AnonymousShapeUser.NonStaticInnerShape#draw()",
+      "kind" : "method",
+      "line" : 36,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/BoundedMultiParam.java",
+      "key" : "com.example.BoundedMultiParam",
+      "kind" : "type",
+      "line" : 9,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/BoundedMultiParam.java",
+      "key" : "com.example.BoundedMultiParam#getKey()",
+      "kind" : "method",
+      "line" : 15,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/BoundedMultiParam.java",
+      "key" : "com.example.BoundedMultiParam#getNumber()",
+      "kind" : "method",
+      "line" : 14,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/BoundedMultiParam.java",
+      "key" : "com.example.BoundedMultiParam#key",
+      "kind" : "field",
+      "line" : 12,
+      "visibility" : "private"
+    }, {
+      "filePath" : "src/main/java/com/example/BoundedMultiParam.java",
+      "key" : "com.example.BoundedMultiParam#number",
+      "kind" : "field",
+      "line" : 11,
+      "visibility" : "private"
+    }, {
+      "filePath" : "src/main/java/com/example/BugPatterns.java",
+      "key" : "com.example.BugPatterns",
+      "kind" : "type",
+      "line" : 8,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/BugPatterns.java",
+      "key" : "com.example.BugPatterns#emptyExceptionHandler()",
+      "kind" : "method",
+      "line" : 13,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/BugPatterns.java",
+      "key" : "com.example.BugPatterns#lockObject",
+      "kind" : "field",
+      "line" : 35,
+      "visibility" : "private"
+    }, {
+      "filePath" : "src/main/java/com/example/BugPatterns.java",
+      "key" : "com.example.BugPatterns#multipleBugs(String)",
+      "kind" : "method",
+      "line" : 68,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/BugPatterns.java",
+      "key" : "com.example.BugPatterns#properResourceHandling()",
+      "kind" : "method",
+      "line" : 59,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/BugPatterns.java",
+      "key" : "com.example.BugPatterns#stringCompareWithEquals(String,String)",
+      "kind" : "method",
+      "line" : 31,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/BugPatterns.java",
+      "key" : "com.example.BugPatterns#stringCompareWithOperator(String,String)",
+      "kind" : "method",
+      "line" : 24,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/BugPatterns.java",
+      "key" : "com.example.BugPatterns#syncOnStringVariable()",
+      "kind" : "method",
+      "line" : 40,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/BugPatterns.java",
+      "key" : "com.example.BugPatterns#unclosedResource()",
+      "kind" : "method",
+      "line" : 50,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/Calculator.java",
+      "key" : "com.example.Calculator#getLastResult()",
+      "kind" : "method",
+      "line" : 45,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/Car.java",
+      "key" : "com.example.Car",
+      "kind" : "type",
+      "line" : 2,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/Car.java",
+      "key" : "com.example.Car#wheels()",
+      "kind" : "method",
+      "line" : 5,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ComplexMethods.java",
+      "key" : "com.example.ComplexMethods",
+      "kind" : "type",
+      "line" : 5,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ComplexMethods.java",
+      "key" : "com.example.ComplexMethods#emptyMethod()",
+      "kind" : "method",
+      "line" : 125,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ComplexMethods.java",
+      "key" : "com.example.ComplexMethods#highCognitiveComplexity(int)",
+      "kind" : "method",
+      "line" : 98,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ComplexMethods.java",
+      "key" : "com.example.ComplexMethods#highComplexity(int,int,int)",
+      "kind" : "method",
+      "line" : 39,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ComplexMethods.java",
+      "key" : "com.example.ComplexMethods#lowComplexity(int)",
+      "kind" : "method",
+      "line" : 11,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ComplexMethods.java",
+      "key" : "com.example.ComplexMethods#mediumComplexity(int)",
+      "kind" : "method",
+      "line" : 19,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ComplexMethods.java",
+      "key" : "com.example.ComplexMethods#methodWithExceptionHandling(String)",
+      "kind" : "method",
+      "line" : 132,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ComplexMethods.java",
+      "key" : "com.example.ComplexMethods#methodWithTernary(int,int)",
+      "kind" : "method",
+      "line" : 152,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ComplexityBoundaries.java",
+      "key" : "com.example.ComplexityBoundaries",
+      "kind" : "type",
+      "line" : 2,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ComplexityBoundaries.java",
+      "key" : "com.example.ComplexityBoundaries#cc01(int)",
+      "kind" : "method",
+      "line" : 4,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ComplexityBoundaries.java",
+      "key" : "com.example.ComplexityBoundaries#cc05(int)",
+      "kind" : "method",
+      "line" : 8,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ComplexityBoundaries.java",
+      "key" : "com.example.ComplexityBoundaries#cc06(int)",
+      "kind" : "method",
+      "line" : 17,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ComplexityBoundaries.java",
+      "key" : "com.example.ComplexityBoundaries#cc10(int)",
+      "kind" : "method",
+      "line" : 27,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ComplexityBoundaries.java",
+      "key" : "com.example.ComplexityBoundaries#cc11(int)",
+      "kind" : "method",
+      "line" : 41,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ConstructorCaller.java",
+      "key" : "com.example.ConstructorCaller",
+      "kind" : "type",
+      "line" : 5,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ConstructorCaller.java",
+      "key" : "com.example.ConstructorCaller#makeMany()",
+      "kind" : "method",
+      "line" : 15,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ConstructorCaller.java",
+      "key" : "com.example.ConstructorCaller#makeOne()",
+      "kind" : "method",
+      "line" : 7,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ConstructorCaller.java",
+      "key" : "com.example.ConstructorCaller#makeOneArg()",
+      "kind" : "method",
+      "line" : 11,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ConstructorSubclass.java",
+      "key" : "com.example.ConstructorSubclass",
+      "kind" : "type",
+      "line" : 6,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ConstructorSubclass.java",
+      "key" : "com.example.ConstructorSubclass#ConstructorSubclass(String,int,String)",
+      "kind" : "method",
+      "line" : 10,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ConstructorSubclass.java",
+      "key" : "com.example.ConstructorSubclass#extra",
+      "kind" : "field",
+      "line" : 8,
+      "visibility" : "private"
+    }, {
+      "filePath" : "src/main/java/com/example/ConstructorSubclass.java",
+      "key" : "com.example.ConstructorSubclass#getExtra()",
+      "kind" : "method",
+      "line" : 15,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ConstructorTarget.java",
+      "key" : "com.example.ConstructorTarget",
+      "kind" : "type",
+      "line" : 2,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ConstructorTarget.java",
+      "key" : "com.example.ConstructorTarget#ConstructorTarget(String)",
+      "kind" : "method",
+      "line" : 7,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ConstructorTarget.java",
+      "key" : "com.example.ConstructorTarget#ConstructorTarget(String,int)",
+      "kind" : "method",
+      "line" : 11,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ConstructorTarget.java",
+      "key" : "com.example.ConstructorTarget#count",
+      "kind" : "field",
+      "line" : 5,
+      "visibility" : "private"
+    }, {
+      "filePath" : "src/main/java/com/example/ConstructorTarget.java",
+      "key" : "com.example.ConstructorTarget#getCount()",
+      "kind" : "method",
+      "line" : 20,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ConstructorTarget.java",
+      "key" : "com.example.ConstructorTarget#getName()",
+      "kind" : "method",
+      "line" : 16,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ConstructorTarget.java",
+      "key" : "com.example.ConstructorTarget#name",
+      "kind" : "field",
+      "line" : 4,
+      "visibility" : "private"
+    }, {
+      "filePath" : "src/main/java/com/example/ControlFlowPatterns.java",
+      "key" : "com.example.ControlFlowPatterns",
+      "kind" : "type",
+      "line" : 7,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ControlFlowPatterns.java",
+      "key" : "com.example.ControlFlowPatterns#deeplyNested(int)",
+      "kind" : "method",
+      "line" : 146,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ControlFlowPatterns.java",
+      "key" : "com.example.ControlFlowPatterns#doWhileLoop(int)",
+      "kind" : "method",
+      "line" : 65,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ControlFlowPatterns.java",
+      "key" : "com.example.ControlFlowPatterns#enhancedForArray(int[])",
+      "kind" : "method",
+      "line" : 83,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ControlFlowPatterns.java",
+      "key" : "com.example.ControlFlowPatterns#enhancedForCollection(List<Integer>)",
+      "kind" : "method",
+      "line" : 75,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ControlFlowPatterns.java",
+      "key" : "com.example.ControlFlowPatterns#forLoop(int)",
+      "kind" : "method",
+      "line" : 47,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ControlFlowPatterns.java",
+      "key" : "com.example.ControlFlowPatterns#ifElse(int)",
+      "kind" : "method",
+      "line" : 15,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ControlFlowPatterns.java",
+      "key" : "com.example.ControlFlowPatterns#multiCatch()",
+      "kind" : "method",
+      "line" : 118,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ControlFlowPatterns.java",
+      "key" : "com.example.ControlFlowPatterns#multipleReturns(int)",
+      "kind" : "method",
+      "line" : 91,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ControlFlowPatterns.java",
+      "key" : "com.example.ControlFlowPatterns#nestedTry()",
+      "kind" : "method",
+      "line" : 128,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ControlFlowPatterns.java",
+      "key" : "com.example.ControlFlowPatterns#simpleLinear(int)",
+      "kind" : "method",
+      "line" : 9,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ControlFlowPatterns.java",
+      "key" : "com.example.ControlFlowPatterns#singleCatch()",
+      "kind" : "method",
+      "line" : 110,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ControlFlowPatterns.java",
+      "key" : "com.example.ControlFlowPatterns#switchExpression(int)",
+      "kind" : "method",
+      "line" : 38,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ControlFlowPatterns.java",
+      "key" : "com.example.ControlFlowPatterns#switchStatement(int)",
+      "kind" : "method",
+      "line" : 29,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ControlFlowPatterns.java",
+      "key" : "com.example.ControlFlowPatterns#ternary(int)",
+      "kind" : "method",
+      "line" : 25,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ControlFlowPatterns.java",
+      "key" : "com.example.ControlFlowPatterns#throwMultiple(int)",
+      "kind" : "method",
+      "line" : 104,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ControlFlowPatterns.java",
+      "key" : "com.example.ControlFlowPatterns#throwSingle(String)",
+      "kind" : "method",
+      "line" : 98,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ControlFlowPatterns.java",
+      "key" : "com.example.ControlFlowPatterns#tryWithResources(String)",
+      "kind" : "method",
+      "line" : 140,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/ControlFlowPatterns.java",
+      "key" : "com.example.ControlFlowPatterns#whileLoop(int)",
+      "kind" : "method",
+      "line" : 55,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/DataFlowFieldAccess.java",
+      "key" : "com.example.DataFlowFieldAccess",
+      "kind" : "type",
+      "line" : 8,
+      "visibility" : "public"
+    }, {
+      "filePath" : "src/main/java/com/example/DataFlowFieldAccess.java",
+      "key" : "com.example.DataFlowFieldAccess#counter",
+      "kind" : "field",
+      "line" : 10,
+      "visibility" : "private"
+    } ],
+    "unreachableCount" : 421
+  },
+  "meta" : {
+    "returnedCount" : 100,
+    "suggestedNextTools" : [ "analyze_change_impact for the blast radius of a removal", "find_affected_tests to see what tests cover surviving code", "find_references to double-check a member before removing it" ],
+    "totalCount" : 421,
+    "truncated" : true
+  },
+  "success" : true
+}

@@ -1,0 +1,15 @@
+{
+  "data" : {
+    "declaringType" : "com.example.Calculator",
+    "docComment" : "Adds two numbers.\r\n@param a first operand\r\n@param b second operand\r\n@return the sum",
+    "filePath" : "src/main/java/com/example/Calculator.java",
+    "kind" : "method",
+    "modifiers" : [ "public" ],
+    "name" : "add",
+    "signature" : "public int add(int a, int b)"
+  },
+  "meta" : {
+    "suggestedNextTools" : [ "find_references to find all usages", "get_javadoc for full documentation", "go_to_definition to navigate to source" ]
+  },
+  "success" : true
+}

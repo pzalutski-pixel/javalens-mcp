@@ -1,0 +1,15 @@
+{
+  "data" : {
+    "declaringType" : "com.example.Calculator",
+    "locations" : [ ],
+    "methodName" : "add",
+    "totalCount" : 0
+  },
+  "meta" : {
+    "returnedCount" : 0,
+    "suggestedNextTools" : [ "find_references for all references including regular calls", "get_call_hierarchy_incoming to see all callers" ],
+    "totalCount" : 0,
+    "truncated" : false
+  },
+  "success" : true
+}

@@ -1,0 +1,16 @@
+{
+  "data" : {
+    "diagnostics" : [ ],
+    "errorCount" : 0,
+    "filesChecked" : 1,
+    "totalDiagnostics" : 0,
+    "warningCount" : 0
+  },
+  "meta" : {
+    "returnedCount" : 0,
+    "suggestedNextTools" : [ "get_document_symbols to see file structure", "go_to_definition to navigate to error location" ],
+    "totalCount" : 0,
+    "truncated" : false
+  },
+  "success" : true
+}

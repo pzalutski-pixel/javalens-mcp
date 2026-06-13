@@ -1,0 +1,15 @@
+{
+  "data" : {
+    "highCount" : 0,
+    "issues" : [ ],
+    "lowCount" : 0,
+    "mediumCount" : 0,
+    "totalIssues" : 0
+  },
+  "meta" : {
+    "returnedCount" : 0,
+    "suggestedNextTools" : [ "No potential bugs found" ],
+    "totalCount" : 0
+  },
+  "success" : true
+}

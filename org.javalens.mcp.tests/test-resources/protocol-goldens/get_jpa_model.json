@@ -1,0 +1,13 @@
+{
+  "data" : {
+    "entities" : [ ],
+    "entityCount" : 0
+  },
+  "meta" : {
+    "returnedCount" : 0,
+    "suggestedNextTools" : [ "analyze_type for full details of an entity", "find_references to see where an entity is used" ],
+    "totalCount" : 0,
+    "truncated" : false
+  },
+  "success" : true
+}

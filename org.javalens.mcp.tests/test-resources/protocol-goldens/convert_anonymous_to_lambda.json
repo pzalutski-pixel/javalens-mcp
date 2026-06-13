@@ -1,0 +1,7 @@
+{
+  "error" : {
+    "code" : "INVALID_PARAMETER",
+    "message" : "Invalid parameter 'position': No anonymous class found at position. Position cursor on 'new' keyword."
+  },
+  "success" : false
+}

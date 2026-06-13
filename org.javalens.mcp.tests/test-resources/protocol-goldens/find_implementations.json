@@ -1,0 +1,16 @@
+{
+  "data" : {
+    "implementations" : [ ],
+    "isInterface" : false,
+    "method" : "add",
+    "symbol" : "Calculator",
+    "totalImplementations" : 0
+  },
+  "meta" : {
+    "returnedCount" : 0,
+    "suggestedNextTools" : [ "find_references to see all usages", "get_type_hierarchy for full inheritance chain", "get_type_members to see members of an implementation" ],
+    "totalCount" : 0,
+    "truncated" : false
+  },
+  "success" : true
+}

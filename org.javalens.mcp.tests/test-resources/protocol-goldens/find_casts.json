@@ -1,0 +1,22 @@
+{
+  "data" : {
+    "advice" : "Casts may indicate design issues - consider polymorphism",
+    "locations" : [ {
+      "column" : 31,
+      "context" : "Calculator calc = (Calculator) obj;",
+      "filePath" : "src/main/java/com/example/SearchPatterns.java",
+      "length" : 10,
+      "line" : 79,
+      "offset" : 2153
+    } ],
+    "totalCount" : 1,
+    "typeName" : "com.example.Calculator"
+  },
+  "meta" : {
+    "returnedCount" : 1,
+    "suggestedNextTools" : [ "find_instanceof_checks to find related type checks", "get_type_hierarchy to understand inheritance" ],
+    "totalCount" : 1,
+    "truncated" : false
+  },
+  "success" : true
+}

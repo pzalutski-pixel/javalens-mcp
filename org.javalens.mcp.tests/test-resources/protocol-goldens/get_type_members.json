@@ -1,0 +1,50 @@
+{
+  "data" : {
+    "fields" : [ {
+      "kind" : "field",
+      "line" : 6,
+      "modifiers" : [ "private" ],
+      "name" : "lastResult",
+      "type" : "int"
+    } ],
+    "methods" : [ {
+      "kind" : "method",
+      "line" : 19,
+      "modifiers" : [ "public" ],
+      "name" : "subtract",
+      "signature" : "subtract(int a, int b): int"
+    }, {
+      "kind" : "method",
+      "line" : 30,
+      "modifiers" : [ "public" ],
+      "name" : "multiply",
+      "signature" : "multiply(int a, int b): int"
+    }, {
+      "kind" : "method",
+      "line" : 41,
+      "modifiers" : [ "public" ],
+      "name" : "getLastResult",
+      "signature" : "getLastResult(): int"
+    }, {
+      "kind" : "method",
+      "line" : 8,
+      "modifiers" : [ "public" ],
+      "name" : "add",
+      "signature" : "add(int a, int b): int"
+    } ],
+    "nestedTypes" : [ ],
+    "totalMembers" : 5,
+    "type" : {
+      "filePath" : "src/main/java/com/example/Calculator.java",
+      "kind" : "class",
+      "name" : "Calculator",
+      "qualifiedName" : "com.example.Calculator"
+    }
+  },
+  "meta" : {
+    "returnedCount" : 5,
+    "suggestedNextTools" : [ "find_references to find usages of a member", "get_type_hierarchy to see inheritance chain", "go_to_definition to navigate to member source" ],
+    "totalCount" : 5
+  },
+  "success" : true
+}

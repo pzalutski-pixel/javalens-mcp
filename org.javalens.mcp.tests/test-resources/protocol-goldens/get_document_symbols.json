@@ -1,0 +1,50 @@
+{
+  "data" : {
+    "file" : "src/main/java/com/example/Calculator.java",
+    "symbols" : [ {
+      "children" : [ {
+        "kind" : "field",
+        "line" : 6,
+        "modifiers" : [ "private" ],
+        "name" : "lastResult",
+        "type" : "int"
+      }, {
+        "kind" : "method",
+        "line" : 19,
+        "modifiers" : [ "public" ],
+        "name" : "subtract",
+        "signature" : "subtract(int a, int b): int"
+      }, {
+        "kind" : "method",
+        "line" : 30,
+        "modifiers" : [ "public" ],
+        "name" : "multiply",
+        "signature" : "multiply(int a, int b): int"
+      }, {
+        "kind" : "method",
+        "line" : 41,
+        "modifiers" : [ "public" ],
+        "name" : "getLastResult",
+        "signature" : "getLastResult(): int"
+      }, {
+        "kind" : "method",
+        "line" : 8,
+        "modifiers" : [ "public" ],
+        "name" : "add",
+        "signature" : "add(int a, int b): int"
+      } ],
+      "kind" : "class",
+      "line" : 2,
+      "modifiers" : [ "public" ],
+      "name" : "Calculator"
+    } ],
+    "totalSymbols" : 6
+  },
+  "meta" : {
+    "returnedCount" : 6,
+    "suggestedNextTools" : [ "find_references to find usages of a symbol", "get_type_members to see members of a specific type", "go_to_definition to navigate to a symbol" ],
+    "totalCount" : 6,
+    "truncated" : false
+  },
+  "success" : true
+}

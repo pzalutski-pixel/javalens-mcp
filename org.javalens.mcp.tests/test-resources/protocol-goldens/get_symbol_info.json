@@ -1,0 +1,25 @@
+{
+  "data" : {
+    "column" : 4,
+    "declaringType" : "com.example.Calculator",
+    "filePath" : "src/main/java/com/example/Calculator.java",
+    "isConstructor" : false,
+    "kind" : "method",
+    "line" : 8,
+    "modifiers" : [ "public" ],
+    "name" : "add",
+    "parameters" : [ {
+      "name" : "a",
+      "type" : "int"
+    }, {
+      "name" : "b",
+      "type" : "int"
+    } ],
+    "returnType" : "int",
+    "signature" : "add(int a, int b): int"
+  },
+  "meta" : {
+    "suggestedNextTools" : [ "find_references to find all usages", "get_type_hierarchy for type inheritance", "go_to_definition to navigate to definition" ]
+  },
+  "success" : true
+}

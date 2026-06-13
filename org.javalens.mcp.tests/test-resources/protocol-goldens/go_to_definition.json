@@ -1,0 +1,16 @@
+{
+  "data" : {
+    "containingType" : "com.example.Calculator",
+    "kind" : "method",
+    "location" : {
+      "column" : 4,
+      "filePath" : "src/main/java/com/example/Calculator.java",
+      "line" : 8
+    },
+    "symbol" : "add"
+  },
+  "meta" : {
+    "suggestedNextTools" : [ "find_references to see all usages of this symbol", "get_type_hierarchy if this is a type", "get_type_members to see all members of the containing type" ]
+  },
+  "success" : true
+}

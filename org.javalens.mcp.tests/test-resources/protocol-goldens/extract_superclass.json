@@ -1,0 +1,33 @@
+{
+  "data" : {
+    "createdFiles" : [ {
+      "content" : "package com.example;\r\n\r\npublic class CalculatorBase {\r\n\r\n\tpublic CalculatorBase() {\r\n\t\tsuper();\r\n\t}\r\n\r\n\t/**\r\n\t * Adds two numbers.\r\n\t * @param a first operand\r\n\t * @param b second operand\r\n\t * @return the sum\r\n\t */\r\n\tpublic int add(int a, int b) {\r\n\t    lastResult = a + b;\r\n\t    return lastResult;\r\n\t}\r\n\r\n}",
+      "filePath" : "src/main/java/com/example/CalculatorBase.java"
+    } ],
+    "editsByFile" : {
+      "src/main/java/com/example/Calculator.java" : [ {
+        "endColumn" : 5,
+        "endLine" : 17,
+        "endOffset" : 384,
+        "newText" : "extends CalculatorBase {\r\n    int lastResult;",
+        "oldText" : "{\r\n    private int lastResult;\r\n\r\n    /**\r\n     * Adds two numbers.\r\n     * @param a first operand\r\n     * @param b second operand\r\n     * @return the sum\r\n     */\r\n    public int add(int a, int b) {\r\n        lastResult = a + b;\r\n        return lastResult;\r\n    }",
+        "startColumn" : 24,
+        "startLine" : 5,
+        "startOffset" : 121,
+        "type" : "replace"
+      } ]
+    },
+    "filesAffected" : 1,
+    "fromType" : "com.example.Calculator",
+    "memberName" : "add",
+    "superclassName" : "CalculatorBase",
+    "totalEdits" : 1,
+    "warnings" : [ "Field 'com.example.Calculator.lastResult' referenced in one of the moved elements is not accessible from type 'com.example.CalculatorBase'", "The visibility of field 'com.example.Calculator.lastResult' will be changed to package." ]
+  },
+  "meta" : {
+    "returnedCount" : 1,
+    "suggestedNextTools" : [ "Apply the text edits to complete the extraction", "Create the new superclass file from createdFiles", "get_diagnostics to verify no errors" ],
+    "totalCount" : 1
+  },
+  "success" : true
+}

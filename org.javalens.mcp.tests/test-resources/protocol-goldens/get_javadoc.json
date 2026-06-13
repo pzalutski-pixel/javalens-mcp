@@ -1,0 +1,20 @@
+{
+  "data" : {
+    "hasDocumentation" : true,
+    "kind" : "method",
+    "params" : [ {
+      "description" : "first operand",
+      "name" : "a"
+    }, {
+      "description" : "second operand",
+      "name" : "b"
+    } ],
+    "returns" : "the sum",
+    "summary" : "Adds two numbers.",
+    "symbol" : "add"
+  },
+  "meta" : {
+    "suggestedNextTools" : [ "find_references to find usages", "get_type_members for related members" ]
+  },
+  "success" : true
+}

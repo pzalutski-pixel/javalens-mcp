@@ -1,0 +1,28 @@
+{
+  "data" : {
+    "element" : {
+      "kind" : "method",
+      "name" : "add"
+    },
+    "enclosingMethod" : {
+      "isConstructor" : false,
+      "line" : 8,
+      "modifiers" : [ "public" ],
+      "name" : "add",
+      "signature" : "add(int a, int b): int"
+    },
+    "enclosingPackage" : "com.example",
+    "enclosingType" : {
+      "kind" : "class",
+      "line" : 2,
+      "modifiers" : [ "public" ],
+      "name" : "Calculator",
+      "qualifiedName" : "com.example.Calculator"
+    },
+    "filePath" : "src/main/java/com/example/Calculator.java"
+  },
+  "meta" : {
+    "suggestedNextTools" : [ "get_document_symbols for file structure", "get_type_members for type members" ]
+  },
+  "success" : true
+}
