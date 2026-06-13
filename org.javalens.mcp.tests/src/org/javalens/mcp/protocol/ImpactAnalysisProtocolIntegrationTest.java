@@ -121,7 +121,7 @@ class ImpactAnalysisProtocolIntegrationTest {
         assertEquals(5, data.get("unreachableCount").asInt());
         assertEquals("com.reach.Main#main(String[])",
             data.get("roots").get("mainMethods").get(0).asText());
-        assertEquals(4, data.get("roots").get("testMethodCount").asInt());
+        assertEquals(5, data.get("roots").get("testMethodCount").asInt());
 
         Set<String> keys = new HashSet<>();
         for (JsonNode entry : data.get("unreachable")) {
@@ -149,7 +149,7 @@ class ImpactAnalysisProtocolIntegrationTest {
             """));
 
         assertTrue(payload.get("success").asBoolean());
-        assertEquals(14, payload.get("data").get("unreachableCount").asInt());
+        assertEquals(20, payload.get("data").get("unreachableCount").asInt());
     }
 
     @Test

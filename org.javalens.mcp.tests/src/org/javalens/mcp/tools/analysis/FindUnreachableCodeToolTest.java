@@ -94,7 +94,7 @@ class FindUnreachableCodeToolTest {
         @SuppressWarnings("unchecked")
         Map<String, Object> roots = (Map<String, Object>) getData(r).get("roots");
         assertEquals(List.of("com.reach.Main#main(String[])"), roots.get("mainMethods"));
-        assertEquals(4, roots.get("testMethodCount"));
+        assertEquals(5, roots.get("testMethodCount"));
     }
 
     @Test
@@ -135,9 +135,17 @@ class FindUnreachableCodeToolTest {
             "com.reach.TestedOnlyTest#helper()",
             "com.reach.GreeterDispatchTest",
             "com.reach.GreeterDispatchTest#greetsThroughInterface()",
-            "com.reach.GreeterDispatchTest#disabledGreeting()"),
+            "com.reach.GreeterDispatchTest#disabledGreeting()",
+            // Widget is exercised only by WidgetTest, so without test roots the
+            // whole Widget + WidgetTest cluster is dead.
+            "com.reach.Widget",
+            "com.reach.Widget#Widget()",
+            "com.reach.Widget#compute(int)",
+            "com.reach.Widget#seed",
+            "com.reach.WidgetTest",
+            "com.reach.WidgetTest#computesViaMember()"),
             keys(r));
-        assertEquals(14, getData(r).get("unreachableCount"));
+        assertEquals(20, getData(r).get("unreachableCount"));
     }
 
     private Set<String> keys(ToolResponse r) {
