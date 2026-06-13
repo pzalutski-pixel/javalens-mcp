@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.analysis;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.AnalyzeTypeTool;
@@ -23,12 +25,14 @@ class AnalyzeTypeToolTest {
     TestProjectHelper helper = new TestProjectHelper();
     private JdtServiceImpl service;
     private AnalyzeTypeTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() throws Exception {
         service = helper.loadProject("simple-maven");
         tool = new AnalyzeTypeTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
     }
 
@@ -376,5 +380,25 @@ class AnalyzeTypeToolTest {
             "T bound must include Number; got: " + tBounds);
         assertTrue(uBounds.stream().anyMatch(b -> b.contains("Comparable")),
             "U bound must reference Comparable; got: " + uBounds);
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: Calculator member counts are exactly 0/4/1/0")
+    void envelope_calculator_exactMemberCounts() {
+        ObjectNode args = envelope.args();
+        args.put("typeName", "com.example.Calculator");
+        JsonNode payload = envelope.payload("analyze_type", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "analyze_type failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertEquals("com.example.Calculator", data.get("type").get("qualifiedName").asText());
+        JsonNode members = data.get("members");
+        assertEquals(0, members.get("constructorCount").asInt(), "constructorCount through envelope");
+        assertEquals(4, members.get("methodCount").asInt(), "methodCount through envelope");
+        assertEquals(1, members.get("fieldCount").asInt(), "fieldCount through envelope");
+        assertEquals(0, members.get("nestedTypeCount").asInt(), "nestedTypeCount through envelope");
     }
 }
