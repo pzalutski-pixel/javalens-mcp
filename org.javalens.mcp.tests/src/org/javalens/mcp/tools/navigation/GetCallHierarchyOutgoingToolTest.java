@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.navigation;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.GetCallHierarchyOutgoingTool;
@@ -22,6 +24,7 @@ class GetCallHierarchyOutgoingToolTest {
     @RegisterExtension
     TestProjectHelper helper = new TestProjectHelper();
     private GetCallHierarchyOutgoingTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
     private String refactoringTargetPath;
 
@@ -29,6 +32,7 @@ class GetCallHierarchyOutgoingToolTest {
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new GetCallHierarchyOutgoingTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
         Path projectPath = helper.getFixturePath("simple-maven");
         refactoringTargetPath = projectPath.resolve("src/main/java/com/example/RefactoringTarget.java").toString();
@@ -239,5 +243,26 @@ class GetCallHierarchyOutgoingToolTest {
             "MethodRefTarget::formatId reference in MethodRefUser.use's body must surface " +
                 "as a callee — method references are deferred-invocation dispatch sites; " +
                 "got: " + callees);
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: Calculator.getLastResult has zero callees")
+    void envelope_getLastResult_zeroCallees() {
+        String calc = helper.getFixturePath("simple-maven")
+            .resolve("src/main/java/com/example/Calculator.java").toString();
+        ObjectNode args = envelope.args();
+        args.put("filePath", calc);
+        args.put("line", 45);
+        args.put("column", 15);
+        JsonNode payload = envelope.payload("get_call_hierarchy_outgoing", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "get_call_hierarchy_outgoing failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertEquals("getLastResult", data.get("method").asText());
+        assertEquals(0, data.get("totalCallees").asInt(),
+            "getLastResult just returns a field — its zero-callee count must survive the envelope");
     }
 }
