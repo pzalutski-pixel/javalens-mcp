@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.analysis;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.AnalyzeFileTool;
@@ -23,6 +25,7 @@ class AnalyzeFileToolTest {
     TestProjectHelper helper = new TestProjectHelper();
     private JdtServiceImpl service;
     private AnalyzeFileTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
     private String calculatorPath;
     private String userServicePath;
@@ -31,6 +34,7 @@ class AnalyzeFileToolTest {
     void setUp() throws Exception {
         service = helper.loadProject("simple-maven");
         tool = new AnalyzeFileTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
         calculatorPath = helper.getFixturePath("simple-maven")
             .resolve("src/main/java/com/example/Calculator.java").toString();
@@ -316,5 +320,27 @@ class AnalyzeFileToolTest {
         assertNotNull(modifiers);
         assertTrue(modifiers.contains("sealed"),
             "Vehicle is a sealed interface — modifiers must include `sealed`; got: " + modifiers);
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: NamingViolationFixtures has 2 top-level types (annotation + record)")
+    void envelope_namingViolationFixtures_typeCountTwo() {
+        String path = helper.getFixturePath("simple-maven")
+            .resolve("src/main/java/com/example/NamingViolationFixtures.java").toString();
+        ObjectNode args = envelope.args();
+        args.put("filePath", path);
+        JsonNode payload = envelope.payload("analyze_file", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "analyze_file failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertEquals(2, data.get("typeCount").asInt(),
+            "two top-level types must survive the envelope");
+        java.util.Set<String> kinds = new java.util.TreeSet<>();
+        for (JsonNode t : data.get("types")) kinds.add(t.get("kind").asText());
+        assertEquals(java.util.Set.of("annotation", "record"), kinds,
+            "the exact top-level kind set must survive the envelope; got: " + kinds);
     }
 }
