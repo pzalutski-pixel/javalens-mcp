@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.analysis;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.AnalyzeMethodTool;
@@ -24,6 +26,7 @@ class AnalyzeMethodToolTest {
     TestProjectHelper helper = new TestProjectHelper();
     private JdtServiceImpl service;
     private AnalyzeMethodTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
     private String calculatorPath;
 
@@ -31,6 +34,7 @@ class AnalyzeMethodToolTest {
     void setUp() throws Exception {
         service = helper.loadProject("simple-maven");
         tool = new AnalyzeMethodTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
         calculatorPath = helper.getFixturePath("simple-maven")
             .resolve("src/main/java/com/example/Calculator.java").toString();
@@ -391,5 +395,32 @@ class AnalyzeMethodToolTest {
             "Method analysis must report typeParameters for a generic method; got: " + method);
         assertEquals(List.of("U"), typeParameters,
             "identity declares <U ...>; method.typeParameters must list U; got: " + typeParameters);
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: Calculator.add has exact signature and two int parameters")
+    void envelope_calculatorAdd_exactSignatureAndParams() {
+        ObjectNode args = envelope.args();
+        args.put("filePath", calculatorPath);
+        args.put("line", 14);
+        args.put("column", 15);
+        JsonNode payload = envelope.payload("analyze_method", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "analyze_method failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        JsonNode method = data.get("method");
+        assertEquals("add", method.get("name").asText());
+        assertEquals("add(int a, int b): int", method.get("signature").asText(),
+            "exact method signature must survive the envelope");
+        assertEquals("int", method.get("returnType").asText());
+        JsonNode params = data.get("parameters");
+        assertEquals(2, params.size(), "Calculator.add has two parameters");
+        assertEquals("a", params.get(0).get("name").asText());
+        assertEquals("int", params.get(0).get("type").asText());
+        assertEquals("b", params.get(1).get("name").asText());
+        assertEquals("int", params.get(1).get("type").asText());
     }
 }
