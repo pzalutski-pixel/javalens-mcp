@@ -45,6 +45,8 @@ class ProjectGraphServiceTest {
     private static final String T_CHILD = "com.reach.Child";
     private static final String T_TOT = "com.reach.TestedOnlyTest";
     private static final String T_GDT = "com.reach.GreeterDispatchTest";
+    private static final String T_WIDGET = "com.reach.Widget";
+    private static final String T_WIDGET_TEST = "com.reach.WidgetTest";
 
     // Method keys
     private static final String MAIN = "com.reach.Main#main(String[])";
@@ -66,6 +68,9 @@ class ProjectGraphServiceTest {
     private static final String TOT_HELPER = "com.reach.TestedOnlyTest#helper()";
     private static final String GDT_GREETS = "com.reach.GreeterDispatchTest#greetsThroughInterface()";
     private static final String GDT_DISABLED = "com.reach.GreeterDispatchTest#disabledGreeting()";
+    private static final String WIDGET_CTOR = "com.reach.Widget#Widget()";
+    private static final String WIDGET_COMPUTE = "com.reach.Widget#compute(int)";
+    private static final String WT_COMPUTES = "com.reach.WidgetTest#computesViaMember()";
 
     // Field keys
     private static final String F_GREETER = "com.reach.App#greeter";
@@ -84,14 +89,16 @@ class ProjectGraphServiceTest {
     @DisplayName("graph contains exactly the fixture's types, methods, and fields")
     void nodeInventory() {
         assertEquals(
-            Set.of(T_MAIN, T_APP, T_GREETER, T_EG, T_ORPHAN, T_TESTED_ONLY, T_BASE, T_CHILD, T_TOT, T_GDT),
+            Set.of(T_MAIN, T_APP, T_GREETER, T_EG, T_ORPHAN, T_TESTED_ONLY, T_BASE, T_CHILD, T_TOT, T_GDT,
+                T_WIDGET, T_WIDGET_TEST),
             keys(graph.nodes(NodeKind.TYPE)));
 
         assertEquals(
             Set.of(MAIN, APP_RUN, APP_DEFAULT_NAME, GREETER_GREET, EG_GREET, EG_PREFIX, EG_UNUSED,
                 ORPHAN_DEAD_METHOD, ORPHAN_DEAD_CHAIN, ONLY_FROM_TEST, BASE_HOOK,
                 CHILD_CTOR, CHILD_HOOK, CHILD_CREATE,
-                TOT_DOUBLES, TOT_VIA_HELPER, TOT_HELPER, GDT_GREETS, GDT_DISABLED),
+                TOT_DOUBLES, TOT_VIA_HELPER, TOT_HELPER, GDT_GREETS, GDT_DISABLED,
+                WIDGET_CTOR, WIDGET_COMPUTE, WT_COMPUTES),
             keys(graph.nodes(NodeKind.METHOD)));
 
         assertEquals(
@@ -154,7 +161,11 @@ class ProjectGraphServiceTest {
             new GraphEdge(GDT_GREETS, T_EG, EdgeKind.CREATES),
             new GraphEdge(GDT_GREETS, GREETER_GREET, EdgeKind.CALLS),
             new GraphEdge(GDT_DISABLED, T_EG, EdgeKind.CREATES),
-            new GraphEdge(GDT_DISABLED, GREETER_GREET, EdgeKind.CALLS));
+            new GraphEdge(GDT_DISABLED, GREETER_GREET, EdgeKind.CALLS),
+            // WidgetTest exercises Widget only through its members (explicit
+            // ctor node + method node), never the type node — the #32 shape.
+            new GraphEdge(WT_COMPUTES, WIDGET_CTOR, EdgeKind.CREATES),
+            new GraphEdge(WT_COMPUTES, WIDGET_COMPUTE, EdgeKind.CALLS));
 
         assertEquals(expected, Set.copyOf(graph.edges()));
     }
@@ -240,6 +251,45 @@ class ProjectGraphServiceTest {
         assertEquals(
             Set.of(TOT_DOUBLES, TOT_HELPER, TOT_VIA_HELPER),
             graph.transitiveCallers(ONLY_FROM_TEST));
+    }
+
+    // ========== Type-aware reverse closure (symbol-level, #32) ==========
+
+    @Test
+    @DisplayName("transitiveCallers on a type node alone misses member-only coverage")
+    void transitiveCallers_typeNode_missesMembers() {
+        // The raw type-node closure is what shipped in 1.4.2: Widget is
+        // exercised only through its ctor and method nodes, so the type node
+        // has no incoming edges and this returns empty - the #32 bug.
+        assertEquals(Set.of(), graph.transitiveCallers(T_WIDGET));
+    }
+
+    @Test
+    @DisplayName("transitiveCallersOfSymbol on a type aggregates its members' callers")
+    void transitiveCallersOfSymbol_typeAggregatesMembers() {
+        assertEquals(Set.of(WT_COMPUTES), graph.transitiveCallersOfSymbol(T_WIDGET));
+    }
+
+    @Test
+    @DisplayName("transitiveCallersOfSymbol on a method matches transitiveCallers")
+    void transitiveCallersOfSymbol_methodUnchanged() {
+        assertEquals(
+            graph.transitiveCallers(ONLY_FROM_TEST),
+            graph.transitiveCallersOfSymbol(ONLY_FROM_TEST));
+    }
+
+    @Test
+    @DisplayName("transitiveCallersOfSymbol on a type unions the type node's own callers with members'")
+    void transitiveCallersOfSymbol_typeIncludesTypeNodeCallers() {
+        // EnglishGreeter is created directly (type node, implicit ctor) by App
+        // and both dispatch tests, AND its greet/prefix members are covered.
+        // The symbol-level closure must include both the type-node creators
+        // and the member-level callers.
+        Set<String> callers = graph.transitiveCallersOfSymbol(T_EG);
+        assertTrue(callers.contains(GDT_GREETS), "direct creator via type node");
+        assertTrue(callers.contains(GDT_DISABLED), "direct creator via type node");
+        assertTrue(callers.contains(APP_RUN), "caller of a member (greet/prefix)");
+        assertTrue(callers.contains(MAIN), "transitive caller through App.run");
     }
 
     @Test

@@ -210,6 +210,37 @@ public final class ProjectGraph {
     }
 
     /**
+     * Reverse closure for a selected SYMBOL, type-aware. For a method or field
+     * key this is {@link #transitiveCallers}. For a TYPE key it unions the
+     * callers of the type node itself (direct instantiation via an implicit
+     * constructor) with the callers of every member the type declares
+     * (constructors, methods, fields) — so "who exercises this class" reflects
+     * coverage through its members, not only direct type-node references.
+     * Without this, a class with an explicit constructor or method-only
+     * coverage reports no callers (issue #32).
+     */
+    public Set<String> transitiveCallersOfSymbol(String key) {
+        GraphNode node = nodesByKey.get(key);
+        if (node == null || node.kind() != NodeKind.TYPE) {
+            return transitiveCallers(key);
+        }
+        Set<String> result = new HashSet<>(transitiveCallers(key));
+        for (GraphNode member : nodesByKey.values()) {
+            if (key.equals(member.ownerKey())) {
+                result.addAll(transitiveCallers(member.key()));
+            }
+        }
+        // A member of the type may itself be a caller (e.g. one method calling
+        // another); the asker wants callers OUTSIDE the type, so drop the
+        // type's own members from the result.
+        result.removeIf(callerKey -> {
+            GraphNode caller = nodesByKey.get(callerKey);
+            return caller != null && key.equals(caller.ownerKey());
+        });
+        return result;
+    }
+
+    /**
      * Compute the graph key for a Java model element. Returns the key whether
      * or not the element is present in the graph; callers check {@link #node}.
      * Returns {@code null} for element kinds the graph does not model.
