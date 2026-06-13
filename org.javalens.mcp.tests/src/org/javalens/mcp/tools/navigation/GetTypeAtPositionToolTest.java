@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.navigation;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.GetTypeAtPositionTool;
@@ -27,6 +29,7 @@ class GetTypeAtPositionToolTest {
     TestProjectHelper helper = new TestProjectHelper();
 
     private GetTypeAtPositionTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
     private Path projectPath;
     private String calculatorPath;
@@ -36,6 +39,7 @@ class GetTypeAtPositionToolTest {
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new GetTypeAtPositionTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
         projectPath = helper.getFixturePath("simple-maven");
         calculatorPath = projectPath.resolve("src/main/java/com/example/Calculator.java").toString();
@@ -323,5 +327,27 @@ class GetTypeAtPositionToolTest {
         assertNotNull(modifiers);
         assertTrue(modifiers.contains("public"),
             "Vehicle is public sealed interface — public must appear; got: " + modifiers);
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: Calculator type info has exact member counts 4/1/0")
+    void envelope_calculator_exactCounts() {
+        ObjectNode args = envelope.args();
+        args.put("filePath", calculatorPath);
+        args.put("line", 5);
+        args.put("column", 13);
+        JsonNode payload = envelope.payload("get_type_at_position", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "get_type_at_position failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertEquals("Calculator", data.get("name").asText());
+        assertEquals("com.example.Calculator", data.get("qualifiedName").asText());
+        assertEquals("class", data.get("kind").asText());
+        assertEquals(4, data.get("methodCount").asInt(), "methodCount through envelope");
+        assertEquals(1, data.get("fieldCount").asInt(), "fieldCount through envelope");
+        assertEquals(0, data.get("nestedTypeCount").asInt(), "nestedTypeCount through envelope");
     }
 }
