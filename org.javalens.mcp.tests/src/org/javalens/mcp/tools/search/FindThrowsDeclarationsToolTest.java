@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.search;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.FindThrowsDeclarationsTool;
@@ -21,12 +23,14 @@ class FindThrowsDeclarationsToolTest {
     @RegisterExtension
     TestProjectHelper helper = new TestProjectHelper();
     private FindThrowsDeclarationsTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new FindThrowsDeclarationsTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
     }
 
@@ -235,5 +239,29 @@ class FindThrowsDeclarationsToolTest {
         assertTrue(r.isSuccess());
         int total = ((Number) getData(r).get("totalCount")).intValue();
         assertEquals(total, declsOf(r).size());
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: IOException declared in exactly 5 throws clauses across 4 files")
+    void envelope_ioException_exactCount() {
+        ObjectNode args = envelope.args();
+        args.put("typeName", "java.io.IOException");
+        args.put("maxResults", 100);
+        JsonNode payload = envelope.payload("find_throws_declarations", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "find_throws_declarations failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertEquals(5, data.get("totalCount").asInt(), "exactly five throws clauses through the envelope");
+        java.util.Set<String> files = new java.util.TreeSet<>();
+        for (JsonNode d : data.get("locations")) {
+            String fp = d.get("filePath").asText().replace('\\', '/');
+            files.add(fp.substring(fp.lastIndexOf('/') + 1));
+        }
+        assertEquals(java.util.Set.of("SearchPatterns.java", "ControlFlowPatterns.java",
+                "TypeKindsFixture.java", "JavadocTagFixture.java"), files,
+            "the throws clauses span exactly four files through the envelope");
     }
 }
