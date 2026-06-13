@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.navigation;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.GetFieldAtPositionTool;
@@ -27,6 +29,7 @@ class GetFieldAtPositionToolTest {
     TestProjectHelper helper = new TestProjectHelper();
 
     private GetFieldAtPositionTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
     private Path projectPath;
     private String calculatorPath;
@@ -36,6 +39,7 @@ class GetFieldAtPositionToolTest {
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new GetFieldAtPositionTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
         projectPath = helper.getFixturePath("simple-maven");
         calculatorPath = projectPath.resolve("src/main/java/com/example/Calculator.java").toString();
@@ -71,8 +75,8 @@ class GetFieldAtPositionToolTest {
         assertNotNull(filePath, "filePath must be present");
         assertTrue(filePath.endsWith("Calculator.java"),
             "Calculator.lastResult is in Calculator.java; got: " + filePath);
-        assertTrue(((Number) data.get("line")).intValue() >= 0,
-            "line must be >= 0; got: " + data);
+        assertEquals(6, ((Number) data.get("line")).intValue(),
+            "lastResult is declared on 0-based line 6; got: " + data);
 
         // Modifiers
         List<String> modifiers = (List<String>) data.get("modifiers");
@@ -113,6 +117,10 @@ class GetFieldAtPositionToolTest {
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
         assertEquals("lastResult", data.get("name"));
+        // Queried from the reference site (input line 15), the tool reports the
+        // field's DECLARATION line (0-based 6), not the input position.
+        assertEquals(6, ((Number) data.get("line")).intValue(),
+            "reported line must be the declaration (6), not the reference position; got: " + data);
     }
 
     // ========== Parameter Validation Tests ==========
@@ -264,5 +272,25 @@ class GetFieldAtPositionToolTest {
         List<String> modifiers = (List<String>) data.get("modifiers");
         assertTrue(modifiers.contains("volatile"),
             "volatile modifier must appear; got: " + modifiers);
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: lastResult is reported at exact declaration line 6")
+    void envelope_lastResult_exactDeclarationLine() {
+        ObjectNode args = envelope.args();
+        args.put("filePath", calculatorPath);
+        args.put("line", 6);
+        args.put("column", 16);
+        JsonNode payload = envelope.payload("get_field_at_position", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "get_field_at_position failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertEquals("lastResult", data.get("name").asText());
+        assertEquals("int", data.get("type").asText());
+        assertEquals(6, data.get("line").asInt(),
+            "the 0-based declaration line must survive the JSON-RPC envelope");
     }
 }
