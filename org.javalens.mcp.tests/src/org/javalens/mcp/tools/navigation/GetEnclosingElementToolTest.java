@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.navigation;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.GetEnclosingElementTool;
@@ -27,6 +29,7 @@ class GetEnclosingElementToolTest {
     TestProjectHelper helper = new TestProjectHelper();
 
     private GetEnclosingElementTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
     private Path projectPath;
     private String calculatorPath;
@@ -36,6 +39,7 @@ class GetEnclosingElementToolTest {
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new GetEnclosingElementTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
         projectPath = helper.getFixturePath("simple-maven");
         calculatorPath = projectPath.resolve("src/main/java/com/example/Calculator.java").toString();
@@ -327,5 +331,29 @@ class GetEnclosingElementToolTest {
                 (r.getError() != null ? r.getError().getMessage() : "n/a"));
         assertEquals("(default package)", getData(r).get("enclosingPackage"),
             "Default package must be reported as '(default package)'; got: " + getData(r));
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: inside Calculator.add, enclosingType=Calculator and enclosingMethod=add")
+    void envelope_insideAdd_exactEnclosing() {
+        ObjectNode args = envelope.args();
+        args.put("filePath", calculatorPath);
+        args.put("line", 15);
+        args.put("column", 10);
+        JsonNode payload = envelope.payload("get_enclosing_element", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "get_enclosing_element failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertEquals("com.example", data.get("enclosingPackage").asText());
+        assertEquals("Calculator", data.get("enclosingType").get("name").asText());
+        assertEquals("com.example.Calculator", data.get("enclosingType").get("qualifiedName").asText());
+        JsonNode method = data.get("enclosingMethod");
+        assertEquals("add", method.get("name").asText());
+        assertEquals("add(int a, int b): int", method.get("signature").asText(),
+            "the enclosing-method signature must survive the envelope");
+        assertFalse(method.get("isConstructor").asBoolean());
     }
 }
