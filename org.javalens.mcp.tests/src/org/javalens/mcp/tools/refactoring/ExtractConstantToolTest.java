@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.refactoring;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.ExtractConstantTool;
@@ -27,6 +29,7 @@ class ExtractConstantToolTest {
     TestProjectHelper helper = new TestProjectHelper();
 
     private ExtractConstantTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
     private Path projectPath;
     private String refactoringTargetPath;
@@ -35,6 +38,7 @@ class ExtractConstantToolTest {
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new ExtractConstantTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
         projectPath = helper.getFixturePath("simple-maven");
         refactoringTargetPath = projectPath.resolve("src/main/java/com/example/RefactoringTarget.java").toString();
@@ -255,6 +259,14 @@ class ExtractConstantToolTest {
                 "startOffset", "endOffset", "oldText", "newText")) {
             assertNotNull(replace.get(key), key + " missing on replace edit: " + replace);
         }
+
+        // The "PREFIX_" literal spans 0-based line 35, columns 24..33 — the replace
+        // edit must cover exactly that range. An off-by-one mis-applies the edit.
+        assertEquals(35, ((Number) replace.get("startLine")).intValue());
+        assertEquals(24, ((Number) replace.get("startColumn")).intValue());
+        assertEquals(35, ((Number) replace.get("endLine")).intValue());
+        assertEquals(33, ((Number) replace.get("endColumn")).intValue());
+        assertEquals("\"PREFIX_\"", replace.get("oldText"));
     }
 
     @Test
@@ -372,5 +384,33 @@ class ExtractConstantToolTest {
         assertFalse(r.isSuccess(),
             "Expression calling an instance method must not be extracted to a static "
                 + "final constant; got: " + r.getData());
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: replace edit spans columns 24..33 of line 35")
+    void envelope_replaceEdit_exactRange() {
+        ObjectNode args = envelope.args();
+        args.put("filePath", refactoringTargetPath);
+        args.put("startLine", 35);
+        args.put("startColumn", 24);
+        args.put("endLine", 35);
+        args.put("endColumn", 33);
+        args.put("constantName", "DEFAULT_PREFIX");
+        JsonNode payload = envelope.payload("extract_constant", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "extract_constant failed through the envelope: " + payload);
+        JsonNode replace = null;
+        for (JsonNode e : payload.get("data").get("edits")) {
+            if ("replace".equals(e.get("type").asText())) replace = e;
+        }
+        assertNotNull(replace, "no replace edit through the envelope");
+        assertEquals(24, replace.get("startColumn").asInt(),
+            "edit start column must survive the envelope");
+        assertEquals(33, replace.get("endColumn").asInt(),
+            "edit end column must survive the envelope");
+        assertEquals("\"PREFIX_\"", replace.get("oldText").asText());
     }
 }
