@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.analysis;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.GetSignatureHelpTool;
@@ -22,6 +24,7 @@ class GetSignatureHelpToolTest {
     @RegisterExtension
     TestProjectHelper helper = new TestProjectHelper();
     private GetSignatureHelpTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
     private String calculatorPath;
 
@@ -29,6 +32,7 @@ class GetSignatureHelpToolTest {
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new GetSignatureHelpTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
         Path projectPath = helper.getFixturePath("simple-maven");
         calculatorPath = projectPath.resolve("src/main/java/com/example/Calculator.java").toString();
@@ -326,5 +330,33 @@ class GetSignatureHelpToolTest {
             assertFalse(label.contains("):"),
                 "Constructor label must NOT have `: ReturnType` suffix; got: " + label);
         }
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: Calculator.add signature help is exact (label, params, doc)")
+    void envelope_calculatorAdd_exactSignature() {
+        ObjectNode args = envelope.args();
+        args.put("filePath", calculatorPath);
+        args.put("line", 14);
+        args.put("column", 15);
+        JsonNode payload = envelope.payload("get_signature_help", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "get_signature_help failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertEquals(0, data.get("activeSignature").asInt());
+        assertEquals(0, data.get("activeParameter").asInt());
+        JsonNode signatures = data.get("signatures");
+        assertEquals(1, signatures.size(), "add has no overloads — exactly one signature");
+        JsonNode sig = signatures.get(0);
+        assertEquals("add(int a, int b): int", sig.get("label").asText(),
+            "the exact signature label must survive the envelope");
+        JsonNode params = sig.get("parameters");
+        assertEquals(2, params.size());
+        assertEquals("int a", params.get(0).get("label").asText());
+        assertEquals("int b", params.get(1).get("label").asText());
+        assertEquals("Adds two numbers.", sig.get("documentation").asText());
     }
 }
