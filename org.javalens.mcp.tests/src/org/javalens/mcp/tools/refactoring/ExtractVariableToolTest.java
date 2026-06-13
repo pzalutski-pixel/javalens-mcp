@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.refactoring;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.ExtractVariableTool;
@@ -27,6 +29,7 @@ class ExtractVariableToolTest {
     TestProjectHelper helper = new TestProjectHelper();
 
     private ExtractVariableTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
     private Path projectPath;
     private String refactoringTargetPath;
@@ -35,6 +38,7 @@ class ExtractVariableToolTest {
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new ExtractVariableTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
         projectPath = helper.getFixturePath("simple-maven");
         refactoringTargetPath = projectPath.resolve("src/main/java/com/example/RefactoringTarget.java").toString();
@@ -359,5 +363,54 @@ class ExtractVariableToolTest {
         args.put("variableName", "calculated");
         ToolResponse r = tool.execute(args);
         assertFalse(r.isSuccess(), "Inverted range must be rejected");
+    }
+
+    // ========== Exact edit range ==========
+
+    @Test
+    @DisplayName("Replace edit targets the exact selected expression range with its old text")
+    void replaceEdit_exactRange() {
+        ToolResponse r = tool.execute(resultExpressionArgs("calculated"));
+        assertTrue(r.isSuccess());
+        Map<String, Object> replace = getEdits(getData(r)).stream()
+            .filter(e -> "replace".equals(e.get("type"))).findFirst().orElseThrow();
+
+        // `input.length() * 2 + 10` spans 0-based line 31, columns 21..44 — the
+        // replace edit must cover exactly that range. An off-by-one in the edit
+        // offset would mis-apply the refactoring.
+        assertEquals(31, ((Number) replace.get("startLine")).intValue());
+        assertEquals(21, ((Number) replace.get("startColumn")).intValue());
+        assertEquals(31, ((Number) replace.get("endLine")).intValue());
+        assertEquals(44, ((Number) replace.get("endColumn")).intValue());
+        assertEquals("input.length() * 2 + 10", replace.get("oldText"));
+        assertEquals("calculated", replace.get("newText"));
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: replace edit spans columns 21..44 of line 31")
+    void envelope_replaceEdit_exactRange() {
+        ObjectNode args = envelope.args();
+        args.put("filePath", refactoringTargetPath);
+        args.put("startLine", 31);
+        args.put("startColumn", 21);
+        args.put("endLine", 31);
+        args.put("endColumn", 44);
+        args.put("variableName", "calculated");
+        JsonNode payload = envelope.payload("extract_variable", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "extract_variable failed through the envelope: " + payload);
+        JsonNode replace = null;
+        for (JsonNode e : payload.get("data").get("edits")) {
+            if ("replace".equals(e.get("type").asText())) replace = e;
+        }
+        assertNotNull(replace, "no replace edit through the envelope");
+        assertEquals(21, replace.get("startColumn").asInt(),
+            "edit start column must survive the envelope");
+        assertEquals(44, replace.get("endColumn").asInt(),
+            "edit end column must survive the envelope");
+        assertEquals("input.length() * 2 + 10", replace.get("oldText").asText());
     }
 }
