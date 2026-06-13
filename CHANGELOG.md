@@ -10,7 +10,9 @@
 
 ### Tests
 
-- Universal MCP-protocol parity: every one of the 75 tools is now driven through the real JSON-RPC envelope (`McpProtocolHandler.processMessage`) with a known-valid input, backfilling the ~66 tools that previously had only `execute()` unit coverage. A parity gate fails the build if a newly registered tool has no protocol-test input, so the per-tool rule can no longer silently lapse.
+- MCP integration detection harness: every one of the 75 tools is driven through the real JSON-RPC envelope (`McpProtocolHandler.processMessage`) against the deterministic `simple-maven` fixture, and its payload is asserted **exact against a frozen, reviewed golden file** — so a tool drifting to a wrong count, an empty list on a valid query, or a swapped name fails the build (a frozen golden is a fixed expected value, unlike a tool-vs-itself comparison which moves with the bug). Backfills the ~66 tools that previously had only `execute()` coverage.
+- Registration anchor: a literal `assertEquals(75, …)` plus bidirectional registry/coverage set equality, so a tool deleted from registration (or swapped) fails instead of shipping green.
+- Detection-strength hardening from an independent test-coverage audit: `analyze_change_impact` default-mode type/field blast radius pinned exactly; `analyze_data_flow` read/write counts tightened from `>=` to exact; `find_circular_dependencies` high-severity branch exercised by a new 3-package-cycle fixture; `find_reflection_usage` false-positive isolation (`Supplier.get()` is not `Field.get`). All expected values derive from the fixture source, not from running the tool under test.
 
 ## [1.5.0] - 2026-06-11
 
