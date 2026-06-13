@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.analysis;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.FindUnusedCodeTool;
@@ -21,12 +23,14 @@ class FindUnusedCodeToolTest {
     @RegisterExtension
     TestProjectHelper helper = new TestProjectHelper();
     private FindUnusedCodeTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new FindUnusedCodeTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
     }
 
@@ -246,5 +250,26 @@ class FindUnusedCodeToolTest {
             assertTrue(fieldNames.isEmpty(),
                 name + ": private field is read in a method body and must not be flagged unused; got: " + items);
         }
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: UnusedCode reports the 4 unused private members, not the used ones")
+    void envelope_unusedCode_exactMembers() {
+        ObjectNode args = envelope.args();
+        args.put("filePath", "src/main/java/com/example/UnusedCode.java");
+        JsonNode payload = envelope.payload("find_unused_code", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "find_unused_code failed through the envelope: " + payload);
+        java.util.Set<String> names = new java.util.TreeSet<>();
+        for (JsonNode i : payload.get("data").get("unusedItems")) names.add(i.get("name").asText());
+        assertTrue(names.contains("unusedField") && names.contains("unusedStringField")
+                && names.contains("unusedPrivateMethod") && names.contains("unusedPrivateMethodWithReturn"),
+            "the four unused private members must survive the envelope; got: " + names);
+        assertFalse(names.contains("usedField") || names.contains("usedPrivateMethod")
+                || names.contains("publicMethod") || names.contains("publicField"),
+            "used/public members must NOT be flagged through the envelope; got: " + names);
     }
 }
