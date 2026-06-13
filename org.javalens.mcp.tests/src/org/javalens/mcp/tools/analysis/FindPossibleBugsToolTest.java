@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.analysis;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.FindPossibleBugsTool;
@@ -21,6 +23,7 @@ class FindPossibleBugsToolTest {
     @RegisterExtension
     TestProjectHelper helper = new TestProjectHelper();
     private FindPossibleBugsTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
     private String calculatorPath;
 
@@ -28,6 +31,7 @@ class FindPossibleBugsToolTest {
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new FindPossibleBugsTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
         calculatorPath = helper.getFixturePath("simple-maven")
             .resolve("src/main/java/com/example/Calculator.java").toString();
@@ -251,5 +255,56 @@ class FindPossibleBugsToolTest {
         assertEquals(0, ((Number) data.get("mediumCount")).intValue());
         assertEquals(0, ((Number) data.get("lowCount")).intValue());
         assertTrue(issuesOf(r).isEmpty());
+    }
+
+    // ========== Exact magnitude + location for a deterministic detector ==========
+
+    private java.util.Set<Integer> nullDerefLines(List<Map<String, Object>> issues) {
+        java.util.Set<Integer> lines = new java.util.TreeSet<>();
+        for (Map<String, Object> i : issues) {
+            if ("NULL_DEREFERENCE".equals(i.get("code"))) {
+                lines.add(((Number) i.get("line")).intValue());
+            }
+        }
+        return lines;
+    }
+
+    @Test
+    @DisplayName("NullDerefPatterns: exactly one NULL_DEREFERENCE, at the deref site (0-based line 10)")
+    void nullDereference_exactSingleSiteAndLine() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", "src/main/java/com/example/NullDerefPatterns.java");
+        args.put("maxResults", 100);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+
+        // Only derefereneAfterAssignedNull (`String s = null;` then `return s.length();`)
+        // matches the null-literal-initialized rule. The unchecked-parameter deref
+        // (dereferenceWithoutCheck) and the guarded ones (safeNullCheck, conditionalDeref)
+        // must NOT be flagged. The deref site `return s.length();` is 0-based line 10.
+        assertEquals(java.util.Set.of(10), nullDerefLines(issuesOf(r)),
+            "exactly one NULL_DEREFERENCE at 0-based line 10; got: " + issuesOf(r));
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: the single NULL_DEREFERENCE sits at 0-based line 10")
+    void envelope_nullDereference_exactLine() {
+        ObjectNode args = envelope.args();
+        args.put("filePath", "src/main/java/com/example/NullDerefPatterns.java");
+        args.put("maxResults", 100);
+        JsonNode payload = envelope.payload("find_possible_bugs", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "find_possible_bugs failed through the envelope: " + payload);
+        java.util.Set<Integer> lines = new java.util.TreeSet<>();
+        for (JsonNode i : payload.get("data").get("issues")) {
+            if (i.has("code") && "NULL_DEREFERENCE".equals(i.get("code").asText())) {
+                lines.add(i.get("line").asInt());
+            }
+        }
+        assertEquals(java.util.Set.of(10), lines,
+            "the single NULL_DEREFERENCE magnitude and line must survive the envelope");
     }
 }
