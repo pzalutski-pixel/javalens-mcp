@@ -148,6 +148,63 @@ class AnalyzeChangeImpactToolTest {
                 + affectedFiles);
     }
 
+    @Test
+    @DisplayName("default mode on a TYPE reports its full reference blast radius (not empty)")
+    void typeSelection_defaultMode_exactBlastRadius() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        args.put("line", 5);   // Calculator class declaration (0-based)
+        args.put("column", 13);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess(), () -> "expected success; got: " + r.getError());
+        Map<String, Object> data = getData(r);
+
+        assertEquals("Calculator", data.get("symbol"));
+        assertEquals("SourceType", data.get("symbolType"));
+        assertEquals(17, ((Number) data.get("totalReferences")).intValue(),
+            "a class selection must report its references, not an empty blast radius (#32 shape)");
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> affectedFiles = (List<Map<String, Object>>) data.get("affectedFiles");
+        Map<String, Integer> byFile = new java.util.HashMap<>();
+        for (Map<String, Object> f : affectedFiles) {
+            byFile.put(((String) f.get("filePath")).replace('\\', '/'),
+                ((Number) f.get("referenceCount")).intValue());
+        }
+        assertEquals(Map.of(
+            "src/main/java/com/example/SearchPatterns.java", 11,
+            "src/main/java/com/example/TypeKindsFixture.java", 1,
+            "src/main/java/com/example/service/UserService.java", 3,
+            "src/test/java/com/example/SampleTest.java", 2),
+            byFile);
+    }
+
+    @Test
+    @DisplayName("default mode on a FIELD reports its access blast radius (not empty)")
+    void fieldSelection_defaultMode_exactBlastRadius() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        args.put("line", 6);   // Calculator.lastResult field (0-based)
+        args.put("column", 16);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess(), () -> "expected success; got: " + r.getError());
+        Map<String, Object> data = getData(r);
+
+        assertEquals("lastResult", data.get("symbol"));
+        assertEquals("SourceField", data.get("symbolType"));
+        assertEquals(7, ((Number) data.get("totalReferences")).intValue(),
+            "a field selection must report its accesses, not an empty blast radius (#32 shape)");
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> affectedFiles = (List<Map<String, Object>>) data.get("affectedFiles");
+        assertEquals(1, affectedFiles.size());
+        assertTrue(((String) affectedFiles.get(0).get("filePath")).replace('\\', '/')
+            .endsWith("com/example/Calculator.java"));
+        assertEquals(7, ((Number) affectedFiles.get(0).get("referenceCount")).intValue());
+    }
+
     // ========== Behavior-matrix coverage ==========
 
     @Test
