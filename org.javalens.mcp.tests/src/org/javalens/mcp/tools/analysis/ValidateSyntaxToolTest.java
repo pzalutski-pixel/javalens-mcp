@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.analysis;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.ValidateSyntaxTool;
@@ -21,6 +23,7 @@ class ValidateSyntaxToolTest {
     @RegisterExtension
     TestProjectHelper helper = new TestProjectHelper();
     private ValidateSyntaxTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
     private String calculatorPath;
 
@@ -28,6 +31,7 @@ class ValidateSyntaxToolTest {
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new ValidateSyntaxTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
         calculatorPath = helper.getFixturePath("simple-maven")
             .resolve("src/main/java/com/example/Calculator.java").toString();
@@ -220,5 +224,49 @@ class ValidateSyntaxToolTest {
         assertEquals(Boolean.TRUE, data.get("valid"),
             "validate_syntax must report valid=true when there are only warnings; got: " + data);
         assertEquals(0, ((Number) data.get("errorCount")).intValue());
+    }
+
+    // ========== Exact error line (0-based) ==========
+
+    @Test
+    @DisplayName("Inline syntax error reports its exact 0-based line")
+    void inlineError_exactZeroBasedLine() {
+        ObjectNode args = objectMapper.createObjectNode();
+        // The malformed initializer `int x = ;` sits on 0-based line 1.
+        args.put("content", "class T {\n    int x = ;\n}");
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        assertEquals(Boolean.FALSE, data.get("valid"));
+
+        java.util.Set<Integer> lines = new java.util.TreeSet<>();
+        for (Map<String, Object> e : errorsOf(r)) {
+            lines.add(((Number) e.get("line")).intValue());
+        }
+        // The only broken line is 0-based line 1; a dropped zero-based conversion
+        // would shift the reported error to line 2.
+        assertEquals(java.util.Set.of(1), lines,
+            "the syntax error is on exactly 0-based line 1; got: " + errorsOf(r));
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: inline syntax error reports 0-based line 1")
+    void envelope_inlineError_exactLine() {
+        ObjectNode args = envelope.args();
+        args.put("content", "class T {\n    int x = ;\n}");
+        JsonNode payload = envelope.payload("validate_syntax", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "validate_syntax failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertFalse(data.get("valid").asBoolean());
+        java.util.Set<Integer> lines = new java.util.TreeSet<>();
+        for (JsonNode e : data.get("errors")) {
+            lines.add(e.get("line").asInt());
+        }
+        assertEquals(java.util.Set.of(1), lines,
+            "the 0-based error line must survive the JSON-RPC envelope; got: " + data.get("errors"));
     }
 }
