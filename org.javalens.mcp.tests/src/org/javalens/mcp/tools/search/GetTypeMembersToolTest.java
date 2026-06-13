@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.search;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.GetTypeMembersTool;
@@ -21,12 +23,14 @@ class GetTypeMembersToolTest {
     @RegisterExtension
     TestProjectHelper helper = new TestProjectHelper();
     private GetTypeMembersTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new GetTypeMembersTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
     }
 
@@ -391,5 +395,25 @@ class GetTypeMembersToolTest {
         assertNotNull(setSig);
         assertTrue(setSig.contains("T "),
             "set(T v) parameter must reference T in signature; got: " + setSig);
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: Calculator has exactly its 4 declared methods and 1 field")
+    void envelope_calculator_exactMembers() {
+        ObjectNode args = envelope.args();
+        args.put("typeName", "com.example.Calculator");
+        JsonNode payload = envelope.payload("get_type_members", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "get_type_members failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        java.util.Set<String> methodNames = new java.util.TreeSet<>();
+        for (JsonNode m : data.get("methods")) methodNames.add(m.get("name").asText());
+        assertEquals(java.util.Set.of("add", "subtract", "multiply", "getLastResult"), methodNames,
+            "Calculator's exact declared method set must survive the envelope; got: " + methodNames);
+        assertEquals(1, data.get("fields").size(), "Calculator has exactly one field");
+        assertEquals("lastResult", data.get("fields").get(0).get("name").asText());
     }
 }
