@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.navigation;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.SemanticAssertions;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
@@ -30,6 +32,7 @@ class FindReferencesToolTest {
     TestProjectHelper helper = new TestProjectHelper();
 
     private FindReferencesTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
     private Path projectPath;
     private String calculatorPath;
@@ -38,6 +41,7 @@ class FindReferencesToolTest {
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new FindReferencesTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
         projectPath = helper.getFixturePath("simple-maven");
         calculatorPath = projectPath.resolve("src/main/java/com/example/Calculator.java").toString();
@@ -454,5 +458,31 @@ class FindReferencesToolTest {
         assertTrue(filenames.contains("ConstructorCaller.java"),
             "ConstructorCaller uses the 2-arg ConstructorTarget constructor — must appear; got: "
                 + filenames);
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: private lastResult references are confined to Calculator.java")
+    void envelope_lastResult_confinedToDeclaringFile() {
+        ObjectNode args = envelope.args();
+        args.put("filePath", calculatorPath);
+        args.put("line", 6);
+        args.put("column", 16);
+        args.put("maxResults", 1000);
+        JsonNode payload = envelope.payload("find_references", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "find_references failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertEquals("lastResult", data.get("symbol").asText());
+        assertEquals("field", data.get("symbolKind").asText());
+        Set<String> files = new java.util.TreeSet<>();
+        for (JsonNode ref : data.get("locations")) {
+            String p = ref.get("filePath").asText().replace('\\', '/');
+            files.add(p.substring(p.lastIndexOf('/') + 1));
+        }
+        assertEquals(Set.of("Calculator.java"), files,
+            "private lastResult references must stay confined to Calculator.java through the envelope; got: " + files);
     }
 }
