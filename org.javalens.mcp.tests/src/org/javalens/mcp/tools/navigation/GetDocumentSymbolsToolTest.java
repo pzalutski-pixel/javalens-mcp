@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.navigation;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.GetDocumentSymbolsTool;
@@ -27,6 +29,7 @@ class GetDocumentSymbolsToolTest {
     TestProjectHelper helper = new TestProjectHelper();
 
     private GetDocumentSymbolsTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
     private Path projectPath;
     private String calculatorPath;
@@ -36,6 +39,7 @@ class GetDocumentSymbolsToolTest {
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new GetDocumentSymbolsTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
         projectPath = helper.getFixturePath("simple-maven");
         calculatorPath = projectPath.resolve("src/main/java/com/example/Calculator.java").toString();
@@ -385,5 +389,37 @@ class GetDocumentSymbolsToolTest {
         ObjectNode args2 = objectMapper.createObjectNode();
         args2.put("filePath", "/nonexistent/path/File.java");
         assertFalse(tool.execute(args2).isSuccess());
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: Calculator has exactly 4 methods + 1 field, add signature exact")
+    void envelope_calculator_exactChildren() {
+        ObjectNode args = envelope.args();
+        args.put("filePath", calculatorPath);
+        JsonNode payload = envelope.payload("get_document_symbols", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "get_document_symbols failed through the envelope: " + payload);
+        JsonNode calc = null;
+        for (JsonNode s : payload.get("data").get("symbols")) {
+            if ("Calculator".equals(s.get("name").asText())) calc = s;
+        }
+        assertNotNull(calc, "Calculator symbol must survive the envelope");
+        int methods = 0;
+        int fields = 0;
+        JsonNode addMethod = null;
+        for (JsonNode c : calc.get("children")) {
+            String kind = c.get("kind").asText();
+            if ("method".equals(kind)) methods++;
+            else if ("field".equals(kind)) fields++;
+            if ("add".equals(c.get("name").asText())) addMethod = c;
+        }
+        assertEquals(4, methods, "Calculator has exactly 4 methods through the envelope");
+        assertEquals(1, fields, "Calculator has exactly 1 field through the envelope");
+        assertNotNull(addMethod, "add method child must be present");
+        assertEquals("add(int a, int b): int", addMethod.get("signature").asText(),
+            "the exact add signature must survive the envelope");
     }
 }
