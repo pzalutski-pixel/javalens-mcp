@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.analysis;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.FindNamingViolationsTool;
@@ -22,12 +24,14 @@ class FindNamingViolationsToolTest {
     TestProjectHelper helper = new TestProjectHelper();
 
     private FindNamingViolationsTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new FindNamingViolationsTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
     }
 
@@ -284,5 +288,51 @@ class FindNamingViolationsToolTest {
         assertTrue(r.isSuccess());
         int total = ((Number) getData(r).get("totalViolations")).intValue();
         assertEquals(total, violationsOf(r).size());
+    }
+
+    // ========== Exact 0-based declaration lines ==========
+
+    private int lineOf(List<Map<String, Object>> violations, String name) {
+        Map<String, Object> v = violations.stream()
+            .filter(x -> name.equals(x.get("name")))
+            .findFirst().orElseThrow(() -> new AssertionError("no violation named " + name + ": " + violations));
+        return ((Number) v.get("line")).intValue();
+    }
+
+    @Test
+    @DisplayName("Named violations report exact 0-based declaration lines")
+    void namedViolations_exactZeroBasedLines() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", "src/main/java/com/example/DiAndReflectionPatterns.java");
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        List<Map<String, Object>> v = violationsOf(r);
+
+        // DiAndReflectionPatterns.java declarations (0-based): Bad_Field_Name at 12,
+        // badConstant at 15, Bad_Method_Name at 92. Lines are 0-based per the tool
+        // contract; a dropped zero-based conversion shifts every line by one.
+        assertEquals(12, lineOf(v, "Bad_Field_Name"));
+        assertEquals(15, lineOf(v, "badConstant"));
+        assertEquals(92, lineOf(v, "Bad_Method_Name"));
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: Bad_Field_Name reported at exact 0-based line 12")
+    void envelope_badFieldName_exactLine() {
+        ObjectNode args = envelope.args();
+        args.put("filePath", "src/main/java/com/example/DiAndReflectionPatterns.java");
+        JsonNode payload = envelope.payload("find_naming_violations", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "find_naming_violations failed through the envelope: " + payload);
+        JsonNode found = null;
+        for (JsonNode x : payload.get("data").get("violations")) {
+            if ("Bad_Field_Name".equals(x.get("name").asText())) found = x;
+        }
+        assertNotNull(found, "Bad_Field_Name not reported through the envelope");
+        assertEquals(12, found.get("line").asInt(),
+            "the 0-based declaration line must survive the JSON-RPC envelope");
     }
 }
