@@ -76,6 +76,7 @@ class ProjectGraphServiceTest {
     private static final String F_GREETER = "com.reach.App#greeter";
     private static final String F_DEFAULT = "com.reach.App#DEFAULT";
     private static final String F_DEAD_CONSTANT = "com.reach.Orphan#DEAD_CONSTANT";
+    private static final String F_WIDGET_SEED = "com.reach.Widget#seed";
 
     @BeforeEach
     void setUp() throws Exception {
@@ -102,7 +103,7 @@ class ProjectGraphServiceTest {
             keys(graph.nodes(NodeKind.METHOD)));
 
         assertEquals(
-            Set.of(F_GREETER, F_DEFAULT, F_DEAD_CONSTANT),
+            Set.of(F_GREETER, F_DEFAULT, F_DEAD_CONSTANT, F_WIDGET_SEED),
             keys(graph.nodes(NodeKind.FIELD)));
     }
 
@@ -163,9 +164,11 @@ class ProjectGraphServiceTest {
             new GraphEdge(GDT_DISABLED, T_EG, EdgeKind.CREATES),
             new GraphEdge(GDT_DISABLED, GREETER_GREET, EdgeKind.CALLS),
             // WidgetTest exercises Widget only through its members (explicit
-            // ctor node + method node), never the type node — the #32 shape.
+            // ctor node, method node, field read), never the type node — the
+            // #32 shape across all three member kinds.
             new GraphEdge(WT_COMPUTES, WIDGET_CTOR, EdgeKind.CREATES),
-            new GraphEdge(WT_COMPUTES, WIDGET_COMPUTE, EdgeKind.CALLS));
+            new GraphEdge(WT_COMPUTES, WIDGET_COMPUTE, EdgeKind.CALLS),
+            new GraphEdge(WT_COMPUTES, F_WIDGET_SEED, EdgeKind.READS));
 
         assertEquals(expected, Set.copyOf(graph.edges()));
     }

@@ -9,6 +9,8 @@ package com.reach;
  */
 public class Widget {
 
+    public final int seed = 9;
+
     public Widget() {
     }
 

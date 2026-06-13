@@ -14,5 +14,6 @@ public class WidgetTest {
     void computesViaMember() {
         Widget w = new Widget();
         assert w.compute(2) == 3;
+        assert w.seed == 9;
     }
 }

@@ -113,6 +113,20 @@ class FindAffectedTestsToolTest {
     }
 
     @Test
+    @DisplayName("selecting a FIELD returns the tests that read it (the claim's field dimension)")
+    void fieldSelection_returnsReadingTests() {
+        // Widget.seed (0-based line 11, col 21) is read by WidgetTest. The
+        // description claims field targets are supported - pin it.
+        ToolResponse r = tool.execute(argsAt("src/main/java/com/reach/Widget.java", 11, 21));
+        assertTrue(r.isSuccess(), () -> "expected success; got: " + r.getError());
+
+        Map<String, Object> data = getData(r);
+        assertEquals("seed", data.get("symbol"));
+        assertEquals(1, data.get("testMethodCount"));
+        assertEquals("computesViaMember", testMethods(r).get(0).get("methodName"));
+    }
+
+    @Test
     @DisplayName("selecting a class exercised through interface dispatch finds the dispatch tests")
     void typeSelection_throughInterfaceDispatch() {
         // EnglishGreeter: instantiated (type node) AND its greet/prefix members
