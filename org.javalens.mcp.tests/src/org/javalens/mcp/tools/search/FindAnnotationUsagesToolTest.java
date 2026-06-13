@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.search;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.FindAnnotationUsagesTool;
@@ -21,12 +23,14 @@ class FindAnnotationUsagesToolTest {
     @RegisterExtension
     TestProjectHelper helper = new TestProjectHelper();
     private FindAnnotationUsagesTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new FindAnnotationUsagesTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
     }
 
@@ -69,8 +73,8 @@ class FindAnnotationUsagesToolTest {
     // ========== Semantic-grade tests ==========
 
     @Test
-    @DisplayName("@Marker usages from AnnotationUsages span all 6 documented targets")
-    void marker_findsAllDocumentedTargets() {
+    @DisplayName("@Marker resolves to exactly its seven placements at exact 0-based lines")
+    void marker_findsAllSevenPlacementsExactly() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("typeName", "com.example.Marker");
         args.put("maxResults", 100);
@@ -78,13 +82,20 @@ class FindAnnotationUsagesToolTest {
         ToolResponse r = tool.execute(args);
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
-        // AnnotationUsages places @Marker on: class, field markedField, constructor,
-        // method markedMethod, parameter p in markedParameter, local 'local' inside
-        // markedParameter, and the type-use 'List<@Marker String>' return in typeUseUsage.
-        // Expect at least 6 usages found (depending on JDT's type-use representation).
-        assertTrue(((Number) data.get("totalCount")).intValue() >= 6,
-            "Expected at least 6 @Marker usages across all documented targets; got: "
-                + data.get("totalCount") + " (" + getUsages(data) + ")");
+
+        // AnnotationUsages.java applies @Marker at exactly seven sites (0-based lines):
+        // class(6), field markedField(9), constructor(12), method markedMethod(16),
+        // parameter p(30), local 'local'(31), and type-use List<@Marker String>(35).
+        // "All locations where the annotation is applied" — a dropped or extra usage is a bug.
+        assertEquals(7, ((Number) data.get("totalCount")).intValue(),
+            "@Marker is applied at exactly seven sites; got: " + getUsages(data));
+
+        java.util.Set<Integer> lines = new java.util.TreeSet<>();
+        for (Map<String, Object> u : usagesOf(r)) {
+            lines.add(((Number) u.get("line")).intValue());
+        }
+        assertEquals(java.util.Set.of(6, 9, 12, 16, 30, 31, 35), lines,
+            "the seven @Marker sites are at these exact 0-based lines; got: " + usagesOf(r));
     }
 
     // ========== Behavior-matrix coverage ==========
@@ -196,5 +207,21 @@ class FindAnnotationUsagesToolTest {
         int total = ((Number) data.get("totalCount")).intValue();
         assertEquals(total, usagesOf(r).size(),
             "totalUsages must equal usages list size in this response");
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: @Marker totalCount is exactly seven")
+    void envelope_marker_totalCountIsSeven() {
+        ObjectNode args = envelope.args();
+        args.put("typeName", "com.example.Marker");
+        args.put("maxResults", 100);
+        JsonNode payload = envelope.payload("find_annotation_usages", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "find_annotation_usages failed through the envelope: " + payload);
+        assertEquals(7, payload.get("data").get("totalCount").asInt(),
+            "all seven @Marker usages must survive the JSON-RPC envelope");
     }
 }
