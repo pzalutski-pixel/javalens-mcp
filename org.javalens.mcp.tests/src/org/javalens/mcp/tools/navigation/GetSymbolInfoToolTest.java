@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.navigation;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.GetSymbolInfoTool;
@@ -27,6 +29,7 @@ class GetSymbolInfoToolTest {
     TestProjectHelper helper = new TestProjectHelper();
 
     private GetSymbolInfoTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
     private Path projectPath;
     private String calculatorPath;
@@ -36,6 +39,7 @@ class GetSymbolInfoToolTest {
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new GetSymbolInfoTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
         projectPath = helper.getFixturePath("simple-maven");
         calculatorPath = projectPath.resolve("src/main/java/com/example/Calculator.java").toString();
@@ -454,5 +458,29 @@ class GetSymbolInfoToolTest {
         List<String> bounds = (List<String>) data.get("bounds");
         assertNotNull(bounds, "Type parameter with bounds must report bounds; got: " + data);
         assertEquals(List.of("Number"), bounds);
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: Calculator.add symbol info is method/int with two parameters")
+    void envelope_calculatorAdd_methodSymbol() {
+        ObjectNode args = envelope.args();
+        args.put("filePath", calculatorPath);
+        args.put("line", 14);
+        args.put("column", 15);
+        JsonNode payload = envelope.payload("get_symbol_info", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "get_symbol_info failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertEquals("add", data.get("name").asText());
+        assertEquals("method", data.get("kind").asText());
+        assertEquals("int", data.get("returnType").asText());
+        assertEquals("com.example.Calculator", data.get("declaringType").asText());
+        JsonNode params = data.get("parameters");
+        assertEquals(2, params.size(), "Calculator.add has two parameters through the envelope");
+        assertEquals("a", params.get(0).get("name").asText());
+        assertEquals("int", params.get(0).get("type").asText());
     }
 }
