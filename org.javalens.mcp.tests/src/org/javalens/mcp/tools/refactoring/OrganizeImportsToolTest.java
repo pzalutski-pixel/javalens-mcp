@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.refactoring;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.OrganizeImportsTool;
@@ -27,6 +29,7 @@ class OrganizeImportsToolTest {
     TestProjectHelper helper = new TestProjectHelper();
 
     private OrganizeImportsTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
     private Path projectPath;
     private String refactoringTargetPath;
@@ -36,6 +39,7 @@ class OrganizeImportsToolTest {
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new OrganizeImportsTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
         projectPath = helper.getFixturePath("simple-maven");
         refactoringTargetPath = projectPath.resolve("src/main/java/com/example/RefactoringTarget.java").toString();
@@ -375,5 +379,26 @@ class OrganizeImportsToolTest {
             "Static imports are never in unusedImports; got: " + unused);
         assertFalse(unused.stream().anyMatch(u -> u.contains("java.util.concurrent")),
             "On-demand imports are never in unusedImports; got: " + unused);
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: RefactoringTarget unused imports are exactly {ArrayList, Map, HashMap, IOException}")
+    void envelope_refactoringTarget_unusedImportsExactSet() {
+        ObjectNode args = envelope.args();
+        args.put("filePath", refactoringTargetPath);
+        JsonNode payload = envelope.payload("organize_imports", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "organize_imports failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        java.util.Set<String> unused = new java.util.TreeSet<>();
+        for (JsonNode imp : data.get("unusedImports")) unused.add(imp.asText());
+        assertEquals(
+            java.util.Set.of("java.util.ArrayList", "java.util.Map",
+                "java.util.HashMap", "java.io.IOException"),
+            unused,
+            "the unused-import set must survive the envelope exactly (List excluded); got: " + unused);
     }
 }
