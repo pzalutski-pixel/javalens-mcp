@@ -56,6 +56,21 @@ class AnalyzeChangeImpactTransitiveTest {
     }
 
     @Test
+    @DisplayName("transitive impact on a CLASS aggregates its members' callers (issue #32)")
+    void transitive_typeAggregatesMembers() {
+        // Widget is exercised only through its explicit ctor + compute() - the
+        // type node has no direct caller. The class's blast radius must still
+        // include the member-level caller (WidgetTest.computesViaMember).
+        ToolResponse r = tool.execute(argsAt("src/main/java/com/reach/Widget.java", 9, 13));
+        assertTrue(r.isSuccess(), () -> "expected success; got: " + r.getError());
+
+        Map<String, Object> data = getData(r);
+        assertEquals("Widget", data.get("symbol"));
+        assertEquals(List.of("com.reach.WidgetTest#computesViaMember()"), data.get("affectedMethods"));
+        assertEquals(1, data.get("totalAffectedMethods"));
+    }
+
+    @Test
     @DisplayName("transitive closure crosses interface dispatch with no depth ceiling")
     void transitive_crossesOverrideDeclarations() {
         // prefix <- EnglishGreeter.greet <- Greeter.greet <- App.run <- Main.main

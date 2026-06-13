@@ -28,13 +28,14 @@ class FindAffectedTestsToolTest {
     @RegisterExtension
     TestProjectHelper helper = new TestProjectHelper();
 
+    private JdtServiceImpl service;
     private FindAffectedTestsTool tool;
     private ObjectMapper objectMapper;
     private Path projectPath;
 
     @BeforeEach
     void setUp() throws Exception {
-        JdtServiceImpl service = helper.loadProject("reachability-maven");
+        service = helper.loadProject("reachability-maven");
         tool = new FindAffectedTestsTool(() -> service);
         objectMapper = new ObjectMapper();
         projectPath = helper.getFixturePath("reachability-maven");
@@ -56,6 +57,76 @@ class FindAffectedTestsToolTest {
         args.put("line", line);
         args.put("column", column);
         return args;
+    }
+
+    @Test
+    @DisplayName("coordinate round-trip: search_symbols output feeds find_affected_tests verbatim (issue #31)")
+    void searchSymbols_coordinatesRoundTrip() {
+        // #31 claimed search_symbols is 1-based and find_affected_tests off by
+        // one. Pin the contract: the line/column search_symbols reports for a
+        // class resolves that exact symbol in find_affected_tests with no
+        // adjustment - both are 0-based and consistent.
+        org.javalens.mcp.tools.SearchSymbolsTool search =
+            new org.javalens.mcp.tools.SearchSymbolsTool(() -> service);
+        ObjectNode searchArgs = objectMapper.createObjectNode();
+        searchArgs.put("query", "Widget");
+        searchArgs.put("kind", "class");
+        ToolResponse searchResult = search.execute(searchArgs);
+        assertTrue(searchResult.isSuccess());
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> results =
+            (List<Map<String, Object>>) getData(searchResult).get("results");
+        Map<String, Object> widget = results.stream()
+            .filter(s -> "com.reach.Widget".equals(s.get("qualifiedName")))
+            .findFirst().orElseThrow();
+        int line = ((Number) widget.get("line")).intValue();
+        int column = ((Number) widget.get("column")).intValue();
+
+        ToolResponse affected = tool.execute(argsAt("src/main/java/com/reach/Widget.java", line, column));
+        assertTrue(affected.isSuccess(),
+            () -> "search_symbols position " + line + ":" + column
+                + " must resolve in find_affected_tests with no off-by-one; got: " + affected.getError());
+        assertEquals("Widget", getData(affected).get("symbol"));
+        assertEquals(1, getData(affected).get("testMethodCount"),
+            "the round-tripped class must report its covering test");
+    }
+
+    @Test
+    @DisplayName("selecting a CLASS aggregates coverage of its members (issue #32)")
+    void typeSelection_aggregatesMemberCoverage() {
+        // Widget has an explicit constructor and is exercised by WidgetTest
+        // only through its members (new Widget().compute(...)). The type node
+        // itself has no incoming edge - pre-fix this returned 0 tests.
+        ToolResponse r = tool.execute(argsAt("src/main/java/com/reach/Widget.java", 9, 13));
+        assertTrue(r.isSuccess(), () -> "expected success; got: " + r.getError());
+
+        Map<String, Object> data = getData(r);
+        assertEquals("Widget", data.get("symbol"));
+        assertEquals("SourceType", data.get("symbolType"));
+        assertEquals(1, data.get("testMethodCount"));
+
+        List<Map<String, Object>> tests = testMethods(r);
+        assertEquals(1, tests.size(), () -> "tests: " + tests);
+        assertEquals("WidgetTest", tests.get(0).get("className"));
+        assertEquals("computesViaMember", tests.get(0).get("methodName"));
+    }
+
+    @Test
+    @DisplayName("selecting a class exercised through interface dispatch finds the dispatch tests")
+    void typeSelection_throughInterfaceDispatch() {
+        // EnglishGreeter: instantiated (type node) AND its greet/prefix members
+        // covered by the dispatch tests - the type closure must surface them.
+        ToolResponse r = tool.execute(argsAt("src/main/java/com/reach/EnglishGreeter.java", 6, 13));
+        assertTrue(r.isSuccess(), () -> "expected success; got: " + r.getError());
+
+        Map<String, Object> data = getData(r);
+        assertEquals("EnglishGreeter", data.get("symbol"));
+        java.util.Set<String> names = testMethods(r).stream()
+            .map(t -> (String) t.get("methodName"))
+            .collect(java.util.stream.Collectors.toSet());
+        assertEquals(java.util.Set.of("greetsThroughInterface", "disabledGreeting"), names,
+            () -> "both dispatch tests must cover the class; got: " + names);
     }
 
     @Test

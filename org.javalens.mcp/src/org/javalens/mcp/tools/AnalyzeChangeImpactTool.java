@@ -203,7 +203,9 @@ public class AnalyzeChangeImpactTool extends AbstractTool {
                     + "no graph node for '" + element.getElementName() + "'");
         }
 
-        List<String> affectedMethods = graph.transitiveCallers(key).stream().sorted().toList();
+        // Type-aware: a type's blast radius includes callers of its members,
+        // not just direct type-node references (issue #32).
+        List<String> affectedMethods = graph.transitiveCallersOfSymbol(key).stream().sorted().toList();
 
         Map<String, Integer> fileCounts = new LinkedHashMap<>();
         for (String methodKey : affectedMethods) {

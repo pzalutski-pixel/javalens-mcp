@@ -102,7 +102,9 @@ public class FindAffectedTestsTool extends AbstractTool {
                         + "no graph node for '" + element.getElementName() + "'");
             }
 
-            Set<String> affected = new HashSet<>(graph.transitiveCallers(key));
+            // Type-aware: selecting a class aggregates coverage of all its
+            // members, not just direct type-node references (issue #32).
+            Set<String> affected = new HashSet<>(graph.transitiveCallersOfSymbol(key));
             affected.add(key); // a test method covers itself
 
             List<Map<String, Object>> entries = new ArrayList<>();
