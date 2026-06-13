@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.navigation;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.SemanticAssertions;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
@@ -29,6 +31,7 @@ class GetTypeHierarchyToolTest {
     TestProjectHelper helper = new TestProjectHelper();
 
     private GetTypeHierarchyTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
     private Path projectPath;
     private String calculatorPath;
@@ -37,6 +40,7 @@ class GetTypeHierarchyToolTest {
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new GetTypeHierarchyTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
         projectPath = helper.getFixturePath("simple-maven");
         calculatorPath = projectPath.resolve("src/main/java/com/example/Calculator.java").toString();
@@ -430,5 +434,29 @@ class GetTypeHierarchyToolTest {
         Map<String, Object> type = (Map<String, Object>) data.get("type");
         assertEquals("com.example.IShape", type.get("qualifiedName"),
             "When position fails, the tool must use the typeName fallback; got: " + data);
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: IShape returns its exact seven transitive subtypes")
+    void envelope_iShape_exactSubtypes() {
+        ObjectNode args = envelope.args();
+        args.put("typeName", "com.example.IShape");
+        args.put("maxDepth", 50);
+        JsonNode payload = envelope.payload("get_type_hierarchy", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "get_type_hierarchy failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        Set<String> subs = new java.util.TreeSet<>();
+        for (JsonNode s : data.get("subtypes")) subs.add(s.get("qualifiedName").asText());
+        assertEquals(Set.of(
+            "com.example.IFillable", "com.example.Rectangle", "com.example.FilledCircle",
+            "com.example.AnonymousShapeUser$1", "com.example.AnonymousShapeUser$2",
+            "com.example.AnonymousShapeUser$InnerShape", "com.example.AnonymousShapeUser$NonStaticInnerShape"),
+            subs,
+            "IShape's exact transitive subtype set must survive the JSON-RPC envelope");
+        assertEquals(7, data.get("totalSubtypes").asInt());
     }
 }
