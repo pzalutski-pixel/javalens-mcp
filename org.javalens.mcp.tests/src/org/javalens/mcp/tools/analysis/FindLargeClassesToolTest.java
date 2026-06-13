@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.analysis;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.FindLargeClassesTool;
@@ -22,12 +24,14 @@ class FindLargeClassesToolTest {
     TestProjectHelper helper = new TestProjectHelper();
 
     private FindLargeClassesTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new FindLargeClassesTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
     }
 
@@ -310,5 +314,25 @@ class FindLargeClassesToolTest {
                 + classes.stream()
                     .map(c -> c.get("typeName") + ":" + c.get("violations"))
                     .toList());
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: default thresholds flag LargeClass, not Calculator")
+    void envelope_defaultThresholds_largeClassFlagged() {
+        JsonNode payload = envelope.payload("find_large_classes", envelope.args());
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "find_large_classes failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertEquals(20, data.get("thresholds").get("maxMethods").asInt());
+        assertEquals(10, data.get("thresholds").get("maxFields").asInt());
+        java.util.Set<String> names = new java.util.TreeSet<>();
+        for (JsonNode c : data.get("largeClasses")) names.add(c.get("typeName").asText());
+        assertTrue(names.contains("LargeClass"),
+            "LargeClass (21 methods, 11 fields) must be flagged through the envelope; got: " + names);
+        assertFalse(names.contains("Calculator"),
+            "Calculator must not be flagged through the envelope; got: " + names);
     }
 }
