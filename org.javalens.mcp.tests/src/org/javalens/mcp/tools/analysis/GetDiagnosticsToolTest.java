@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.analysis;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.GetDiagnosticsTool;
@@ -21,16 +23,21 @@ class GetDiagnosticsToolTest {
     @RegisterExtension
     TestProjectHelper helper = new TestProjectHelper();
     private GetDiagnosticsTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
     private String calculatorPath;
+    private String refactoringTargetPath;
 
     @BeforeEach
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new GetDiagnosticsTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
         calculatorPath = helper.getFixturePath("simple-maven")
             .resolve("src/main/java/com/example/Calculator.java").toString();
+        refactoringTargetPath = helper.getFixturePath("simple-maven")
+            .resolve("src/main/java/com/example/RefactoringTarget.java").toString();
     }
 
     @SuppressWarnings("unchecked")
@@ -164,9 +171,63 @@ class GetDiagnosticsToolTest {
                 unusedImports.add(msg);
             }
         }
-        assertTrue(unusedImports.size() >= 4,
-            "Expected at least 4 unused-import warnings; got: " + unusedImports.size()
+        assertEquals(4, unusedImports.size(),
+            "RefactoringTarget has exactly 4 unused imports; got: " + unusedImports.size()
                 + " unused-import messages out of " + diagsOf(r));
+    }
+
+    @Test
+    @DisplayName("Unused-import warnings sit at exact 0-based lines {3,4,5,6}")
+    void refactoringTarget_unusedImports_exactZeroBasedLines() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", refactoringTargetPath);
+        args.put("severity", "warning");
+        args.put("maxResults", 100);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+
+        // Imports (0-based): List(2, used), ArrayList(3), Map(4), HashMap(5),
+        // IOException(6). The four unused imports warn at their declaration lines;
+        // a dropped zero-based conversion would shift the set to {4,5,6,7}.
+        java.util.Set<Integer> lines = unusedImportLines(diagsOf(r));
+        assertEquals(java.util.Set.of(3, 4, 5, 6), lines,
+            "exactly four unused-import warnings at their exact 0-based lines; got: " + diagsOf(r));
+    }
+
+    private java.util.Set<Integer> unusedImportLines(List<Map<String, Object>> diags) {
+        java.util.Set<Integer> lines = new java.util.TreeSet<>();
+        for (Map<String, Object> d : diags) {
+            String msg = (String) d.get("message");
+            if (msg != null && msg.contains("import") && msg.contains("never used")) {
+                lines.add(((Number) d.get("line")).intValue());
+            }
+        }
+        return lines;
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: unused-import warnings sit at lines {3,4,5,6}")
+    void envelope_unusedImports_exactLines() {
+        ObjectNode args = envelope.args();
+        args.put("filePath", refactoringTargetPath);
+        args.put("severity", "warning");
+        args.put("maxResults", 100);
+        JsonNode payload = envelope.payload("get_diagnostics", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "get_diagnostics failed through the envelope: " + payload);
+        java.util.Set<Integer> lines = new java.util.TreeSet<>();
+        for (JsonNode d : payload.get("data").get("diagnostics")) {
+            String msg = d.get("message").asText();
+            if (msg.contains("import") && msg.contains("never used")) {
+                lines.add(d.get("line").asInt());
+            }
+        }
+        assertEquals(java.util.Set.of(3, 4, 5, 6), lines,
+            "unused-import warning lines must survive the JSON-RPC envelope");
     }
 
     @Test
