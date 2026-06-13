@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.analysis;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.GetTypeUsageSummaryTool;
@@ -21,12 +23,14 @@ class GetTypeUsageSummaryToolTest {
     @RegisterExtension
     TestProjectHelper helper = new TestProjectHelper();
     private GetTypeUsageSummaryTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new GetTypeUsageSummaryTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
     }
 
@@ -267,5 +271,25 @@ class GetTypeUsageSummaryToolTest {
         }
         assertTrue(lines.contains(30) || lines.contains(31) || lines.contains(35),
             "At least one TYPE_USE @Marker position (parameter/local/type-arg) must appear; got lines: " + lines);
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: Animal usage is casts 0, instanceof 0, typeArgs 0, instantiations 1")
+    void envelope_animal_exactCounts() {
+        ObjectNode args = envelope.args();
+        args.put("typeName", "com.example.Animal");
+        args.put("maxPerCategory", 50);
+        JsonNode payload = envelope.payload("get_type_usage_summary", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "get_type_usage_summary failed through the envelope: " + payload);
+        JsonNode usages = payload.get("data").get("usages");
+        assertEquals(0, usages.get("casts").get("count").asInt(), "Animal never cast");
+        assertEquals(0, usages.get("instanceofChecks").get("count").asInt(), "Animal never instanceof-checked");
+        assertEquals(0, usages.get("typeArguments").get("count").asInt(), "Animal not a generic type arg");
+        assertEquals(1, usages.get("instantiations").get("count").asInt(),
+            "Animal instantiated exactly once (FieldHolder) — count must survive the envelope");
     }
 }
