@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.project;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.GetClasspathInfoTool;
@@ -21,12 +23,23 @@ class GetClasspathInfoToolTest {
     @RegisterExtension
     TestProjectHelper helper = new TestProjectHelper();
     private GetClasspathInfoTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
+
+    /**
+     * Core JDK system modules present in every standard Java 21 SE runtime. An
+     * unnamed-module project (no module-info) reads all of them, so a correct
+     * systemModules list must contain the whole set — not just java.base.
+     */
+    private static final java.util.Set<String> CORE_JDK_MODULES = java.util.Set.of(
+        "java.base", "java.logging", "java.xml", "java.sql", "java.desktop",
+        "java.naming", "java.management", "java.compiler");
 
     @BeforeEach
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new GetClasspathInfoTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
     }
 
@@ -341,9 +354,32 @@ class GetClasspathInfoToolTest {
         assertNotNull(systemModules,
             "jre.systemModules must be reported (list of module names visible to the project); got: "
                 + jre);
-        assertTrue(systemModules.contains("java.base"),
-            "jre.systemModules must include java.base (every project reads java.base); got: "
-                + systemModules);
+        // Must list the full core set, not just java.base — a truncated extraction
+        // (the audited failure) that returned only [java.base] would pass a lone
+        // contains("java.base") check.
+        assertTrue(systemModules.containsAll(CORE_JDK_MODULES),
+            "jre.systemModules must contain every core JDK module " + CORE_JDK_MODULES
+                + "; got " + systemModules.size() + " modules: " + systemModules);
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: jre.systemModules lists the full core JDK module set")
+    @SuppressWarnings("unchecked")
+    void envelope_systemModules_includeCoreSet() {
+        JsonNode payload = envelope.payload("get_classpath_info", envelope.args());
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "get_classpath_info failed through the envelope: " + payload);
+        JsonNode modules = payload.get("data").path("jre").path("systemModules");
+        assertTrue(modules.isArray() && modules.size() > 0,
+            () -> "jre.systemModules missing through the envelope: " + payload.get("jre"));
+        java.util.Set<String> names = new java.util.HashSet<>();
+        for (JsonNode m : modules) names.add(m.asText());
+        assertTrue(names.containsAll(CORE_JDK_MODULES),
+            "the full core JDK module set must survive the envelope; got " + names.size()
+                + " modules: " + names);
     }
 
     @Test
