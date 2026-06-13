@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.navigation;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.GetMethodAtPositionTool;
@@ -27,6 +29,7 @@ class GetMethodAtPositionToolTest {
     TestProjectHelper helper = new TestProjectHelper();
 
     private GetMethodAtPositionTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
     private Path projectPath;
     private String calculatorPath;
@@ -36,6 +39,7 @@ class GetMethodAtPositionToolTest {
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new GetMethodAtPositionTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
         projectPath = helper.getFixturePath("simple-maven");
         calculatorPath = projectPath.resolve("src/main/java/com/example/Calculator.java").toString();
@@ -400,5 +404,27 @@ class GetMethodAtPositionToolTest {
             "Resolved method must be `add`; got: " + data);
         assertEquals("com.example.Calculator", data.get("declaringType"),
             "Resolved method's declaringType must be Calculator; got: " + data);
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: Calculator.add has the exact signature and two parameters")
+    void envelope_calculatorAdd_exactSignature() {
+        ObjectNode args = envelope.args();
+        args.put("filePath", calculatorPath);
+        args.put("line", 14);
+        args.put("column", 15);
+        JsonNode payload = envelope.payload("get_method_at_position", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "get_method_at_position failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertEquals("add", data.get("name").asText());
+        assertEquals("int", data.get("returnType").asText());
+        assertEquals("com.example.Calculator", data.get("declaringType").asText());
+        assertEquals(2, data.get("parameterCount").asInt());
+        assertEquals("add(int a, int b): int", data.get("signature").asText(),
+            "the exact method signature must survive the envelope");
     }
 }
