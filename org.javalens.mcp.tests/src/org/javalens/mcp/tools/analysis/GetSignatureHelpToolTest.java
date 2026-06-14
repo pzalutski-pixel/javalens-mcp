@@ -115,6 +115,8 @@ class GetSignatureHelpToolTest {
         assertFalse(rNoFile.isSuccess());
         assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER,
             rNoFile.getError().getCode());
+        assertEquals("Invalid parameter 'filePath': Required parameter missing",
+            rNoFile.getError().getMessage());
 
         // Missing line (defaults to -1, fails the >=0 check) -> INVALID_PARAMETER.
         ObjectNode noLine = objectMapper.createObjectNode();
@@ -124,8 +126,7 @@ class GetSignatureHelpToolTest {
         assertFalse(rNoLine.isSuccess());
         assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER,
             rNoLine.getError().getCode());
-        assertTrue(rNoLine.getError().getMessage().contains("line"),
-            "Error must name `line`; got: " + rNoLine.getError().getMessage());
+        assertEquals("Invalid parameter 'line': Must be >= 0", rNoLine.getError().getMessage());
 
         // Missing column (defaults to -1) -> INVALID_PARAMETER naming column.
         // Independent guard from line — must surface its own validation, not be
@@ -137,8 +138,7 @@ class GetSignatureHelpToolTest {
         assertFalse(rNoColumn.isSuccess());
         assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER,
             rNoColumn.getError().getCode());
-        assertTrue(rNoColumn.getError().getMessage().contains("column"),
-            "Error must name `column`; got: " + rNoColumn.getError().getMessage());
+        assertEquals("Invalid parameter 'column': Must be >= 0", rNoColumn.getError().getMessage());
 
         // Blank filePath separate from null.
         ObjectNode blankFp = objectMapper.createObjectNode();
@@ -160,6 +160,9 @@ class GetSignatureHelpToolTest {
 
         ToolResponse r = tool.execute(args);
         assertFalse(r.isSuccess());
+        // Package declaration resolves to an element with no enclosing method.
+        assertEquals(org.javalens.mcp.models.ErrorInfo.SYMBOL_NOT_FOUND, r.getError().getCode());
+        assertEquals("Symbol not found: No method found at position", r.getError().getMessage());
     }
 
     // ========== Behavior-matrix coverage ==========
@@ -231,11 +234,10 @@ class GetSignatureHelpToolTest {
         assertTrue(r.isSuccess());
 
         List<Map<String, Object>> signatures = (List<Map<String, Object>>) getData(r).get("signatures");
-        assertFalse(signatures.isEmpty());
-        String label = (String) signatures.get(0).get("label");
-        assertNotNull(label);
-        assertTrue(label.contains("<U"),
-            "Signature label must include the method type parameter clause; got: " + label);
+        assertEquals(1, signatures.size(), "identity has no overloads; got: " + signatures);
+        // <U extends Comparable<U>> clause + (U input) params + : U return type.
+        assertEquals("<U extends Comparable<U>> identity(U input): U", signatures.get(0).get("label"),
+            "generic method label must include the method type-parameter clause and U return type");
     }
 
     @Test
@@ -321,15 +323,12 @@ class GetSignatureHelpToolTest {
         ToolResponse r = tool.execute(args);
         assertTrue(r.isSuccess());
         List<Map<String, Object>> signatures = (List<Map<String, Object>>) getData(r).get("signatures");
-        assertFalse(signatures.isEmpty());
-        // Constructor labels are `name(params)` without `: ReturnType`.
-        for (Map<String, Object> sig : signatures) {
-            String label = (String) sig.get("label");
-            assertTrue(label.startsWith("HelloWorld("),
-                "Constructor label must start with class name; got: " + label);
-            assertFalse(label.contains("):"),
-                "Constructor label must NOT have `: ReturnType` suffix; got: " + label);
-        }
+        // Both HelloWorld constructors share the element name "HelloWorld", so the tool
+        // returns both; constructor labels carry no `: ReturnType` suffix.
+        java.util.Set<String> labels = signatures.stream()
+            .map(s -> (String) s.get("label"))
+            .collect(java.util.stream.Collectors.toSet());
+        assertEquals(java.util.Set.of("HelloWorld()", "HelloWorld(String greeting)"), labels);
     }
 
     // ========== MCP envelope seam (exact authored values through processMessage) ==========
