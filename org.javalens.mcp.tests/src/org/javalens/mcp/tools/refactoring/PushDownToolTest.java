@@ -72,14 +72,17 @@ class PushDownToolTest {
         assertEquals(2, editsByFile.size(),
             "both HierBase and HierChild must receive edits; got: " + editsByFile.keySet());
 
-        String childNewText = textFor(editsByFile, "HierChild.java", "newText");
-        assertTrue(childNewText.contains("movable"),
-            "HierChild must gain movable(); got: " + childNewText);
+        assertEquals(2, ((Number) data.get("totalEdits")).intValue());
+        assertEquals(2, ((Number) data.get("filesAffected")).intValue());
+        assertEquals(List.of("com.example.hier.HierChild"), toTypes);
 
-        String baseOldText = textFor(editsByFile, "HierBase.java", "oldText");
-        String baseNewText = textFor(editsByFile, "HierBase.java", "newText");
-        assertTrue(baseOldText.contains("movable") && !baseNewText.contains("movable"),
-            "HierBase must lose movable(); old: " + baseOldText + " new: " + baseNewText);
+        // HierChild gains the pushed-down method, tab-indented (generated).
+        assertEquals("\n\tpublic int movable() {\n\t    return 7;\n\t}\n",
+            textFor(editsByFile, "HierChild.java", "newText").replace("\r\n", "\n"));
+        // HierBase loses it: original 4-space method deleted (newText empty).
+        assertEquals("\n    public int movable() {\n        return 7;\n    }\n",
+            textFor(editsByFile, "HierBase.java", "oldText").replace("\r\n", "\n"));
+        assertEquals("", textFor(editsByFile, "HierBase.java", "newText"));
     }
 
     private String textFor(Map<String, List<Map<String, Object>>> editsByFile,
@@ -104,6 +107,9 @@ class PushDownToolTest {
         ToolResponse r = tool.execute(args);
         assertFalse(r.isSuccess(),
             "pushing from a class without subclasses must be refused; got: " + r.getData());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r.getError().getCode());
+        assertEquals("Invalid parameter 'member': Declaring type has no subclasses to push into",
+            r.getError().getMessage());
     }
 
     @Test
@@ -113,12 +119,19 @@ class PushDownToolTest {
         wrongPos.put("filePath", basePath);
         wrongPos.put("line", 0);
         wrongPos.put("column", 0);
-        assertFalse(tool.execute(wrongPos).isSuccess());
+        ToolResponse wrongPosResp = tool.execute(wrongPos);
+        assertFalse(wrongPosResp.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, wrongPosResp.getError().getCode());
+        assertEquals("Invalid parameter 'position': No method or field at position",
+            wrongPosResp.getError().getMessage());
 
         ObjectNode noFile = mapper.createObjectNode();
         noFile.put("line", 9);
         noFile.put("column", 15);
-        assertFalse(tool.execute(noFile).isSuccess());
+        ToolResponse noFileResp = tool.execute(noFile);
+        assertFalse(noFileResp.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, noFileResp.getError().getCode());
+        assertEquals("Invalid parameter 'filePath': Required", noFileResp.getError().getMessage());
     }
 
     // ========== MCP envelope seam (exact authored values through processMessage) ==========
