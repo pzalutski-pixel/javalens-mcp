@@ -53,6 +53,16 @@ class GetDependencyGraphToolTest {
     }
 
     @SuppressWarnings("unchecked")
+    private Map<String, String> nodeKinds(Map<String, Object> data) {
+        Map<String, String> kinds = new java.util.HashMap<>();
+        for (Object n : (List<Object>) data.get("nodes")) {
+            Map<String, Object> node = (Map<String, Object>) n;
+            kinds.put((String) node.get("name"), (String) node.get("kind"));
+        }
+        return kinds;
+    }
+
+    @SuppressWarnings("unchecked")
     private Map<String, Object> summary(Map<String, Object> data) {
         return (Map<String, Object>) data.get("summary");
     }
@@ -95,39 +105,67 @@ class GetDependencyGraphToolTest {
         assertEquals("com.example", getData(r).get("root"));
     }
 
-    @Test @DisplayName("respects depth and includeExternal")
+    @Test @DisplayName("includeExternal=true surfaces JDK nodes (List/ArrayList/String) with exact summary")
     void respectsOptions() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("scope", "type");
-        args.put("name", "com.example.Calculator");
+        args.put("name", "com.example.service.UserService");
         args.put("depth", 2);
         args.put("includeExternal", true);
 
-        assertTrue(tool.execute(args).isSuccess());
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+
+        // Calculator has no own deps and JDK types have no source CU, so depth=2 collapses
+        // to UserService's direct dependencies. With externals included: imports
+        // Calculator/ArrayList/List, fields List+Calculator, String method params.
+        assertEquals(Set.of(
+            "com.example.service.UserService", "com.example.Calculator",
+            "java.util.ArrayList", "java.util.List", "java.lang.String"),
+            nodeNames(data));
+
+        Map<String, Object> s = summary(data);
+        assertEquals(5, ((Number) s.get("totalNodes")).intValue());
+        assertEquals(4, ((Number) s.get("totalEdges")).intValue());
+        assertEquals(1, ((Number) s.get("internalDependencies")).intValue());
+        assertEquals(3, ((Number) s.get("externalDependencies")).intValue());
     }
 
-    @Test @DisplayName("requires scope and name")
+    @Test @DisplayName("missing scope/name each yield exact INVALID_PARAMETER")
     void requiresParameters() {
         ObjectNode noScope = objectMapper.createObjectNode();
         noScope.put("name", "com.example.Calculator");
-        assertFalse(tool.execute(noScope).isSuccess());
+        ToolResponse rNoScope = tool.execute(noScope);
+        assertFalse(rNoScope.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, rNoScope.getError().getCode());
+        assertEquals("Invalid parameter 'scope': Required (type or package)", rNoScope.getError().getMessage());
 
         ObjectNode noName = objectMapper.createObjectNode();
         noName.put("scope", "type");
-        assertFalse(tool.execute(noName).isSuccess());
+        ToolResponse rNoName = tool.execute(noName);
+        assertFalse(rNoName.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, rNoName.getError().getCode());
+        assertEquals("Invalid parameter 'name': Required", rNoName.getError().getMessage());
     }
 
-    @Test @DisplayName("handles invalid inputs")
+    @Test @DisplayName("bad scope -> INVALID_PARAMETER; unknown type -> SYMBOL_NOT_FOUND")
     void handlesInvalidInputs() {
         ObjectNode badScope = objectMapper.createObjectNode();
         badScope.put("scope", "invalid");
         badScope.put("name", "com.example.Calculator");
-        assertFalse(tool.execute(badScope).isSuccess());
+        ToolResponse rBad = tool.execute(badScope);
+        assertFalse(rBad.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, rBad.getError().getCode());
+        assertEquals("Invalid parameter 'scope': Must be 'type' or 'package'", rBad.getError().getMessage());
 
         ObjectNode unknownType = objectMapper.createObjectNode();
         unknownType.put("scope", "type");
         unknownType.put("name", "com.nonexistent.Type");
-        assertFalse(tool.execute(unknownType).isSuccess());
+        ToolResponse rUnknown = tool.execute(unknownType);
+        assertFalse(rUnknown.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.SYMBOL_NOT_FOUND, rUnknown.getError().getCode());
+        assertEquals("Symbol not found: com.nonexistent.Type", rUnknown.getError().getMessage());
     }
 
     // ========== Semantic-grade tests ==========
@@ -263,6 +301,12 @@ class GetDependencyGraphToolTest {
         // or primitive and must not appear as nodes.
         assertEquals(Set.of("com.example.service.UserService", "com.example.Calculator"),
             nodeNames(data), "internal graph nodes are exactly UserService and Calculator");
+
+        // Node kinds: the root carries its TypeKindResolver kind; Calculator is first
+        // touched by the import loop (putIfAbsent "import" wins over the later field "type").
+        Map<String, String> kinds = nodeKinds(data);
+        assertEquals("class", kinds.get("com.example.service.UserService"));
+        assertEquals("import", kinds.get("com.example.Calculator"));
 
         List<Map<String, Object>> edges = edges(data);
         assertEquals(1, edges.size(), () -> "exactly one internal edge; got: " + edges);
