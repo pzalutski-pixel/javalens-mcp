@@ -113,10 +113,13 @@ public class SearchService {
         int collectCap = hasQuestionMark ? Math.max(maxResults * 4, 200) : maxResults;
         CollectingSearchRequestor requestor = new CollectingSearchRequestor(collectCap);
 
+        // Sources-only scope: symbol search returns the project's own declared symbols,
+        // not classpath/JDK types or workspace-metadata phantoms (which leak unresolvable
+        // absolute paths). Mirrors the fine-grain and reference-search scope discipline.
         engine.search(
             jdtPattern,
             new SearchParticipant[] { SearchEngine.getDefaultSearchParticipant() },
-            scope,
+            sourceScope,
             requestor,
             new NullProgressMonitor()
         );

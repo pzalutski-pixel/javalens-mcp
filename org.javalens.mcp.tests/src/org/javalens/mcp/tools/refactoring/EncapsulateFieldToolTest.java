@@ -156,8 +156,9 @@ class EncapsulateFieldToolTest {
                 assertNotNull(edit.get("type"), "type missing: " + edit);
                 assertTrue(edit.containsKey("offset") || edit.containsKey("startOffset"),
                     "offset keys missing: " + edit);
-                assertNotNull(edit.get("newText") != null || "delete".equals(edit.get("type"))
-                    ? "ok" : null, "newText missing on non-delete edit: " + edit);
+                if (!"delete".equals(edit.get("type"))) {
+                    assertNotNull(edit.get("newText"), "newText missing on non-delete edit: " + edit);
+                }
             }
         }
     }

@@ -218,7 +218,9 @@ public class SearchSymbolsTool extends AbstractTool {
                     info.put("containingType", method.getDeclaringType().getElementName());
                 }
             } else if (javaElement instanceof IField field) {
-                info.put("type", field.getTypeSignature());
+                // Render the readable type name (e.g. "int", "String"), consistent with
+                // every other tool — not the raw JVM type signature ("I", "QString;").
+                info.put("type", org.eclipse.jdt.core.Signature.toString(field.getTypeSignature()));
                 if (field.getDeclaringType() != null) {
                     info.put("containingType", field.getDeclaringType().getElementName());
                 }

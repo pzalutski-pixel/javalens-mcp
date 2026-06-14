@@ -216,18 +216,11 @@ class OrganizeImportsToolTest {
         Map<String, Object> data = getData(r);
         String block = (String) data.get("organizedImportBlock");
         assertNotNull(block);
-        // Unused java.io.IOException, java.util.ArrayList, java.util.HashMap, java.util.Map
-        // must NOT appear in organized block. java.util.List must remain.
-        assertFalse(block.contains("java.io.IOException"),
-            "Unused IOException must NOT be in organized block; got: " + block);
-        assertFalse(block.contains("java.util.ArrayList"),
-            "Unused ArrayList must NOT be in organized block; got: " + block);
-        assertFalse(block.contains("java.util.HashMap"),
-            "Unused HashMap must NOT be in organized block; got: " + block);
-        assertFalse(block.contains("java.util.Map\n") && !block.contains("java.util.Map.")
-            ? false : false); // (no separate java.util.Map import remains)
-        assertTrue(block.contains("java.util.List"),
-            "Used java.util.List must remain in organized block; got: " + block);
+        // RefactoringTarget imports java.util.{List,ArrayList,Map,HashMap} + java.io.IOException;
+        // only List is used, so the organized block is EXACTLY the single surviving import
+        // (all four unused dropped, nothing else added).
+        assertEquals("import java.util.List;", block.strip(),
+            "organized block must be exactly the one used import; got: " + block);
     }
 
     @Test

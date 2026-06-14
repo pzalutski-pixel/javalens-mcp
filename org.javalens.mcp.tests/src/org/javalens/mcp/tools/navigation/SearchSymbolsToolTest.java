@@ -266,7 +266,7 @@ class SearchSymbolsToolTest {
     }
 
     @Test
-    @DisplayName("Kind=Field filter: every result is a Field (lastResult appears)")
+    @DisplayName("Kind=Field filter: lastResult resolves to exactly Calculator.lastResult with readable type 'int'")
     @SuppressWarnings("unchecked")
     void kindField_filterReturnsOnlyFields() {
         ObjectNode args = objectMapper.createObjectNode();
@@ -276,11 +276,20 @@ class SearchSymbolsToolTest {
         ToolResponse r = tool.execute(args);
         assertTrue(r.isSuccess());
         List<Map<String, Object>> results = getResults(getData(r));
-        assertFalse(results.isEmpty());
-        for (Map<String, Object> result : results) {
-            assertEquals("field", result.get("kind"),
-                "Every kind=Field result must have lowercase kind='field'; offending: " + result);
-        }
+        // Sources-only scope: the only project-source `lastResult` field is
+        // Calculator.lastResult (private int). No classpath/workspace phantom.
+        assertEquals(1, results.size(), "exactly Calculator.lastResult; got: " + results);
+        Map<String, Object> field = results.get(0);
+        assertEquals("field", field.get("kind"), "lowercase kind='field'; got: " + field);
+        assertEquals("lastResult", field.get("name"));
+        assertEquals("Calculator", field.get("containingType"));
+        // filePath must be fixture-relative, never a leaked workspace-metadata path.
+        assertEquals("src/main/java/com/example/Calculator.java",
+            ((String) field.get("filePath")).replace('\\', '/'),
+            "field result path must be fixture-relative; got: " + field.get("filePath"));
+        // The `type` must be the readable name "int", NOT the raw JVM signature "I".
+        assertEquals("int", field.get("type"),
+            "field result type must be the readable name, not a raw JVM signature; got: " + field.get("type"));
     }
 
     @Test
