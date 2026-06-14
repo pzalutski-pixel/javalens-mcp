@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.analysis;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.FindUnreachableCodeTool;
@@ -30,12 +32,14 @@ class FindUnreachableCodeToolTest {
     TestProjectHelper helper = new TestProjectHelper();
 
     private FindUnreachableCodeTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("reachability-maven");
         tool = new FindUnreachableCodeTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
     }
 
@@ -218,5 +222,32 @@ class FindUnreachableCodeToolTest {
         ToolResponse r = unloaded.execute(objectMapper.createObjectNode());
         assertFalse(r.isSuccess());
         assertEquals("PROJECT_NOT_LOADED", r.getError().getCode());
+    }
+
+    // ========== MCP envelope seam (real registerTools() wiring through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real registerTools() wiring: the exact 5-member dead-code inventory survives the envelope")
+    void envelope_defaultRoots_exactInventory() {
+        JsonNode payload = envelope.payload("find_unreachable_code", envelope.args());
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "find_unreachable_code failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertEquals(5, data.get("unreachableCount").asInt(), "exactly five dead members through the envelope");
+        assertEquals("com.reach.Main#main(String[])",
+            data.get("roots").get("mainMethods").get(0).asText(),
+            "the main-method root must survive the envelope");
+        assertEquals(5, data.get("roots").get("testMethodCount").asInt());
+        java.util.Set<String> keys = new java.util.TreeSet<>();
+        for (JsonNode entry : data.get("unreachable")) keys.add(entry.get("key").asText());
+        assertEquals(java.util.Set.of(
+            "com.reach.EnglishGreeter#unusedPublicHelper()",
+            "com.reach.Orphan",
+            "com.reach.Orphan#DEAD_CONSTANT",
+            "com.reach.Orphan#deadMethod()",
+            "com.reach.Orphan#deadChain()"),
+            keys,
+            "the exact dead-member key set must survive the real-wiring envelope");
     }
 }
