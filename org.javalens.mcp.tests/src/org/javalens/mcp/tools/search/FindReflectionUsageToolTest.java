@@ -49,12 +49,12 @@ class FindReflectionUsageToolTest {
 
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
-        int totalCalls = (int) data.get("totalCalls");
-        assertTrue(totalCalls > 0, "Should find reflection calls in DiAndReflectionPatterns.java");
+        assertEquals(7, ((Number) data.get("totalCalls")).intValue(),
+            "exactly seven reflection calls in DiAndReflectionPatterns.java");
     }
 
     @Test
-    @DisplayName("should include reflection method label in results")
+    @DisplayName("every reflection call carries a non-null reflectionMethod label")
     void includesReflectionMethodLabel() {
         ObjectNode args = objectMapper.createObjectNode();
 
@@ -63,16 +63,16 @@ class FindReflectionUsageToolTest {
         assertTrue(response.isSuccess());
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> calls = (List<Map<String, Object>>) getData(response).get("reflectionCalls");
-        if (!calls.isEmpty()) {
-            Map<String, Object> firstCall = calls.get(0);
-            assertNotNull(firstCall.get("reflectionMethod"), "Should include reflection method label");
+        assertEquals(7, calls.size());
+        for (Map<String, Object> c : calls) {
+            assertNotNull(c.get("reflectionMethod"), "every call must carry a reflectionMethod label; got: " + c);
         }
     }
 
     // ========== Summary Tests ==========
 
     @Test
-    @DisplayName("should group results by reflection method type in summary")
+    @DisplayName("summary keys equal the distinct call methods and its counts sum to totalCalls")
     void groupsResultsInSummary() {
         ObjectNode args = objectMapper.createObjectNode();
 
@@ -80,8 +80,15 @@ class FindReflectionUsageToolTest {
 
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
-        assertNotNull(data.get("summary"), "Should include summary");
-        assertNotNull(data.get("reflectionCalls"), "Should include reflectionCalls list");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> summary = (Map<String, Object>) data.get("summary");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> calls = (List<Map<String, Object>>) data.get("reflectionCalls");
+        java.util.Set<String> callMethods = calls.stream()
+            .map(c -> (String) c.get("reflectionMethod")).collect(java.util.stream.Collectors.toSet());
+        assertEquals(callMethods, summary.keySet(), "summary keys == distinct call methods; got: " + summary);
+        int sum = summary.values().stream().mapToInt(v -> ((Number) v).intValue()).sum();
+        assertEquals(calls.size(), sum, "summary counts must sum to the total call count");
     }
 
     @Test
@@ -100,12 +107,23 @@ class FindReflectionUsageToolTest {
         @SuppressWarnings("unchecked")
         Map<String, Object> summary = (Map<String, Object>) data.get("summary");
         assertNotNull(summary);
+        // Each detected label has exactly 1 call in the fixture, so the per-label cap of 1
+        // leaves every count at exactly 1.
         for (Map.Entry<String, Object> entry : summary.entrySet()) {
-            int count = ((Number) entry.getValue()).intValue();
-            assertTrue(count <= 1,
-                "maxResults=1 caps each reflection label's count to 1; "
-                    + entry.getKey() + " has " + count + " entries; full summary: " + summary);
+            assertEquals(1, ((Number) entry.getValue()).intValue(),
+                "maxResults=1 caps each reflection label's count to exactly 1; "
+                    + entry.getKey() + "; full summary: " + summary);
         }
+    }
+
+    @Test
+    @DisplayName("negative maxResults is rejected with INVALID_PARAMETER")
+    void negativeMaxResults() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("maxResults", -1);
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess());
+        assertEquals("INVALID_PARAMETER", r.getError().getCode());
     }
 
     // ========== Semantic-grade tests ==========
@@ -126,18 +144,14 @@ class FindReflectionUsageToolTest {
             .filter(java.util.Objects::nonNull)
             .collect(java.util.stream.Collectors.toSet());
 
-        // DiAndReflectionPatterns has Class.forName, getDeclaredConstructor().newInstance(),
-        // getMethod, Method.invoke, getDeclaredField, Field.get (and setAccessible).
-        // Some of these (newInstance, setAccessible) may not be classified as core reflection
-        // by the tool; assert the most universally-detected APIs appear.
-        assertTrue(reflectionMethods.contains("Class.forName"),
-            "Expected Class.forName in detected reflection methods; got: " + reflectionMethods);
-        assertTrue(reflectionMethods.contains("Class.getMethod"),
-            "Expected Class.getMethod in detected reflection methods; got: " + reflectionMethods);
-        assertTrue(reflectionMethods.contains("Method.invoke"),
-            "Expected Method.invoke in detected reflection methods; got: " + reflectionMethods);
-        assertTrue(reflectionMethods.contains("Class.getDeclaredField"),
-            "Expected Class.getDeclaredField in detected reflection methods; got: " + reflectionMethods);
+        // DiAndReflectionPatterns' reflection call sites map to exactly these seven detected
+        // APIs (setAccessible is not in the detection table). Pin the exact set from the
+        // per-call view (the summary test pins the same set from the summary view).
+        assertEquals(java.util.Set.of(
+            "Class.forName", "Class.getDeclaredConstructor", "Constructor.newInstance",
+            "Class.getMethod", "Method.invoke", "Class.getDeclaredField", "Field.get"),
+            reflectionMethods,
+            "exact set of detected reflection APIs; got: " + reflectionMethods);
     }
 
     @Test
