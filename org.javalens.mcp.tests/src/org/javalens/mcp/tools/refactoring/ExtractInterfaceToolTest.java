@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.refactoring;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.SemanticAssertions;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
@@ -29,6 +31,7 @@ class ExtractInterfaceToolTest {
     TestProjectHelper helper = new TestProjectHelper();
 
     private ExtractInterfaceTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
     private Path projectPath;
     private String interfaceTargetPath;
@@ -37,6 +40,7 @@ class ExtractInterfaceToolTest {
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         tool = new ExtractInterfaceTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
         projectPath = helper.getFixturePath("simple-maven");
         interfaceTargetPath = projectPath.resolve("src/main/java/com/example/InterfaceExtractTarget.java").toString();
@@ -474,5 +478,29 @@ class ExtractInterfaceToolTest {
         String msg = r.getError() != null ? r.getError().getMessage() : "";
         assertTrue(msg.toLowerCase().contains("enum"),
             "Error message must mention enum; got: " + msg);
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: default extraction yields exactly the 7 public method names")
+    void envelope_defaultExtraction_exactPublicMethodSet() {
+        ObjectNode args = envelope.args();
+        args.put("filePath", interfaceTargetPath);
+        args.put("line", 8);
+        args.put("column", 13);
+        args.put("interfaceName", "IExtractTarget");
+        JsonNode payload = envelope.payload("extract_interface", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "extract_interface failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertEquals("IExtractTarget", data.get("interfaceName").asText());
+        java.util.Set<String> names = new java.util.TreeSet<>();
+        for (JsonNode m : data.get("extractedMethods")) names.add(m.get("name").asText());
+        assertEquals(
+            java.util.Set.of("getName", "setName", "getValue", "process", "validate", "getItems", "compareTo"),
+            names,
+            "the exact non-private non-static public method set must survive the envelope; got: " + names);
     }
 }
