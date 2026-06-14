@@ -63,17 +63,54 @@ class IntroduceParameterObjectToolTest {
         Map<String, Object> data = getData(r);
         assertEquals("send", data.get("methodName"));
         assertEquals("SendParameters", data.get("className"));
+        assertEquals("parameterObject", data.get("parameterName"));
+        // IPO bundles in-place: no new file, one edit rewriting the method region.
+        assertEquals(0, ((List<?>) data.get("createdFiles")).size());
+        assertEquals(1, ((Number) data.get("totalEdits")).intValue());
+        assertEquals(1, ((Number) data.get("filesAffected")).intValue());
 
         Map<String, List<Map<String, Object>>> editsByFile =
             (Map<String, List<Map<String, Object>>>) data.get("editsByFile");
         String allNewText = editsByFile.values().stream()
             .flatMap(List::stream)
             .map(e -> String.valueOf(e.get("newText")))
-            .reduce("", String::concat);
-        assertTrue(allNewText.contains("SendParameters"),
-            "edits must introduce the SendParameters class/usages; got: " + allNewText);
-        assertTrue(allNewText.contains("new SendParameters"),
-            "the caller must construct the bundle; got: " + allNewText);
+            .reduce("", String::concat)
+            .replace("\r\n", "\n");
+        // Exact JDT introduce-parameter-object output: the nested SendParameters bundle
+        // (tab-indented) followed by the rewritten send() and the caller construction
+        // (space-indented, preserved from source). Pinned against the build's target platform.
+        assertEquals(
+            "static class SendParameters {\n"
+            + "\t\tprivate String host;\n"
+            + "\t\tprivate int port;\n"
+            + "\t\tprivate boolean secure;\n"
+            + "\n"
+            + "\t\tpublic SendParameters(String host, int port, boolean secure) {\n"
+            + "\t\t\tthis.host = host;\n"
+            + "\t\t\tthis.port = port;\n"
+            + "\t\t\tthis.secure = secure;\n"
+            + "\t\t}\n"
+            + "\n"
+            + "\t\tpublic String getHost() {\n"
+            + "\t\t\treturn host;\n"
+            + "\t\t}\n"
+            + "\n"
+            + "\t\tpublic int getPort() {\n"
+            + "\t\t\treturn port;\n"
+            + "\t\t}\n"
+            + "\n"
+            + "\t\tpublic boolean isSecure() {\n"
+            + "\t\t\treturn secure;\n"
+            + "\t\t}\n"
+            + "\t}\n"
+            + "\n"
+            + "\tpublic String send(SendParameters parameterObject) {\n"
+            + "        return parameterObject.getHost() + \":\" + parameterObject.getPort() + (parameterObject.isSecure() ? \"!\" : \"\");\n"
+            + "    }\n"
+            + "\n"
+            + "    public String sendDefault() {\n"
+            + "        return send(new SendParameters(\"localhost\", 8080, true)",
+            allNewText);
     }
 
     @Test
@@ -86,6 +123,9 @@ class IntroduceParameterObjectToolTest {
         ToolResponse r = tool.execute(args);
         assertFalse(r.isSuccess(),
             "a method without parameters must be refused; got: " + r.getData());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r.getError().getCode());
+        assertEquals("Invalid parameter 'method': Method has no parameters to bundle",
+            r.getError().getMessage());
     }
 
     @Test
@@ -95,12 +135,18 @@ class IntroduceParameterObjectToolTest {
         wrongPos.put("filePath", targetPath);
         wrongPos.put("line", 0);
         wrongPos.put("column", 0);
-        assertFalse(tool.execute(wrongPos).isSuccess());
+        ToolResponse wrongPosResp = tool.execute(wrongPos);
+        assertFalse(wrongPosResp.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, wrongPosResp.getError().getCode());
+        assertEquals("Invalid parameter 'position': No method at position", wrongPosResp.getError().getMessage());
 
         ObjectNode noFile = mapper.createObjectNode();
         noFile.put("line", 6);
         noFile.put("column", 18);
-        assertFalse(tool.execute(noFile).isSuccess());
+        ToolResponse noFileResp = tool.execute(noFile);
+        assertFalse(noFileResp.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, noFileResp.getError().getCode());
+        assertEquals("Invalid parameter 'filePath': Required", noFileResp.getError().getMessage());
     }
 
     // ========== MCP envelope seam (exact authored values through processMessage) ==========
