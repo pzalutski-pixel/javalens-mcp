@@ -37,7 +37,7 @@ class FindUnusedCodeToolTest {
     @SuppressWarnings("unchecked")
     private Map<String, Object> getData(ToolResponse r) { return (Map<String, Object>) r.getData(); }
 
-    @Test @DisplayName("finds unused code comprehensively")
+    @Test @DisplayName("UnusedCode.java: exact unused counts 2 fields + 2 methods = 4")
     void findsUnusedCodeComprehensively() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", "src/main/java/com/example/UnusedCode.java");
@@ -46,10 +46,10 @@ class FindUnusedCodeToolTest {
 
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
-        assertNotNull(data.get("unusedItems"));
-        assertNotNull(data.get("unusedFieldCount"));
-        assertNotNull(data.get("unusedMethodCount"));
-        assertNotNull(data.get("totalUnused"));
+        assertEquals(2, ((Number) data.get("unusedFieldCount")).intValue());
+        assertEquals(2, ((Number) data.get("unusedMethodCount")).intValue());
+        assertEquals(4, ((Number) data.get("totalUnused")).intValue());
+        assertEquals(4, ((List<?>) data.get("unusedItems")).size());
     }
 
     @Test @DisplayName("supports filtering options")
@@ -79,7 +79,7 @@ class FindUnusedCodeToolTest {
     // ========== Semantic-grade tests (exact-content assertions) ==========
 
     @Test
-    @DisplayName("UnusedCode.java: detects unusedField, unusedStringField, unusedPrivateMethod, unusedPrivateMethodWithReturn")
+    @DisplayName("UnusedCode.java: exactly 4 unused private members with exact kind and 0-based name position")
     void unusedCode_detectsExactUnusedMembers() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", "src/main/java/com/example/UnusedCode.java");
@@ -89,29 +89,25 @@ class FindUnusedCodeToolTest {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> items = (List<Map<String, Object>>) getData(r).get("unusedItems");
 
-        java.util.Set<String> names = items.stream()
-            .map(i -> (String) i.get("name"))
-            .collect(java.util.stream.Collectors.toSet());
+        // Exactly the four declared-unused private members — the exact-set equality
+        // is the isolation oracle: used (usedField/usedPrivateMethod) and non-private
+        // (public/protected/package-private) members are all excluded.
+        assertEquals(4, items.size(), "exactly 4 unused members; got: " + items);
 
-        // Positive: the four declared-unused private members must appear
-        assertTrue(names.contains("unusedField"),
-            "unusedField (private, never read) must be reported; got: " + names);
-        assertTrue(names.contains("unusedStringField"),
-            "unusedStringField (private, never read) must be reported; got: " + names);
-        assertTrue(names.contains("unusedPrivateMethod"),
-            "unusedPrivateMethod (private, never called) must be reported; got: " + names);
-        assertTrue(names.contains("unusedPrivateMethodWithReturn"),
-            "unusedPrivateMethodWithReturn (private, never called) must be reported; got: " + names);
-
-        // Negative (isolation): used members must NOT appear
-        assertFalse(names.contains("usedField"),
-            "usedField is read by usedPrivateMethod — must not be reported as unused");
-        assertFalse(names.contains("usedPrivateMethod"),
-            "usedPrivateMethod is called by publicMethod — must not be reported as unused");
-        assertFalse(names.contains("publicMethod"),
-            "publicMethod is public — must not be flagged as unused (public visibility)");
-        assertFalse(names.contains("publicField"),
-            "publicField is public — must not be flagged as unused");
+        Map<String, List<Object>> byName = new java.util.HashMap<>();
+        for (Map<String, Object> i : items) {
+            byName.put((String) i.get("name"), List.of(
+                i.get("kind"),
+                ((Number) i.get("line")).intValue(),
+                ((Number) i.get("column")).intValue()));
+        }
+        // name -> [kind, 0-based name line, 0-based name column] (tool reports the NAME position)
+        assertEquals(Map.of(
+            "unusedField", List.of("field", 8, 16),
+            "unusedStringField", List.of("field", 11, 19),
+            "unusedPrivateMethod", List.of("method", 22, 17),
+            "unusedPrivateMethodWithReturn", List.of("method", 29, 16)),
+            byName);
     }
 
     // ========== Behavior-matrix coverage ==========
@@ -265,11 +261,8 @@ class FindUnusedCodeToolTest {
             () -> "find_unused_code failed through the envelope: " + payload);
         java.util.Set<String> names = new java.util.TreeSet<>();
         for (JsonNode i : payload.get("data").get("unusedItems")) names.add(i.get("name").asText());
-        assertTrue(names.contains("unusedField") && names.contains("unusedStringField")
-                && names.contains("unusedPrivateMethod") && names.contains("unusedPrivateMethodWithReturn"),
-            "the four unused private members must survive the envelope; got: " + names);
-        assertFalse(names.contains("usedField") || names.contains("usedPrivateMethod")
-                || names.contains("publicMethod") || names.contains("publicField"),
-            "used/public members must NOT be flagged through the envelope; got: " + names);
+        assertEquals(java.util.Set.of("unusedField", "unusedStringField",
+                "unusedPrivateMethod", "unusedPrivateMethodWithReturn"), names,
+            "exactly the four unused private members must survive the envelope; got: " + names);
     }
 }
