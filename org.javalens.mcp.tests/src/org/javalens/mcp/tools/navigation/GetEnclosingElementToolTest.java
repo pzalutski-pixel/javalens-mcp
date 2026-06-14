@@ -168,35 +168,38 @@ class GetEnclosingElementToolTest {
     // ========== Parameter Validation Tests ==========
 
     @Test
-    @DisplayName("Missing or invalid parameters return error")
+    @DisplayName("Missing/negative params -> INVALID_PARAMETER; nonexistent file -> FILE_NOT_FOUND")
     void parameterValidation_returnsErrors() {
-        // Missing filePath
         ObjectNode args1 = objectMapper.createObjectNode();
         args1.put("line", 15);
         args1.put("column", 10);
-        assertFalse(tool.execute(args1).isSuccess());
-        assertNotNull(tool.execute(args1).getError());
+        ToolResponse r1 = tool.execute(args1);
+        assertFalse(r1.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r1.getError().getCode());
 
-        // Negative line
         ObjectNode args2 = objectMapper.createObjectNode();
         args2.put("filePath", calculatorPath);
         args2.put("line", -1);
         args2.put("column", 10);
-        assertFalse(tool.execute(args2).isSuccess());
+        ToolResponse r2 = tool.execute(args2);
+        assertFalse(r2.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r2.getError().getCode());
 
-        // Negative column
         ObjectNode args3 = objectMapper.createObjectNode();
         args3.put("filePath", calculatorPath);
         args3.put("line", 15);
         args3.put("column", -1);
-        assertFalse(tool.execute(args3).isSuccess());
+        ToolResponse r3 = tool.execute(args3);
+        assertFalse(r3.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r3.getError().getCode());
 
-        // File not found
         ObjectNode args4 = objectMapper.createObjectNode();
         args4.put("filePath", "/nonexistent/path/File.java");
         args4.put("line", 0);
         args4.put("column", 0);
-        assertFalse(tool.execute(args4).isSuccess());
+        ToolResponse r4 = tool.execute(args4);
+        assertFalse(r4.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.FILE_NOT_FOUND, r4.getError().getCode());
     }
 
     // ========== Behavior-matrix coverage ==========
@@ -294,23 +297,23 @@ class GetEnclosingElementToolTest {
         // Position inside HelloWorld constructor body. Find `this.greeting = ` line.
         String source = java.nio.file.Files.readString(java.nio.file.Path.of(helloPath));
         int idx = source.indexOf("this.greeting");
-        if (idx > 0) {
-            int line = (int) source.substring(0, idx).chars().filter(c -> c == '\n').count();
-            int lineStart = source.lastIndexOf('\n', idx) + 1;
-            int column = idx - lineStart;
-            ObjectNode args = objectMapper.createObjectNode();
-            args.put("filePath", helloPath);
-            args.put("line", line);
-            args.put("column", column);
+        // Require the precondition (no vacuous silent-pass if the fixture changes).
+        assertTrue(idx > 0, "HelloWorld must contain `this.greeting`");
+        int line = (int) source.substring(0, idx).chars().filter(c -> c == '\n').count();
+        int lineStart = source.lastIndexOf('\n', idx) + 1;
+        int column = idx - lineStart;
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", helloPath);
+        args.put("line", line);
+        args.put("column", column);
 
-            ToolResponse r = tool.execute(args);
-            assertTrue(r.isSuccess());
-            Map<String, Object> enclosingMethod = (Map<String, Object>) getData(r).get("enclosingMethod");
-            assertNotNull(enclosingMethod);
-            assertEquals("HelloWorld", enclosingMethod.get("name"));
-            assertEquals(Boolean.TRUE, enclosingMethod.get("isConstructor"),
-                "Inside a constructor, isConstructor must be true; got: " + enclosingMethod);
-        }
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> enclosingMethod = (Map<String, Object>) getData(r).get("enclosingMethod");
+        assertNotNull(enclosingMethod);
+        assertEquals("HelloWorld", enclosingMethod.get("name"));
+        assertEquals(Boolean.TRUE, enclosingMethod.get("isConstructor"),
+            "Inside a constructor, isConstructor must be true; got: " + enclosingMethod);
     }
 
     @Test

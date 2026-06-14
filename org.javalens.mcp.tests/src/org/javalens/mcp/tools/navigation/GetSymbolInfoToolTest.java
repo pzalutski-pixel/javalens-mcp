@@ -146,43 +146,46 @@ class GetSymbolInfoToolTest {
     // ========== Parameter Validation Tests ==========
 
     @Test
-    @DisplayName("Missing or invalid parameters return error")
+    @DisplayName("Missing filePath / negative line / negative column all rejected with INVALID_PARAMETER")
     void parameterValidation_returnsErrors() {
-        // Missing filePath
         ObjectNode args1 = objectMapper.createObjectNode();
         args1.put("line", 5);
         args1.put("column", 10);
-        assertFalse(tool.execute(args1).isSuccess());
-        assertNotNull(tool.execute(args1).getError());
+        ToolResponse r1 = tool.execute(args1);
+        assertFalse(r1.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r1.getError().getCode());
 
-        // Negative line
         ObjectNode args2 = objectMapper.createObjectNode();
         args2.put("filePath", calculatorPath);
         args2.put("line", -1);
         args2.put("column", 10);
-        assertFalse(tool.execute(args2).isSuccess());
+        ToolResponse r2 = tool.execute(args2);
+        assertFalse(r2.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r2.getError().getCode());
 
-        // Negative column
         ObjectNode args3 = objectMapper.createObjectNode();
         args3.put("filePath", calculatorPath);
         args3.put("line", 5);
         args3.put("column", -1);
-        assertFalse(tool.execute(args3).isSuccess());
+        ToolResponse r3 = tool.execute(args3);
+        assertFalse(r3.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r3.getError().getCode());
     }
 
     // ========== Edge Case Tests ==========
 
     @Test
-    @DisplayName("Position with no symbol handles gracefully")
+    @DisplayName("Position on a blank line (no symbol) returns SYMBOL_NOT_FOUND")
     void positionWithNoSymbol_handlesGracefully() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", calculatorPath);
-        args.put("line", 0);
+        args.put("line", 1);  // blank line between package and Javadoc
         args.put("column", 0);
 
         ToolResponse response = tool.execute(args);
 
-        assertNotNull(response);
+        assertFalse(response.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.SYMBOL_NOT_FOUND, response.getError().getCode());
     }
 
     // ========== Behavior-matrix coverage ==========
