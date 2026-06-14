@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.analysis;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.FindAffectedTestsTool;
@@ -30,6 +32,7 @@ class FindAffectedTestsToolTest {
 
     private JdtServiceImpl service;
     private FindAffectedTestsTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
     private Path projectPath;
 
@@ -37,6 +40,7 @@ class FindAffectedTestsToolTest {
     void setUp() throws Exception {
         service = helper.loadProject("reachability-maven");
         tool = new FindAffectedTestsTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
         projectPath = helper.getFixturePath("reachability-maven");
     }
@@ -256,5 +260,31 @@ class FindAffectedTestsToolTest {
         ToolResponse r = unloaded.execute(objectMapper.createObjectNode());
         assertFalse(r.isSuccess());
         assertEquals("PROJECT_NOT_LOADED", r.getError().getCode());
+    }
+
+    // ========== MCP envelope seam (real registerTools() wiring through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real registerTools() wiring: onlyFromTest's direct + transitive covering tests survive the envelope")
+    void envelope_directAndTransitiveCoverage() {
+        ObjectNode args = envelope.args();
+        args.put("filePath", projectPath.resolve("src/main/java/com/reach/TestedOnly.java").toString());
+        args.put("line", 8);    // 0-based: onlyFromTest
+        args.put("column", 16);
+        JsonNode payload = envelope.payload("find_affected_tests", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "find_affected_tests failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertEquals("onlyFromTest", data.get("symbol").asText());
+        assertEquals(2, data.get("testMethodCount").asInt(), "direct + transitive covering tests through the envelope");
+        JsonNode tests = data.get("testMethods");
+        assertEquals(2, tests.size());
+        assertEquals("doublesInput", tests.get(0).get("methodName").asText(), "direct covering test through the envelope");
+        assertEquals("viaHelper", tests.get(1).get("methodName").asText(), "transitive covering test through the envelope");
+        for (JsonNode t : tests) {
+            assertNotEquals("helper", t.get("methodName").asText(),
+                "the non-test helper must not surface through the envelope; got: " + t);
+        }
     }
 }
