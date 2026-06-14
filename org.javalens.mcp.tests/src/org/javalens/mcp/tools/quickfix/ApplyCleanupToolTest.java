@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.quickfix;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.ApplyCleanupTool;
@@ -28,6 +30,7 @@ class ApplyCleanupToolTest {
     TestProjectHelper helper = new TestProjectHelper();
 
     private ApplyCleanupTool tool;
+    private EnvelopeHarness envelope;
     private String loopDemoPath;
     private String flexibleCtorPath;
     private ObjectMapper mapper;
@@ -36,6 +39,7 @@ class ApplyCleanupToolTest {
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("java25-maven");
         tool = new ApplyCleanupTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         loopDemoPath = helper.getFixturePath("java25-maven")
             .resolve("src/main/java/com/example/LoopDemo.java").toString();
         flexibleCtorPath = helper.getFixturePath("java25-maven")
@@ -89,5 +93,28 @@ class ApplyCleanupToolTest {
         args.put("filePath", loopDemoPath);
         args.put("cleanupId", "no_such_cleanup");
         assertFalse(tool.execute(args).isSuccess());
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: convert_loops rewrites the indexed loop as an enhanced for over nums")
+    void envelope_convertLoops_rewritesIndexedForLoop() {
+        ObjectNode args = envelope.args();
+        args.put("filePath", loopDemoPath);
+        args.put("cleanupId", "convert_loops");
+        JsonNode payload = envelope.payload("apply_cleanup", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "apply_cleanup failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertTrue(data.get("changed").asBoolean(), "the indexed loop is convertible through the envelope");
+        String source = data.get("source").asText();
+        assertTrue(source.contains(" : nums)"),
+            "rewritten source must contain an enhanced for over nums through the envelope; got:\n" + source);
+        assertFalse(source.contains("nums.get(i)"),
+            "the index access must be gone after conversion through the envelope; got:\n" + source);
+        assertFalse(source.contains("i < nums.size()"),
+            "the index condition must be gone after conversion through the envelope; got:\n" + source);
     }
 }
