@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.quickfix;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.DiagnoseAndFixTool;
@@ -29,6 +31,7 @@ class DiagnoseAndFixToolTest {
     TestProjectHelper helper = new TestProjectHelper();
 
     private DiagnoseAndFixTool tool;
+    private EnvelopeHarness envelope;
     private String demoPath;
     private ObjectMapper mapper;
 
@@ -36,6 +39,7 @@ class DiagnoseAndFixToolTest {
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("java25-maven");
         tool = new DiagnoseAndFixTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         demoPath = helper.getFixturePath("java25-maven")
             .resolve("src/main/java/com/example/DiagnoseFixDemo.java").toString();
         mapper = new ObjectMapper();
@@ -117,5 +121,29 @@ class DiagnoseAndFixToolTest {
         ObjectNode unknown = mapper.createObjectNode();
         unknown.put("filePath", "/nonexistent/Nope.java");
         assertFalse(tool.execute(unknown).isSuccess());
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: the unused Map import and its remove_import edit arrive in one response")
+    void envelope_unusedImport_problemAndEditCombined() {
+        ObjectNode args = envelope.args();
+        args.put("filePath", demoPath);
+        JsonNode payload = envelope.payload("diagnose_and_fix", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "diagnose_and_fix failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        JsonNode problems = data.get("problems");
+        assertEquals(1, problems.size(), "exactly the unused-import warning through the envelope");
+        JsonNode problem = problems.get(0);
+        assertTrue(problem.get("message").asText().contains("java.util.Map"),
+            "the problem must be the unused Map import through the envelope; got: " + problem);
+        assertTrue(problem.get("fixId").asText().startsWith("remove_import"),
+            "the chosen fix must be remove_import through the envelope; got: " + problem);
+        assertEquals(1, data.get("editsByFile").size(),
+            "edits for exactly the diagnosed file through the envelope; got: " + data.get("editsByFile"));
+        assertTrue(data.get("totalEdits").asInt() >= 1, "at least one edit through the envelope");
     }
 }
