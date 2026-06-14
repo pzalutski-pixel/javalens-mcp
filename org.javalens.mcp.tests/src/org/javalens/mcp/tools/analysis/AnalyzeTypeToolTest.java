@@ -81,19 +81,18 @@ class AnalyzeTypeToolTest {
         assertFalse(hierarchy.containsKey("interfaces"),
             "Calculator implements no interfaces; key must be absent; got: " + hierarchy);
 
-        // Usages — Calculator is instantiated in fixtures (SearchPatterns.createObjects,
-        // SearchPatterns.InnerClass.createCalculator, and others). Cross-tool intent:
-        // analyze_type's usage summary must be consistent with the find_* tools, so
-        // instantiations must be > 0.
+        // Usages — exact per-category counts (same SearchService engine as
+        // get_type_usage_summary and the find_* tools): 5 `new Calculator()`
+        // (SearchPatterns x3, UserService, SampleTest), 1 cast, 2 instanceof checks,
+        // 2 `List<Calculator>` type arguments. The TypeKindsFixture @see is a type
+        // reference, not a usage in any category.
         Map<String, Object> usages = (Map<String, Object>) data.get("usages");
         assertNotNull(usages);
-        int instantiations = ((Number) usages.get("instantiations")).intValue();
-        assertTrue(instantiations > 0,
-            "Calculator is instantiated in SearchPatterns and other fixtures; instantiations must be > 0; got: "
-                + usages);
-        int total = ((Number) usages.get("total")).intValue();
-        assertTrue(total >= instantiations,
-            "usages.total must include instantiations; got: " + usages);
+        assertEquals(5, ((Number) usages.get("instantiations")).intValue());
+        assertEquals(1, ((Number) usages.get("casts")).intValue());
+        assertEquals(2, ((Number) usages.get("instanceofChecks")).intValue());
+        assertEquals(2, ((Number) usages.get("typeArguments")).intValue());
+        assertEquals(10, ((Number) usages.get("total")).intValue());
     }
 
     @Test @DisplayName("finds type by simple name")
@@ -118,20 +117,31 @@ class AnalyzeTypeToolTest {
         assertNull(getData(tool.execute(args)).get("usages"));
     }
 
-    @Test @DisplayName("requires typeName")
+    @Test @DisplayName("missing typeName -> exact INVALID_PARAMETER")
     void requiresTypeName() {
-        assertFalse(tool.execute(objectMapper.createObjectNode()).isSuccess());
+        ToolResponse r = tool.execute(objectMapper.createObjectNode());
+        assertFalse(r.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r.getError().getCode());
+        assertEquals("Invalid parameter 'typeName': Required parameter missing", r.getError().getMessage());
     }
 
-    @Test @DisplayName("handles invalid inputs")
+    @Test @DisplayName("unknown type -> SYMBOL_NOT_FOUND; empty typeName -> INVALID_PARAMETER")
     void handlesInvalidInputs() {
         ObjectNode unknown = objectMapper.createObjectNode();
         unknown.put("typeName", "com.nonexistent.Type");
-        assertFalse(tool.execute(unknown).isSuccess());
+        ToolResponse unknownResp = tool.execute(unknown);
+        assertFalse(unknownResp.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.SYMBOL_NOT_FOUND, unknownResp.getError().getCode());
+        assertEquals("Symbol not found: Type not found: com.nonexistent.Type",
+            unknownResp.getError().getMessage());
 
         ObjectNode empty = objectMapper.createObjectNode();
         empty.put("typeName", "");
-        assertFalse(tool.execute(empty).isSuccess());
+        ToolResponse emptyResp = tool.execute(empty);
+        assertFalse(emptyResp.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, emptyResp.getError().getCode());
+        assertEquals("Invalid parameter 'typeName': Required parameter missing",
+            emptyResp.getError().getMessage());
     }
 
     // ========== Behavior-matrix coverage ==========
@@ -150,7 +160,7 @@ class AnalyzeTypeToolTest {
     }
 
     @Test
-    @DisplayName("FilledCircle has interface dependency in hierarchy.interfaces")
+    @DisplayName("FilledCircle hierarchy.interfaces is exactly [IFillable]")
     @SuppressWarnings("unchecked")
     void filledCircle_hierarchyInterfaces() {
         ObjectNode args = objectMapper.createObjectNode();
@@ -158,9 +168,14 @@ class AnalyzeTypeToolTest {
         ToolResponse r = tool.execute(args);
         assertTrue(r.isSuccess());
         Map<String, Object> hierarchy = (Map<String, Object>) getData(r).get("hierarchy");
-        // FilledCircle implements IFillable (which extends IShape).
-        assertNotNull(hierarchy.get("interfaces"),
+        List<Map<String, Object>> interfaces = (List<Map<String, Object>>) hierarchy.get("interfaces");
+        assertNotNull(interfaces,
             "FilledCircle must have an `interfaces` entry in hierarchy; got: " + hierarchy);
+        // getSuperInterfaces returns the DIRECT interface only: IFillable (which itself extends IShape).
+        assertEquals(1, interfaces.size(),
+            "FilledCircle implements exactly one interface directly; got: " + interfaces);
+        assertEquals("IFillable", interfaces.get(0).get("name"));
+        assertEquals("com.example.IFillable", interfaces.get(0).get("qualifiedName"));
     }
 
     @Test
