@@ -85,7 +85,7 @@ class AnalyzeMethodToolTest {
         assertNotNull(data.get("overrides"), "overrides field missing (may be null/empty marker)");
     }
 
-    @Test @DisplayName("respects max limits")
+    @Test @DisplayName("maxCallers caps the callers list to exactly the limit")
     void respectsMaxLimits() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", calculatorPath);
@@ -101,46 +101,64 @@ class AnalyzeMethodToolTest {
         Map<String, Object> callers = (Map<String, Object>) getData(r).get("callers");
         @SuppressWarnings("unchecked")
         List<?> callerList = (List<?>) callers.get("list");
-        assertTrue(callerList.size() <= 1);
+        // Calculator.add has 4 distinct callers; maxCallers=1 caps the list to exactly 1.
+        assertEquals(1, callerList.size());
+        assertEquals(1, ((Number) callers.get("count")).intValue());
     }
 
-    @Test @DisplayName("requires filePath, line, column")
+    @Test @DisplayName("missing filePath/line/column each yield exact INVALID_PARAMETER")
     void requiresParameters() {
-        assertFalse(tool.execute(objectMapper.createObjectNode()).isSuccess());
+        ToolResponse noFile = tool.execute(objectMapper.createObjectNode());
+        assertFalse(noFile.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, noFile.getError().getCode());
+        assertEquals("Invalid parameter 'filePath': Required parameter missing",
+            noFile.getError().getMessage());
 
         ObjectNode noLine = objectMapper.createObjectNode();
         noLine.put("filePath", calculatorPath);
         noLine.put("column", 15);
-        assertFalse(tool.execute(noLine).isSuccess());
+        ToolResponse noLineResp = tool.execute(noLine);
+        assertFalse(noLineResp.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, noLineResp.getError().getCode());
+        assertEquals("Invalid parameter 'line': Must be >= 0 (zero-based)", noLineResp.getError().getMessage());
 
         ObjectNode noColumn = objectMapper.createObjectNode();
         noColumn.put("filePath", calculatorPath);
         noColumn.put("line", 14);
-        assertFalse(tool.execute(noColumn).isSuccess());
+        ToolResponse noColumnResp = tool.execute(noColumn);
+        assertFalse(noColumnResp.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, noColumnResp.getError().getCode());
+        assertEquals("Invalid parameter 'column': Must be >= 0 (zero-based)", noColumnResp.getError().getMessage());
     }
 
-    @Test @DisplayName("handles invalid inputs")
+    @Test @DisplayName("non-existent file -> FILE_NOT_FOUND; non-method position -> INVALID_PARAMETER")
     void handlesInvalidInputs() {
-        // Non-existent file
         ObjectNode badFile = objectMapper.createObjectNode();
         badFile.put("filePath", "/nonexistent/File.java");
         badFile.put("line", 14);
         badFile.put("column", 15);
-        assertFalse(tool.execute(badFile).isSuccess());
+        ToolResponse badFileResp = tool.execute(badFile);
+        assertFalse(badFileResp.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.FILE_NOT_FOUND, badFileResp.getError().getCode());
+        assertEquals("File not found: /nonexistent/File.java", badFileResp.getError().getMessage());
 
-        // Position not on method
+        // Line 0 col 0 is the package declaration — not a method.
         ObjectNode notMethod = objectMapper.createObjectNode();
         notMethod.put("filePath", calculatorPath);
         notMethod.put("line", 0);
         notMethod.put("column", 0);
-        assertFalse(tool.execute(notMethod).isSuccess());
+        ToolResponse notMethodResp = tool.execute(notMethod);
+        assertFalse(notMethodResp.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, notMethodResp.getError().getCode());
+        assertEquals("Invalid parameter 'position': Position is not on a method",
+            notMethodResp.getError().getMessage());
     }
 
     // ========== Semantic-grade tests ==========
 
     @Test
-    @DisplayName("Calculator.add aggregate: callers include UserService and SearchPatterns files")
-    void calculatorAdd_callersIncludeKnownInvokers() {
+    @DisplayName("Calculator.add aggregate: exact caller file set and count")
+    void calculatorAdd_callersExactFilesAndCount() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", calculatorPath);
         args.put("line", 14);
@@ -155,18 +173,19 @@ class AnalyzeMethodToolTest {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> list = (List<Map<String, Object>>) callers.get("list");
 
+        // 4 distinct enclosing methods invoke Calculator.add: SampleTest.testAddition,
+        // SearchPatterns.createObjects, SearchPatterns.performCasts, UserService.calculateSum.
+        assertEquals(4, ((Number) callers.get("count")).intValue());
+        assertEquals(4, list.size());
+
         // AnalyzeMethodTool emits the per-caller file as `file` (not `filePath`).
         java.util.Set<String> callerFiles = list.stream()
             .map(c -> (String) c.get("file"))
-            .filter(java.util.Objects::nonNull)
             .map(s -> s.replace('\\', '/'))
             .map(s -> s.substring(s.lastIndexOf('/') + 1))
             .collect(java.util.stream.Collectors.toSet());
-
-        assertTrue(callerFiles.contains("UserService.java"),
-            "UserService.calculateTotal calls Calculator.add — analyze_method aggregate must surface it; got: " + callerFiles);
-        assertTrue(callerFiles.contains("SearchPatterns.java"),
-            "SearchPatterns.createObjects calls Calculator.add — analyze_method aggregate must surface it; got: " + callerFiles);
+        assertEquals(java.util.Set.of("SampleTest.java", "SearchPatterns.java", "UserService.java"),
+            callerFiles);
     }
 
     // ========== Behavior-matrix coverage ==========
@@ -230,8 +249,8 @@ class AnalyzeMethodToolTest {
     }
 
     @Test
-    @DisplayName("callees block present; entries reference target methods")
-    void calleesBlock_present() {
+    @DisplayName("Calculator.add calls nothing: callees list is empty with count 0")
+    void calculatorAdd_calleesEmpty() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", calculatorPath);
         args.put("line", 14);
@@ -240,20 +259,60 @@ class AnalyzeMethodToolTest {
         assertTrue(r.isSuccess());
         @SuppressWarnings("unchecked")
         Map<String, Object> callees = (Map<String, Object>) getData(r).get("callees");
-        assertNotNull(callees);
-        assertNotNull(callees.get("list"));
+        @SuppressWarnings("unchecked")
+        List<?> list = (List<?>) callees.get("list");
+        // add's body (lastResult = a + b; return lastResult;) invokes no methods or constructors.
+        assertEquals(0, list.size());
+        assertEquals(0, ((Number) callees.get("count")).intValue());
     }
 
     @Test
-    @DisplayName("overrides block present (may be empty for top-level methods)")
-    void overridesBlock_present() {
+    @DisplayName("Dog.speak override info: overrides Animal.speak with exact super coordinates")
+    @SuppressWarnings("unchecked")
+    void dogSpeak_overridesSuperMethod() {
+        String animalPath = helper.getFixturePath("simple-maven")
+            .resolve("src/main/java/com/example/Animal.java").toString();
         ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", calculatorPath);
-        args.put("line", 14);
-        args.put("column", 15);
+        args.put("filePath", animalPath);
+        args.put("line", 22);   // Dog.speak (0-based); col 16 = "speak"
+        args.put("column", 16);
+
         ToolResponse r = tool.execute(args);
-        assertTrue(r.isSuccess());
-        assertNotNull(getData(r).get("overrides"));
+        assertTrue(r.isSuccess(), () -> "Dog.speak must resolve; got: " + r.getError());
+        Map<String, Object> overrides = (Map<String, Object>) getData(r).get("overrides");
+        Map<String, Object> superInfo = (Map<String, Object>) overrides.get("overrides");
+        assertNotNull(superInfo, "Dog.speak overrides Animal.speak; super info missing; got: " + overrides);
+        assertEquals("speak", superInfo.get("method"));
+        assertEquals("Animal", superInfo.get("type"));
+        assertEquals("com.example.Animal", superInfo.get("qualifiedType"));
+        // Dog.speak is not itself overridden.
+        assertFalse(overrides.containsKey("overriddenBy"),
+            "Dog.speak has no overriders; got: " + overrides);
+    }
+
+    @Test
+    @DisplayName("Animal.speak override info: overriddenBy lists Dog.speak, no super method")
+    @SuppressWarnings("unchecked")
+    void animalSpeak_overriddenByDog() {
+        String animalPath = helper.getFixturePath("simple-maven")
+            .resolve("src/main/java/com/example/Animal.java").toString();
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", animalPath);
+        args.put("line", 7);    // Animal.speak (0-based); col 16 = "speak"
+        args.put("column", 16);
+
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess(), () -> "Animal.speak must resolve; got: " + r.getError());
+        Map<String, Object> overrides = (Map<String, Object>) getData(r).get("overrides");
+        // Animal declares no explicit superclass -> no super method.
+        assertFalse(overrides.containsKey("overrides"),
+            "Animal.speak overrides nothing; got: " + overrides);
+        List<Map<String, Object>> overriddenBy = (List<Map<String, Object>>) overrides.get("overriddenBy");
+        assertNotNull(overriddenBy, "Animal.speak is overridden by Dog.speak; got: " + overrides);
+        assertEquals(1, overriddenBy.size());
+        assertEquals("speak", overriddenBy.get(0).get("method"));
+        assertEquals("Dog", overriddenBy.get(0).get("type"));
+        assertEquals("com.example.Dog", overriddenBy.get(0).get("qualifiedType"));
     }
 
     // ========== T-2 cross-tool consistency ==========
