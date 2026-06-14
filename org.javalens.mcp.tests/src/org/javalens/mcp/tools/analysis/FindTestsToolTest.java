@@ -115,17 +115,14 @@ class FindTestsToolTest {
             .map(tm -> (String) tm.get("name"))
             .collect(java.util.stream.Collectors.toSet());
 
-        // SampleTest declares: testAddition, testSubtraction, testMultiplication,
-        // testDivision (disabled), anotherDisabledTest (disabled), testWithCustomDisplayName.
-        // Non-test helpers (helperMethod, privateHelper) must NOT appear.
-        assertTrue(methodNames.contains("testAddition"));
-        assertTrue(methodNames.contains("testSubtraction"));
-        assertTrue(methodNames.contains("testMultiplication"));
-        assertTrue(methodNames.contains("testWithCustomDisplayName"));
-        assertFalse(methodNames.contains("helperMethod"),
-            "helperMethod has no @Test annotation; must not appear");
-        assertFalse(methodNames.contains("privateHelper"),
-            "privateHelper is not a test; must not appear");
+        // SampleTest's @Test/@ParameterizedTest/@TestFactory methods, EXCLUDING the two
+        // @Disabled methods (testDivision, anotherDisabledTest) by default. Non-test
+        // helpers (helperMethod, privateHelper) and the @Nested group's own methods
+        // are excluded — the exact set is the isolation oracle.
+        assertEquals(java.util.Set.of(
+            "testAddition", "testSubtraction", "testMultiplication",
+            "testWithCustomDisplayName", "testParameterized", "dynamicTestsFromFactory"),
+            methodNames);
     }
 
     @Test
@@ -255,11 +252,9 @@ class FindTestsToolTest {
             .map(m -> (String) m.get("name"))
             .collect(java.util.stream.Collectors.toSet());
 
-        // testIgnored is excluded by default (includeDisabled=false). testAddition and
-        // testSubtraction must be present.
-        assertTrue(names.contains("testAddition"));
-        assertTrue(names.contains("testSubtraction"));
-        assertFalse(names.contains("testIgnored"),
+        // testIgnored is excluded by default (includeDisabled=false). The non-ignored
+        // @Test methods are exactly testAddition and testSubtraction.
+        assertEquals(java.util.Set.of("testAddition", "testSubtraction"), names,
             "Junit4 @Ignore tests are filtered by default; got: " + names);
     }
 
@@ -381,8 +376,8 @@ class FindTestsToolTest {
         Map<String, Object> custom = methods.stream()
             .filter(m -> "testWithCustomDisplayName".equals(m.get("name")))
             .findFirst().orElseThrow();
-        assertNotNull(custom.get("displayName"),
-            "testWithCustomDisplayName must carry its @DisplayName value; got: " + custom);
+        assertEquals("Custom display name for this test", custom.get("displayName"),
+            "testWithCustomDisplayName must carry its exact @DisplayName value; got: " + custom);
     }
 
     // ========== MCP envelope seam (exact authored values through processMessage) ==========
