@@ -71,23 +71,15 @@ class OrganizeImportsToolTest {
         String fp = (String) data.get("filePath");
         assertNotNull(fp, "filePath missing");
         assertTrue(fp.endsWith(".java"), "filePath ends with .java; got: " + fp);
-        assertTrue(((Number) data.get("totalImports")).intValue() >= 0,
-            "totalImports >= 0; got: " + data);
-        assertTrue(((Number) data.get("usedImports")).intValue() >= 0,
-            "usedImports >= 0; got: " + data);
-        assertTrue(data.get("hasChanges") instanceof Boolean,
-            "hasChanges must be Boolean; got: " + data);
+        // RefactoringTarget imports 5 (List + ArrayList/Map/HashMap/IOException); only List used.
+        assertEquals(5, ((Number) data.get("totalImports")).intValue());
+        assertEquals(1, ((Number) data.get("usedImports")).intValue());
+        assertEquals(Boolean.TRUE, data.get("hasChanges"));
 
-        // Verify unused imports detection
-        assertTrue(data.get("unusedImports") instanceof List);
-
-        // Verify organized import block — non-blank string of imports
+        // After organizing, the block is exactly the single surviving import.
         String organizedBlock = (String) data.get("organizedImportBlock");
-        assertNotNull(organizedBlock, "organizedImportBlock missing");
-        // java.* imports should come before other imports
-        if (organizedBlock.contains("java.") && organizedBlock.contains("com.")) {
-            assertTrue(organizedBlock.indexOf("java.") < organizedBlock.indexOf("com."));
-        }
+        assertEquals("import java.util.List;", organizedBlock.strip(),
+            "organized block is the one used import; got: " + organizedBlock);
     }
 
     @Test
@@ -101,15 +93,14 @@ class OrganizeImportsToolTest {
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
 
-        if ((int) data.get("totalImports") > 0) {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> range = (Map<String, Object>) data.get("importRange");
-            assertNotNull(range, "importRange missing when imports exist");
-            int startLine = ((Number) range.get("startLine")).intValue();
-            int endLine = ((Number) range.get("endLine")).intValue();
-            assertTrue(startLine >= 0, "startLine >= 0; got: " + range);
-            assertTrue(endLine >= startLine, "endLine >= startLine; got: " + range);
-        }
+        @SuppressWarnings("unchecked")
+        Map<String, Object> range = (Map<String, Object>) data.get("importRange");
+        assertNotNull(range, "importRange must be present when imports exist");
+        // RefactoringTarget's 5 imports span 0-based lines 2-6 (offsets 24..154).
+        assertEquals(2, ((Number) range.get("startLine")).intValue());
+        assertEquals(6, ((Number) range.get("endLine")).intValue());
+        assertEquals(24, ((Number) range.get("startOffset")).intValue());
+        assertEquals(154, ((Number) range.get("endOffset")).intValue());
     }
 
     @Test
@@ -122,9 +113,9 @@ class OrganizeImportsToolTest {
 
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
-        if ((boolean) data.get("hasChanges")) {
-            assertNotNull(data.get("textEdit"));
-        }
+        // RefactoringTarget has 4 unused imports, so changes ARE needed.
+        assertEquals(Boolean.TRUE, data.get("hasChanges"));
+        assertNotNull(data.get("textEdit"), "textEdit must be present when changes are needed");
     }
 
     // ========== File with No Imports Test ==========
@@ -157,17 +148,11 @@ class OrganizeImportsToolTest {
         // RefactoringTarget imports java.util.{List,ArrayList,Map,HashMap} and java.io.IOException.
         // Only List is used (calculateTotal parameter); the rest are unused.
         List<String> unused = getUnusedImports(data);
-        java.util.Set<String> unusedSet = new java.util.HashSet<>(unused);
-        assertTrue(unusedSet.contains("java.util.ArrayList"),
-            "java.util.ArrayList must be flagged unused; got: " + unused);
-        assertTrue(unusedSet.contains("java.util.Map"),
-            "java.util.Map must be flagged unused; got: " + unused);
-        assertTrue(unusedSet.contains("java.util.HashMap"),
-            "java.util.HashMap must be flagged unused; got: " + unused);
-        assertTrue(unusedSet.contains("java.io.IOException"),
-            "java.io.IOException must be flagged unused; got: " + unused);
-        assertFalse(unusedSet.contains("java.util.List"),
-            "java.util.List is used by calculateTotal — must NOT appear in unused; got: " + unused);
+        // Exactly the four unused; List (used by calculateTotal) is excluded.
+        assertEquals(java.util.Set.of(
+            "java.util.ArrayList", "java.util.Map", "java.util.HashMap", "java.io.IOException"),
+            new java.util.HashSet<>(unused), "got: " + unused);
+        assertEquals(4, unused.size());
     }
 
     // ========== Required Parameter Tests ==========
@@ -181,26 +166,27 @@ class OrganizeImportsToolTest {
 
         assertFalse(response.isSuccess());
         assertEquals("INVALID_PARAMETER", response.getError().getCode());
+        assertEquals("Invalid parameter 'filePath': Required", response.getError().getMessage());
     }
 
     // ========== Error Handling Tests ==========
 
     @Test
-    @DisplayName("rejects empty filePath and non-existent file")
+    @DisplayName("rejects empty filePath (INVALID_PARAMETER) and non-existent file (FILE_NOT_FOUND)")
     void rejectsInvalidFilePaths() {
-        // Test empty file path
         ObjectNode args1 = objectMapper.createObjectNode();
         args1.put("filePath", "");
-
         ToolResponse response1 = tool.execute(args1);
         assertFalse(response1.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response1.getError().getCode());
+        assertEquals("Invalid parameter 'filePath': Required", response1.getError().getMessage());
 
-        // Test non-existent file
         ObjectNode args2 = objectMapper.createObjectNode();
         args2.put("filePath", "non/existent/File.java");
-
         ToolResponse response2 = tool.execute(args2);
         assertFalse(response2.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.FILE_NOT_FOUND, response2.getError().getCode());
+        assertEquals("File not found: non/existent/File.java", response2.getError().getMessage());
     }
 
     // ========== Behavior-matrix coverage ==========
