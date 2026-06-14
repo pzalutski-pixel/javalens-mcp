@@ -64,13 +64,40 @@ class ExtractSuperclassToolTest {
 
         Map<String, Object> data = getData(r);
         assertEquals("LiftBase", data.get("superclassName"));
+        assertEquals("liftable", data.get("memberName"));
+        assertEquals("com.example.hier.HierChild", data.get("fromType"));
+        // The HierChild rewire is a single text edit; the new superclass file is the only
+        // created file.
+        assertEquals(1, ((Number) data.get("totalEdits")).intValue());
+        assertEquals(1, ((Number) data.get("filesAffected")).intValue());
 
         List<Map<String, String>> createdFiles = (List<Map<String, String>>) data.get("createdFiles");
         assertEquals(1, createdFiles.size(),
             "exactly one new file (the superclass); got: " + createdFiles);
-        String content = createdFiles.get(0).get("content");
-        assertTrue(content.contains("class LiftBase") && content.contains("liftable"),
-            "new file must declare LiftBase with the moved member; got:\n" + content);
+        assertEquals("src/main/java/com/example/hier/LiftBase.java",
+            createdFiles.get(0).get("filePath").replace('\\', '/'));
+
+        // Exact JDT extract-supertype output (pinned against the build's target platform);
+        // line endings normalized since the moved body inherits the source file's CRLF
+        // under git autocrlf while JDT generates LF. LiftBase extends HierBase, carries a
+        // default ctor and the moved liftable() (whose body keeps its original 4-space
+        // indent under the generated tab indent).
+        String content = createdFiles.get(0).get("content").replace("\r\n", "\n");
+        assertEquals(
+            "package com.example.hier;\n"
+            + "\n"
+            + "public class LiftBase extends HierBase {\n"
+            + "\n"
+            + "\tpublic LiftBase() {\n"
+            + "\t\tsuper();\n"
+            + "\t}\n"
+            + "\n"
+            + "\tpublic int liftable() {\n"
+            + "\t    return 42;\n"
+            + "\t}\n"
+            + "\n"
+            + "}",
+            content);
 
         Map<String, List<Map<String, Object>>> editsByFile =
             (Map<String, List<Map<String, Object>>>) data.get("editsByFile");
@@ -79,8 +106,8 @@ class ExtractSuperclassToolTest {
             .flatMap(e -> e.getValue().stream())
             .map(e -> String.valueOf(e.get("newText")))
             .reduce("", String::concat);
-        assertTrue(childNew.contains("LiftBase"),
-            "HierChild must be rewired to extend LiftBase; got: " + childNew);
+        // The lone HierChild edit rewires `extends HierBase {` -> `extends LiftBase {`.
+        assertEquals("LiftBase {", childNew);
     }
 
     @Test
@@ -91,13 +118,20 @@ class ExtractSuperclassToolTest {
         badName.put("line", 6);
         badName.put("column", 15);
         badName.put("superclassName", "123Bad");
-        assertFalse(tool.execute(badName).isSuccess());
+        ToolResponse rBad = tool.execute(badName);
+        assertFalse(rBad.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, rBad.getError().getCode());
+        assertEquals("Invalid parameter 'superclassName': Not a valid Java identifier",
+            rBad.getError().getMessage());
 
         ObjectNode noName = mapper.createObjectNode();
         noName.put("filePath", childPath);
         noName.put("line", 6);
         noName.put("column", 15);
-        assertFalse(tool.execute(noName).isSuccess());
+        ToolResponse rNoName = tool.execute(noName);
+        assertFalse(rNoName.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, rNoName.getError().getCode());
+        assertEquals("Invalid parameter 'superclassName': Required", rNoName.getError().getMessage());
     }
 
     // ========== MCP envelope seam (exact authored values through processMessage) ==========
