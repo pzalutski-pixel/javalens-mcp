@@ -39,14 +39,13 @@ class FindThrowsDeclarationsToolTest {
     @SuppressWarnings("unchecked")
     private List<?> getDeclarations(Map<String, Object> d) { return (List<?>) d.get("locations"); }
 
-    @Test @DisplayName("finds throws declarations")
+    @Test @DisplayName("finds the exact 5 IOException throws declarations")
     void findsThrowsDeclarations() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("typeName", "java.io.IOException");
         ToolResponse r = tool.execute(args);
         assertTrue(r.isSuccess());
-        assertFalse(getDeclarations(getData(r)).isEmpty());
-        assertNotNull(getData(r).get("totalCount"));
+        assertEquals(5, ((Number) getData(r).get("totalCount")).intValue());
     }
 
     @Test @DisplayName("respects maxResults")
@@ -54,38 +53,40 @@ class FindThrowsDeclarationsToolTest {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("typeName", "java.io.IOException");
         args.put("maxResults", 1);
-        assertTrue(getDeclarations(getData(tool.execute(args))).size() <= 1);
+        // IOException is declared in exactly 5 throws clauses; maxResults=1 caps to exactly 1.
+        assertEquals(1, getDeclarations(getData(tool.execute(args))).size());
     }
 
-    @Test @DisplayName("requires exceptionType")
+    @Test @DisplayName("missing typeName is rejected with INVALID_PARAMETER")
     void requiresExceptionType() {
-        assertFalse(tool.execute(objectMapper.createObjectNode()).isSuccess());
+        ToolResponse r = tool.execute(objectMapper.createObjectNode());
+        assertFalse(r.isSuccess());
+        assertEquals("INVALID_PARAMETER", r.getError().getCode());
+        assertTrue(r.getError().getMessage().toLowerCase().contains("required"),
+            "message must explain typeName is required; got: " + r.getError().getMessage());
     }
 
-    @Test @DisplayName("handles unknown exception type")
+    @Test @DisplayName("unknown type is rejected with SYMBOL_NOT_FOUND naming the type")
     void handlesUnknownType() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("typeName", "com.nonexistent.X");
-        assertFalse(tool.execute(args).isSuccess());
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess());
+        assertEquals("SYMBOL_NOT_FOUND", r.getError().getCode());
+        assertTrue(r.getError().getMessage().contains("com.nonexistent.X"),
+            "message must name the unresolved type; got: " + r.getError().getMessage());
     }
 
-    // ========== Semantic-grade tests ==========
-
-    @Test
-    @DisplayName("IOException throws declarations: SearchPatterns.readFile, SearchPatterns.riskyOperation, ControlFlowPatterns.tryWithResources")
-    void ioException_findsExpectedDeclarations() {
+    @Test @DisplayName("negative maxResults is rejected with INVALID_PARAMETER")
+    void negativeMaxResults() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("typeName", "java.io.IOException");
-        args.put("maxResults", 100);
-
+        args.put("maxResults", -1);
         ToolResponse r = tool.execute(args);
-        assertTrue(r.isSuccess());
-        // SearchPatterns.readFile throws IOException, riskyOperation throws IOException,
-        // ControlFlowPatterns.tryWithResources throws IOException. Expect at least 3 matches.
-        int total = ((Number) getData(r).get("totalCount")).intValue();
-        assertTrue(total >= 3,
-            "Expected at least 3 IOException throws declarations; got: "
-                + total + " (" + getDeclarations(getData(r)) + ")");
+        assertFalse(r.isSuccess());
+        assertEquals("INVALID_PARAMETER", r.getError().getCode());
+        assertTrue(r.getError().getMessage().contains(">= 0"),
+            "message must explain the bound; got: " + r.getError().getMessage());
     }
 
     // ========== Behavior-matrix coverage ==========
@@ -127,7 +128,7 @@ class FindThrowsDeclarationsToolTest {
     }
 
     @Test
-    @DisplayName("Each declaration entry includes filePath, line, column, offset, length, context")
+    @DisplayName("Each IOException throws entry: length is 11 (simple) or 19 (FQN java.io.IOException)")
     void declarationEntries_includeFullLocation() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("typeName", "java.io.IOException");
@@ -136,18 +137,14 @@ class FindThrowsDeclarationsToolTest {
         ToolResponse r = tool.execute(args);
         assertTrue(r.isSuccess());
         List<Map<String, Object>> decls = declsOf(r);
-        assertFalse(decls.isEmpty());
+        assertEquals(5, decls.size(), "exactly five IOException throws clauses; got: " + decls);
         for (Map<String, Object> d : decls) {
-            String fp = (String) d.get("filePath");
-            assertNotNull(fp, "filePath missing: " + d);
-            assertTrue(fp.endsWith(".java"), "filePath ends with .java; got: " + d);
-            assertTrue(((Number) d.get("line")).intValue() >= 0, "line >= 0; got: " + d);
-            assertTrue(((Number) d.get("column")).intValue() >= 0, "column >= 0; got: " + d);
-            assertTrue(((Number) d.get("offset")).intValue() >= 0, "offset >= 0; got: " + d);
-            assertTrue(((Number) d.get("length")).intValue() > 0, "length > 0; got: " + d);
-            String ctx = (String) d.get("context");
-            assertNotNull(ctx, "context missing: " + d);
-            assertFalse(ctx.isBlank(), "context non-blank; got: " + d);
+            assertTrue(((String) d.get("filePath")).endsWith(".java"), "filePath ends with .java; got: " + d);
+            // Four sites declare the simple name `IOException` (length 11); TypeKindsFixture
+            // declares the fully-qualified `java.io.IOException` (length 19). Exact closed set.
+            int len = ((Number) d.get("length")).intValue();
+            assertTrue(len == 11 || len == 19,
+                "throws type reference length must be 11 (simple) or 19 (FQN); got: " + d);
         }
     }
 

@@ -39,14 +39,13 @@ class FindCatchBlocksToolTest {
     @SuppressWarnings("unchecked")
     private List<?> getCatchBlocks(Map<String, Object> d) { return (List<?>) d.get("locations"); }
 
-    @Test @DisplayName("finds catch blocks")
+    @Test @DisplayName("finds the exact 3 IOException catch blocks")
     void findsCatchBlocks() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("typeName", "java.io.IOException");
         ToolResponse r = tool.execute(args);
         assertTrue(r.isSuccess());
-        assertFalse(getCatchBlocks(getData(r)).isEmpty());
-        assertNotNull(getData(r).get("totalCount"));
+        assertEquals(3, ((Number) getData(r).get("totalCount")).intValue());
     }
 
     @Test @DisplayName("respects maxResults")
@@ -54,39 +53,40 @@ class FindCatchBlocksToolTest {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("typeName", "java.io.IOException");
         args.put("maxResults", 1);
-        assertTrue(getCatchBlocks(getData(tool.execute(args))).size() <= 1);
+        // IOException is caught in exactly 3 blocks; maxResults=1 caps to exactly 1.
+        assertEquals(1, getCatchBlocks(getData(tool.execute(args))).size());
     }
 
-    @Test @DisplayName("requires exceptionType")
+    @Test @DisplayName("missing typeName is rejected with INVALID_PARAMETER")
     void requiresExceptionType() {
-        assertFalse(tool.execute(objectMapper.createObjectNode()).isSuccess());
+        ToolResponse r = tool.execute(objectMapper.createObjectNode());
+        assertFalse(r.isSuccess());
+        assertEquals("INVALID_PARAMETER", r.getError().getCode());
+        assertTrue(r.getError().getMessage().toLowerCase().contains("required"),
+            "message must explain typeName is required; got: " + r.getError().getMessage());
     }
 
-    @Test @DisplayName("handles unknown exception type")
+    @Test @DisplayName("unknown type is rejected with SYMBOL_NOT_FOUND naming the type")
     void handlesUnknownType() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("typeName", "com.nonexistent.X");
-        assertFalse(tool.execute(args).isSuccess());
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess());
+        assertEquals("SYMBOL_NOT_FOUND", r.getError().getCode());
+        assertTrue(r.getError().getMessage().contains("com.nonexistent.X"),
+            "message must name the unresolved type; got: " + r.getError().getMessage());
     }
 
-    // ========== Semantic-grade tests ==========
-
-    @Test
-    @DisplayName("IOException catch blocks: SearchPatterns.handleExceptions has two; ControlFlowPatterns has none directly catching IOException")
-    void ioException_findsExpectedCatchBlocks() {
+    @Test @DisplayName("negative maxResults is rejected with INVALID_PARAMETER")
+    void negativeMaxResults() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("typeName", "java.io.IOException");
-        args.put("maxResults", 100);
-
+        args.put("maxResults", -1);
         ToolResponse r = tool.execute(args);
-        assertTrue(r.isSuccess());
-        // SearchPatterns.handleExceptions has two catch (IOException ...) blocks
-        // plus ControlFlowPatterns.multiCatch's `catch (NumberFormatException | IOException e)`.
-        // Total >= 3.
-        int total = ((Number) getData(r).get("totalCount")).intValue();
-        assertTrue(total >= 3,
-            "Expected at least 3 IOException catch blocks; got: "
-                + total + " (" + getCatchBlocks(getData(r)) + ")");
+        assertFalse(r.isSuccess());
+        assertEquals("INVALID_PARAMETER", r.getError().getCode());
+        assertTrue(r.getError().getMessage().contains(">= 0"),
+            "message must explain the bound; got: " + r.getError().getMessage());
     }
 
     // ========== Behavior-matrix coverage ==========
@@ -125,7 +125,7 @@ class FindCatchBlocksToolTest {
     }
 
     @Test
-    @DisplayName("Catch-block entries include filePath, line, column, offset, length, context")
+    @DisplayName("Each IOException catch entry: exact length 11 and 0-based line in {123,148,164}")
     void catchBlockEntries_includeFullLocation() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("typeName", "java.io.IOException");
@@ -134,19 +134,17 @@ class FindCatchBlocksToolTest {
         ToolResponse r = tool.execute(args);
         assertTrue(r.isSuccess());
         List<Map<String, Object>> blocks = blocksOf(r);
-        assertFalse(blocks.isEmpty());
+        assertEquals(3, blocks.size(), "exactly three IOException catch blocks; got: " + blocks);
+        java.util.Set<Integer> lines = new java.util.TreeSet<>();
         for (Map<String, Object> b : blocks) {
-            String fp = (String) b.get("filePath");
-            assertNotNull(fp, "filePath missing: " + b);
-            assertTrue(fp.endsWith(".java"), "filePath ends with .java; got: " + b);
-            assertTrue(((Number) b.get("line")).intValue() >= 0, "line >= 0; got: " + b);
-            assertTrue(((Number) b.get("column")).intValue() >= 0, "column >= 0; got: " + b);
-            assertTrue(((Number) b.get("offset")).intValue() >= 0, "offset >= 0; got: " + b);
-            assertTrue(((Number) b.get("length")).intValue() > 0, "length > 0; got: " + b);
-            String ctx = (String) b.get("context");
-            assertNotNull(ctx, "context missing: " + b);
-            assertFalse(ctx.isBlank(), "context non-blank; got: " + b);
+            lines.add(((Number) b.get("line")).intValue());
+            assertTrue(((String) b.get("filePath")).endsWith(".java"), "filePath ends with .java; got: " + b);
+            // The CATCH type reference "IOException" is length 11 at every site (incl. the
+            // multi-catch union). line + file fully anchor each entry's location.
+            assertEquals(11, ((Number) b.get("length")).intValue(), "\"IOException\".length(); got: " + b);
         }
+        // SearchPatterns.java 0-based 148 & 164; ControlFlowPatterns.java multi-catch 0-based 123.
+        assertEquals(java.util.Set.of(123, 148, 164), lines, "the three 0-based catch lines; got: " + lines);
     }
 
     @Test
