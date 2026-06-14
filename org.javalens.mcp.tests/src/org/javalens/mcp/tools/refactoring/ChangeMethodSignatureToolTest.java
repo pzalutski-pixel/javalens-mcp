@@ -72,11 +72,15 @@ class ChangeMethodSignatureToolTest {
         Map<String, ?> editsByFile = (Map<String, ?>) data.get("editsByFile");
         assertNotNull(editsByFile, "editsByFile must be present");
         assertFalse(editsByFile.isEmpty(), "renaming a called method must touch at least one file");
-        int totalEdits = ((Number) data.get("totalEdits")).intValue();
         int filesAffected = ((Number) data.get("filesAffected")).intValue();
-        assertTrue(totalEdits > 1, "Declaration + call sites; totalEdits > 1; got: " + data);
-        assertEquals(editsByFile.size(), filesAffected,
-            "filesAffected must equal editsByFile.size(); got: " + data);
+        // Renaming formatMessage -> formatOutput: declaration + 2 call sites, all in
+        // RefactoringTarget.java.
+        assertEquals(3, ((Number) data.get("totalEdits")).intValue());
+        assertEquals(1, filesAffected);
+        assertEquals(editsByFile.size(), filesAffected);
+        assertEquals(java.util.Set.of("src/main/java/com/example/RefactoringTarget.java"),
+            editsByFile.keySet().stream().map(k -> k.replace('\\', '/'))
+                .collect(java.util.stream.Collectors.toSet()));
     }
 
     /**
@@ -239,6 +243,9 @@ class ChangeMethodSignatureToolTest {
         ToolResponse response = tool.execute(args);
 
         assertFalse(response.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response.getError().getCode());
+        assertEquals("Invalid parameter 'changes': At least one of newName, newReturnType, "
+            + "or newParameters must be specified", response.getError().getMessage());
     }
 
     @Test
@@ -252,6 +259,8 @@ class ChangeMethodSignatureToolTest {
         ToolResponse response = tool.execute(args);
 
         assertFalse(response.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response.getError().getCode());
+        assertEquals("Invalid parameter 'filePath': Required", response.getError().getMessage());
     }
 
     // ========== Error Handling Tests ==========
@@ -268,6 +277,8 @@ class ChangeMethodSignatureToolTest {
         ToolResponse response = tool.execute(args);
 
         assertFalse(response.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response.getError().getCode());
+        assertEquals("Invalid parameter 'line/column': Must be >= 0", response.getError().getMessage());
     }
 
     @Test
@@ -282,6 +293,8 @@ class ChangeMethodSignatureToolTest {
         ToolResponse response = tool.execute(args);
 
         assertFalse(response.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.SYMBOL_NOT_FOUND, response.getError().getCode());
+        assertEquals("Symbol not found: No method found at position", response.getError().getMessage());
     }
 
     // ========== Semantic-grade tests (constructor call sites) ==========
@@ -336,8 +349,8 @@ class ChangeMethodSignatureToolTest {
             .filter(e -> e.getKey().replace('\\', '/').endsWith("ConstructorCaller.java"))
             .map(Map.Entry::getValue)
             .findFirst().orElseThrow();
-        assertTrue(callerEdits.size() >= 4,
-            "Expected at least 4 edits in ConstructorCaller.java (one per call site); got: "
+        assertEquals(4, callerEdits.size(),
+            "Exactly 4 edits in ConstructorCaller.java (makeOne + 3 in makeMany); got: "
                 + callerEdits.size() + " edits: " + callerEdits);
 
         // Constructor newSignature must be `Name(params)` with no return-type prefix.
@@ -576,39 +589,29 @@ class ChangeMethodSignatureToolTest {
 
         ToolResponse response = tool.execute(args);
 
-        // Three acceptable shapes; assert at least one of them holds.
-        boolean refusedWithInvalidParam = !response.isSuccess()
-            && response.getError() != null
-            && "INVALID_PARAMETER".equals(response.getError().getCode())
-            && response.getError().getMessage() != null
-            && (response.getError().getMessage().toLowerCase().contains("method reference")
-                || response.getError().getMessage().toLowerCase().contains("methodrefuser"));
+        // The tool's actual contract here is branch (b): it succeeds, edits only the
+        // declaration file, and emits a `warnings` entry naming the reference file that
+        // cannot be auto-updated. It must NOT silently rewrite (or omit) MethodRefUser.
+        assertTrue(response.isSuccess(), () -> "expected success with a warning; got: " + response.getError());
+        Map<String, Object> data = getData(response);
 
-        boolean editsListReferenceFile = false;
-        boolean warningsNameReferenceFile = false;
-        if (response.isSuccess()) {
-            Map<String, Object> data = getData(response);
-            @SuppressWarnings("unchecked")
-            Map<String, List<Map<String, Object>>> editsByFile =
-                (Map<String, List<Map<String, Object>>>) data.get("editsByFile");
-            if (editsByFile != null) {
-                editsListReferenceFile = editsByFile.keySet().stream()
-                    .anyMatch(k -> k.replace('\\', '/').endsWith("MethodRefUser.java"));
-            }
-            Object warningsObj = data.get("warnings");
-            if (warningsObj instanceof List<?> warnings) {
-                warningsNameReferenceFile = warnings.stream()
-                    .anyMatch(w -> w != null && w.toString().contains("MethodRefUser"));
-            }
-        }
+        @SuppressWarnings("unchecked")
+        Map<String, List<Map<String, Object>>> editsByFile =
+            (Map<String, List<Map<String, Object>>>) data.get("editsByFile");
+        boolean editsTouchReferenceFile = editsByFile.keySet().stream()
+            .anyMatch(k -> k.replace('\\', '/').endsWith("MethodRefUser.java"));
+        assertFalse(editsTouchReferenceFile,
+            "MethodRefUser must NOT be auto-edited (the method reference can't be textually "
+                + "rewritten); got: " + editsByFile.keySet());
 
-        assertTrue(refusedWithInvalidParam || editsListReferenceFile || warningsNameReferenceFile,
-            "Adding a parameter to a method that has method-reference call sites must NOT " +
-                "silently succeed. Expected one of: (a) editsByFile lists MethodRefUser.java, " +
-                "(b) data.warnings names MethodRefUser, (c) INVALID_PARAMETER mentioning the " +
-                "reference site. Got success=" + response.isSuccess() +
-                ", error=" + (response.getError() != null ? response.getError().getCode() : "n/a") +
-                ", data=" + (response.isSuccess() ? getData(response).keySet() : "n/a"));
+        @SuppressWarnings("unchecked")
+        List<String> warnings = (List<String>) data.get("warnings");
+        assertEquals(List.of(
+            "src/main/java/com/example/MethodRefUser.java has method-reference call sites that "
+                + "cannot be automatically updated. Replace each with a lambda or refactor the "
+                + "functional-interface signature."),
+            warnings,
+            "exactly one warning naming the un-updatable reference file; got: " + warnings);
     }
 
     @Test
