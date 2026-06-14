@@ -9,4 +9,8 @@ package com.example;
 }
 
 record bad_record(int x) {
+    // Bad_Param violates camelCase — exercises the parameter elementType branch.
+    public int compute(int Bad_Param) {
+        return Bad_Param;
+    }
 }

@@ -41,7 +41,7 @@ class FindNamingViolationsToolTest {
     // ========== Violation Detection Tests ==========
 
     @Test
-    @DisplayName("should find naming violations in file with bad names")
+    @DisplayName("DiAndReflectionPatterns.java: exactly 3 naming violations with exact type/convention/line")
     void findsNamingViolations() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", "src/main/java/com/example/DiAndReflectionPatterns.java");
@@ -50,29 +50,23 @@ class FindNamingViolationsToolTest {
 
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
-        int totalViolations = (int) data.get("totalViolations");
-        assertTrue(totalViolations > 0, "Should find naming violations in DiAndReflectionPatterns.java");
+        assertEquals(3, ((Number) data.get("totalViolations")).intValue());
 
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> violations = (List<Map<String, Object>>) data.get("violations");
-        assertFalse(violations.isEmpty());
+        assertEquals(3, violations.size());
 
-        // Verify violation structure
-        Map<String, Object> firstViolation = violations.get(0);
-        String file = (String) firstViolation.get("file");
-        assertNotNull(file, "Should include file path");
-        assertTrue(file.endsWith(".java"), "file must end with .java; got: " + firstViolation);
-        assertTrue(((Number) firstViolation.get("line")).intValue() >= 0,
-            "line must be >= 0; got: " + firstViolation);
-        String elementType = (String) firstViolation.get("elementType");
-        assertNotNull(elementType, "Should include element type");
-        assertFalse(elementType.isBlank(), "elementType non-blank; got: " + firstViolation);
-        String name = (String) firstViolation.get("name");
-        assertNotNull(name, "Should include the name");
-        assertFalse(name.isBlank(), "name non-blank; got: " + firstViolation);
-        String convention = (String) firstViolation.get("convention");
-        assertNotNull(convention, "Should include expected convention");
-        assertFalse(convention.isBlank(), "convention non-blank; got: " + firstViolation);
+        Map<String, List<Object>> byName = new java.util.HashMap<>();
+        for (Map<String, Object> v : violations) {
+            byName.put((String) v.get("name"), List.of(
+                v.get("elementType"), v.get("convention"), ((Number) v.get("line")).intValue()));
+        }
+        // name -> [elementType, convention, 0-based decl line] — exact set is the isolation oracle.
+        assertEquals(Map.of(
+            "Bad_Field_Name", List.of("field", "camelCase", 12),
+            "badConstant", List.of("constant", "UPPER_SNAKE_CASE", 15),
+            "Bad_Method_Name", List.of("method", "camelCase", 92)),
+            byName);
     }
 
     @Test
@@ -236,6 +230,22 @@ class FindNamingViolationsToolTest {
                 && "PascalCase".equals(v.get("convention")));
         assertTrue(found,
             "bad_annotation must be flagged as an annotation-type naming violation; got: " + violationsOf(r));
+    }
+
+    @Test
+    @DisplayName("Badly-named method parameter is flagged with elementType=parameter, convention=camelCase")
+    void parameterDeclaration_isChecked() {
+        // bad_record.compute(int Bad_Param) — the parameter Bad_Param violates camelCase.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", "src/main/java/com/example/NamingViolationFixtures.java");
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> v = violationsOf(r).stream()
+            .filter(x -> "Bad_Param".equals(x.get("name")))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("Bad_Param parameter must be flagged; got: " + violationsOf(r)));
+        assertEquals("parameter", v.get("elementType"));
+        assertEquals("camelCase", v.get("convention"));
     }
 
     @Test
