@@ -37,33 +37,42 @@ class FindCircularDependenciesToolTest {
     @SuppressWarnings("unchecked")
     private Map<String, Object> getData(ToolResponse r) { return (Map<String, Object>) r.getData(); }
 
-    @Test @DisplayName("detects cycles comprehensively")
+    @Test @DisplayName("project-wide: hasCycles=true, exactly 2 cycles, counts consistent")
     void detectsCyclesComprehensively() {
         ToolResponse r = tool.execute(objectMapper.createObjectNode());
 
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
-        assertTrue(data.get("hasCycles") instanceof Boolean,
-            "hasCycles must be Boolean; got: " + data);
-        int cycleCount = ((Number) data.get("cycleCount")).intValue();
-        assertTrue(cycleCount >= 0, "cycleCount >= 0; got: " + data);
+        assertEquals(true, data.get("hasCycles"));
+        // cycledemo (a<->b) + staticcycle (x<->y).
+        assertEquals(2, ((Number) data.get("cycleCount")).intValue());
         @SuppressWarnings("unchecked")
         List<?> cycles = (List<?>) data.get("cycles");
-        assertNotNull(cycles, "cycles list missing");
-        assertEquals(cycleCount, cycles.size(),
-            "cycleCount must equal cycles list size; got: " + data);
+        assertEquals(2, cycles.size(), "cycleCount must equal cycles list size; got: " + data);
         assertNotNull(data.get("affectedPackages"), "affectedPackages missing");
     }
 
-    @Test @DisplayName("supports filtering options")
-    void supportsFilteringOptions() {
-        ObjectNode withFilter = objectMapper.createObjectNode();
-        withFilter.put("packageFilter", "com.example");
-        assertTrue(tool.execute(withFilter).isSuccess());
+    @Test @DisplayName("maxCycleLength excludes cycles longer than the limit (tricycle length 3)")
+    void maxCycleLength_filtersOutLongerCycles() throws Exception {
+        // tricycle-maven has a single 3-package SCC (a->b->c->a). The tool filters SCCs
+        // to those with size <= maxCycleLength.
+        JdtServiceImpl triService = helper.loadProject("tricycle-maven");
+        FindCircularDependenciesTool triTool = new FindCircularDependenciesTool(() -> triService);
 
-        ObjectNode withMaxLength = objectMapper.createObjectNode();
-        withMaxLength.put("maxCycleLength", 5);
-        assertTrue(tool.execute(withMaxLength).isSuccess());
+        // maxCycleLength=2 -> the length-3 cycle is filtered out.
+        ObjectNode tooShort = objectMapper.createObjectNode();
+        tooShort.put("maxCycleLength", 2);
+        Map<String, Object> shortData = getData(triTool.execute(tooShort));
+        assertEquals(false, shortData.get("hasCycles"),
+            "a length-3 cycle must be excluded when maxCycleLength=2; got: " + shortData);
+        assertEquals(0, ((Number) shortData.get("cycleCount")).intValue());
+
+        // maxCycleLength=3 -> the cycle is included.
+        ObjectNode justRight = objectMapper.createObjectNode();
+        justRight.put("maxCycleLength", 3);
+        Map<String, Object> okData = getData(triTool.execute(justRight));
+        assertEquals(true, okData.get("hasCycles"));
+        assertEquals(1, ((Number) okData.get("cycleCount")).intValue());
     }
 
     @Test @DisplayName("handles non-existent package")
