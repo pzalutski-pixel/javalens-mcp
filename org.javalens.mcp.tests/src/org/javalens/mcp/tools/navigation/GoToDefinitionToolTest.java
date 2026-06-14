@@ -73,12 +73,11 @@ class GoToDefinitionToolTest {
         assertNotNull(filePath, "location.filePath must be present");
         assertTrue(filePath.endsWith("Calculator.java"),
             "Calculator is defined in Calculator.java; got: " + filePath);
-        // JDT reports the start of the source range, which includes leading Javadoc
-        // for documented types. line/column are non-negative coordinates into the file.
-        assertTrue(((Number) location.get("line")).intValue() >= 0,
-            "line must be >= 0; got: " + location);
-        assertTrue(((Number) location.get("column")).intValue() >= 0,
-            "column must be >= 0; got: " + location);
+        // JDT reports the start of the type's SOURCE RANGE, which includes the leading
+        // Javadoc — so Calculator's definition is 0-based line 2 col 0 (the `/**` line),
+        // not the `public class` line.
+        assertEquals(2, ((Number) location.get("line")).intValue(), "definition 0-based line; got: " + location);
+        assertEquals(0, ((Number) location.get("column")).intValue(), "definition 0-based column; got: " + location);
     }
 
     @Test
@@ -157,27 +156,32 @@ class GoToDefinitionToolTest {
     // ========== Parameter Validation Tests ==========
 
     @Test
-    @DisplayName("Missing or invalid parameters return error")
+    @DisplayName("Missing filePath / negative line / negative column all rejected with INVALID_PARAMETER")
     void parameterValidation_returnsErrors() {
-        // Missing filePath
         ObjectNode args1 = objectMapper.createObjectNode();
         args1.put("line", 5);
         args1.put("column", 10);
-        assertFalse(tool.execute(args1).isSuccess());
+        ToolResponse r1 = tool.execute(args1);
+        assertFalse(r1.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r1.getError().getCode());
+        assertTrue(r1.getError().getMessage().toLowerCase().contains("required"),
+            "missing filePath message; got: " + r1.getError().getMessage());
 
-        // Negative line
         ObjectNode args2 = objectMapper.createObjectNode();
         args2.put("filePath", calculatorPath);
         args2.put("line", -1);
         args2.put("column", 10);
-        assertFalse(tool.execute(args2).isSuccess());
+        ToolResponse r2 = tool.execute(args2);
+        assertFalse(r2.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r2.getError().getCode());
 
-        // Negative column
         ObjectNode args3 = objectMapper.createObjectNode();
         args3.put("filePath", calculatorPath);
         args3.put("line", 5);
         args3.put("column", -1);
-        assertFalse(tool.execute(args3).isSuccess());
+        ToolResponse r3 = tool.execute(args3);
+        assertFalse(r3.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r3.getError().getCode());
     }
 
     // ========== Edge Case Tests ==========
