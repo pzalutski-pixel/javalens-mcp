@@ -75,10 +75,9 @@ class RenameSymbolToolTest {
         assertEquals("newName", data.get("newName"));
         assertEquals("variable", data.get("symbolKind"));
 
-        // Verify edit counts
-        assertTrue((int) data.get("totalEdits") > 0);
-        assertNotNull(data.get("filesAffected"));
-        assertTrue((int) data.get("filesAffected") >= 1);
+        // oldName is a local used 3x (declaration + 2 uses), all in one file.
+        assertEquals(3, ((Number) data.get("totalEdits")).intValue());
+        assertEquals(1, ((Number) data.get("filesAffected")).intValue());
 
         // Verify edit structure
         Map<String, List<Map<String, Object>>> editsByFile = getEditsByFile(data);
@@ -113,8 +112,9 @@ class RenameSymbolToolTest {
         assertEquals("userName", data.get("oldName"));
         assertEquals("userFullName", data.get("newName"));
         assertEquals("field", data.get("symbolKind"));
-        // Field is used in multiple places
-        assertTrue((int) data.get("totalEdits") >= 3);
+        // userName: declaration + 4 in-file usages = 5 edits, all in RefactoringTarget.java.
+        assertEquals(5, ((Number) data.get("totalEdits")).intValue());
+        assertEquals(1, ((Number) data.get("filesAffected")).intValue());
     }
 
     @Test
@@ -149,7 +149,9 @@ class RenameSymbolToolTest {
 
         ToolResponse response1 = tool.execute(args1);
         assertFalse(response1.isSuccess());
-        assertTrue(response1.getError().getMessage().contains("identifier"));
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response1.getError().getCode());
+        assertEquals("Invalid parameter 'newName': Not a valid Java identifier",
+            response1.getError().getMessage());
 
         // Test reserved word
         ObjectNode args2 = objectMapper.createObjectNode();
@@ -170,7 +172,9 @@ class RenameSymbolToolTest {
 
         ToolResponse response3 = tool.execute(args3);
         assertFalse(response3.isSuccess());
-        assertTrue(response3.getError().getMessage().contains("Same as current"));
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response3.getError().getCode());
+        assertEquals("Invalid parameter 'newName': Same as current name",
+            response3.getError().getMessage());
     }
 
     // ========== Required Parameter Tests ==========
@@ -271,8 +275,9 @@ class RenameSymbolToolTest {
         // conservatively at >= 7 across 2 files.
         assertEquals(2, filesAffected,
             "FieldHolder.pet must be renamed across both declaring file and WidgetHelper");
-        assertTrue(totalEdits >= 7,
-            "Expected at least 7 edits for pet (decl + inits + accessors + cross-file uses); got: " + totalEdits);
+        // 4 edits in FieldHolder (decl + 2 ctor inits + getPet) + 4 in WidgetHelper = 8.
+        assertEquals(8, totalEdits,
+            "pet rename produces exactly 8 edits across the two files; got: " + totalEdits);
 
         @SuppressWarnings("unchecked")
         java.util.Map<String, java.util.List<?>> editsByFile =
@@ -423,9 +428,7 @@ class RenameSymbolToolTest {
         Map<String, Object> data = getData(r);
         assertEquals("Calculator", data.get("oldName"));
         assertEquals("class", data.get("symbolKind"));
-        assertNotNull(data.get("note"), "Class rename must include the file-rename note");
-        assertTrue(((String) data.get("note")).toLowerCase().contains("file"),
-            "Note must mention file rename; got: " + data.get("note"));
+        assertEquals("Renaming a type may require renaming the file as well", data.get("note"));
     }
 
     @Test
