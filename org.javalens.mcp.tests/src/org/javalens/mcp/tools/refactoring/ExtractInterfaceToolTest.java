@@ -70,23 +70,38 @@ class ExtractInterfaceToolTest {
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
 
-        // Verify interface info
         assertEquals("IExtractTarget", data.get("interfaceName"));
-        String content = (String) data.get("interfaceContent");
-        assertNotNull(content, "interfaceContent missing");
-        assertTrue(content.contains("package com.example"));
-        assertTrue(content.contains("public interface IExtractTarget"));
+        String content = ((String) data.get("interfaceContent")).replace("\r\n", "\n");
+        // Exact generated interface: 4-space indent, blank-line separated, source order.
+        assertEquals(
+            "package com.example;\n"
+            + "\n"
+            + "public interface IExtractTarget {\n"
+            + "\n"
+            + "    String getName();\n"
+            + "\n"
+            + "    void setName(String name);\n"
+            + "\n"
+            + "    int getValue();\n"
+            + "\n"
+            + "    void process(String input, int count);\n"
+            + "\n"
+            + "    void validate() throws IllegalArgumentException;\n"
+            + "\n"
+            + "    List<String> getItems();\n"
+            + "\n"
+            + "    int compareTo(InterfaceExtractTarget other);\n"
+            + "\n"
+            + "}\n",
+            content);
 
-        // Verify public methods are included
-        List<Map<String, Object>> methods = getExtractedMethods(data);
-        assertFalse(methods.isEmpty());
-
-        // Verify class edits for implements clause — non-empty list with implements text
+        // InterfaceExtractTarget already implements an interface, so the lone class edit
+        // appends `, IExtractTarget` to the existing implements list.
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> classEdits = (List<Map<String, Object>>) data.get("classEdits");
-        assertNotNull(classEdits, "classEdits missing");
-        assertFalse(classEdits.isEmpty(),
-            "extracting an interface must add `implements <name>` to the class; got: " + data);
+        assertEquals(1, classEdits.size());
+        assertEquals(", IExtractTarget",
+            classEdits.stream().map(e -> String.valueOf(e.get("newText"))).reduce("", String::concat));
     }
 
     @Test
@@ -149,6 +164,8 @@ class ExtractInterfaceToolTest {
         ToolResponse response = tool.execute(args);
 
         assertFalse(response.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response.getError().getCode());
+        assertEquals("Invalid parameter 'interfaceName': Required", response.getError().getMessage());
     }
 
     @Test
@@ -162,6 +179,8 @@ class ExtractInterfaceToolTest {
         ToolResponse response = tool.execute(args);
 
         assertFalse(response.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response.getError().getCode());
+        assertEquals("Invalid parameter 'filePath': Required", response.getError().getMessage());
     }
 
     // ========== Error Handling Tests ==========
@@ -178,6 +197,9 @@ class ExtractInterfaceToolTest {
         ToolResponse response = tool.execute(args);
 
         assertFalse(response.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response.getError().getCode());
+        assertEquals("Invalid parameter 'interfaceName': Not a valid Java identifier",
+            response.getError().getMessage());
     }
 
     @Test
@@ -192,6 +214,8 @@ class ExtractInterfaceToolTest {
         ToolResponse response = tool.execute(args);
 
         assertFalse(response.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.SYMBOL_NOT_FOUND, response.getError().getCode());
+        assertEquals("Symbol not found: No class found at position", response.getError().getMessage());
     }
 
     // ========== Semantic-grade tests (exact-content assertions) ==========
@@ -358,9 +382,9 @@ class ExtractInterfaceToolTest {
         args.put("interfaceName", "IShapeExt");
         ToolResponse r = tool.execute(args);
         assertFalse(r.isSuccess());
-        String msg = r.getError() != null ? r.getError().getMessage() : "";
-        assertTrue(msg.toLowerCase().contains("interface"),
-            "Error message must mention interface; got: " + msg);
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r.getError().getCode());
+        assertEquals("Invalid parameter 'type': Cannot extract interface from an interface",
+            r.getError().getMessage());
     }
 
     @Test
@@ -475,9 +499,9 @@ class ExtractInterfaceToolTest {
         ToolResponse r = tool.execute(args);
         assertFalse(r.isSuccess(),
             "Extraction from enum type must fail with invalidParameter; got success");
-        String msg = r.getError() != null ? r.getError().getMessage() : "";
-        assertTrue(msg.toLowerCase().contains("enum"),
-            "Error message must mention enum; got: " + msg);
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r.getError().getCode());
+        assertEquals("Invalid parameter 'type': Cannot extract interface from an enum",
+            r.getError().getMessage());
     }
 
     // ========== MCP envelope seam (exact authored values through processMessage) ==========
