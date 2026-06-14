@@ -69,25 +69,19 @@ class GetTypeUsageSummaryToolTest {
         int instanceofCount = ((Number) instanceofChecks.get("count")).intValue();
         int typeArgCount = ((Number) typeArguments.get("count")).intValue();
 
-        // Cross-tool consistency: these counts are verified independently by
-        // FindCastsToolTest (1 cast) and FindInstanceofChecksToolTest (2 instanceofs).
-        // The aggregate tool must surface the same numbers.
+        // Cross-tool consistency with the sibling find_* tools, all exact.
+        assertEquals(5, instantiationCount,
+            "5 `new Calculator()` (SearchPatterns x3, UserService, SampleTest); got: " + instantiations);
         assertEquals(1, castCount,
             "find_casts asserts exactly 1 cast for Calculator; aggregate must match; got: " + casts);
         assertEquals(2, instanceofCount,
             "find_instanceof_checks asserts exactly 2 checks for Calculator; aggregate must match; got: "
                 + instanceofChecks);
+        assertEquals(2, typeArgCount,
+            "2 `List<Calculator>` type arguments (SearchPatterns field + local); got: " + typeArguments);
 
-        // SearchPatterns alone has `new Calculator()` in createObjects, useGenerics, and
-        // InnerClass.createCalculator — at least 3 instantiations.
-        assertTrue(instantiationCount >= 3,
-            "Calculator is instantiated at least 3 times across SearchPatterns; got: " + instantiations);
-
-        // totalUsages must equal the sum of the category counts (the tool computes it as
-        // such, so this asserts the contract holds).
-        int expectedTotal = instantiationCount + castCount + instanceofCount + typeArgCount;
-        assertEquals(expectedTotal, ((Number) data.get("totalUsages")).intValue(),
-            "totalUsages must equal sum of subcategory counts; got data: " + data);
+        assertEquals(10, ((Number) data.get("totalUsages")).intValue(),
+            "totalUsages = 5 + 1 + 2 + 2; got data: " + data);
     }
 
     @Test @DisplayName("finds type by simple name")
@@ -98,25 +92,40 @@ class GetTypeUsageSummaryToolTest {
         assertEquals("com.example.Calculator", getData(tool.execute(args)).get("typeName"));
     }
 
-    @Test @DisplayName("respects maxPerCategory")
+    @Test @DisplayName("maxPerCategory caps each category's count and locations to the limit")
+    @SuppressWarnings("unchecked")
     void respectsMaxPerCategory() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("typeName", "com.example.Calculator");
         args.put("maxPerCategory", 1);
 
-        assertTrue(tool.execute(args).isSuccess());
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> usages = (Map<String, Object>) getData(r).get("usages");
+        Map<String, Object> instantiations = (Map<String, Object>) usages.get("instantiations");
+        // 5 actual instantiations, but count IS the clipped match-list size -> 1.
+        assertEquals(1, ((Number) instantiations.get("count")).intValue());
+        assertEquals(1, ((List<?>) instantiations.get("locations")).size());
+        // Each of the 4 non-empty categories clips to 1 -> totalUsages 4.
+        assertEquals(4, ((Number) getData(r).get("totalUsages")).intValue());
     }
 
-    @Test @DisplayName("requires typeName")
+    @Test @DisplayName("missing typeName -> exact INVALID_PARAMETER")
     void requiresTypeName() {
-        assertFalse(tool.execute(objectMapper.createObjectNode()).isSuccess());
+        ToolResponse r = tool.execute(objectMapper.createObjectNode());
+        assertFalse(r.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r.getError().getCode());
+        assertEquals("Invalid parameter 'typeName': Required parameter missing", r.getError().getMessage());
     }
 
-    @Test @DisplayName("handles invalid inputs")
+    @Test @DisplayName("unknown type -> exact SYMBOL_NOT_FOUND")
     void handlesInvalidInputs() {
         ObjectNode unknown = objectMapper.createObjectNode();
         unknown.put("typeName", "com.nonexistent.Type");
-        assertFalse(tool.execute(unknown).isSuccess());
+        ToolResponse r = tool.execute(unknown);
+        assertFalse(r.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.SYMBOL_NOT_FOUND, r.getError().getCode());
+        assertEquals("Symbol not found: Type not found: com.nonexistent.Type", r.getError().getMessage());
     }
 
     // ========== Behavior-matrix coverage ==========
@@ -164,9 +173,9 @@ class GetTypeUsageSummaryToolTest {
             assertNotNull(cat.get("locations"), "locations missing on " + key + ": " + cat);
             int count = ((Number) cat.get("count")).intValue();
             java.util.List<?> locs = (java.util.List<?>) cat.get("locations");
-            // count is the actual total; locations may be capped at maxPerCategory.
-            assertTrue(locs.size() <= count || locs.size() <= 50,
-                key + ": locations.size() should be <= count or cap; got count=" + count
+            // The tool stores the clipped match-list size as count, so count IS locations.size().
+            assertEquals(count, locs.size(),
+                key + ": count must equal locations.size(); got count=" + count
                     + " locations=" + locs.size());
         }
     }
@@ -194,8 +203,8 @@ class GetTypeUsageSummaryToolTest {
         assertNotNull(annotationUsages,
             "annotationUsages subcategory MUST be added for annotation types; got: " + usages);
         int count = ((Number) annotationUsages.get("count")).intValue();
-        assertTrue(count >= 1,
-            "Marker is applied in AnnotationUsages.java — count must be >= 1; got: " + annotationUsages);
+        assertEquals(7, count,
+            "@Marker is applied in exactly 7 positions across AnnotationUsages.java; got: " + annotationUsages);
         assertNotNull(annotationUsages.get("locations"),
             "annotationUsages locations list missing; got: " + annotationUsages);
     }
@@ -258,19 +267,19 @@ class GetTypeUsageSummaryToolTest {
         Map<String, Object> usages = (Map<String, Object>) getData(r).get("usages");
         Map<String, Object> annotationUsages = (Map<String, Object>) usages.get("annotationUsages");
         int count = ((Number) annotationUsages.get("count")).intValue();
-        assertTrue(count >= 7,
-            "@Marker is applied in 7 positions across AnnotationUsages.java including "
-                + "three TYPE_USE positions; count must reflect them all; got: " + count);
+        assertEquals(7, count,
+            "@Marker applied in exactly 7 positions including 3 TYPE_USE; got: " + count);
 
-        // Verify the TYPE_USE line numbers (0-based 30, 31, 35) appear in the locations.
+        // Exact 0-based @Marker positions, matching find_annotation_usages.
         List<Map<String, Object>> locations = (List<Map<String, Object>>) annotationUsages.get("locations");
         java.util.Set<Integer> lines = new java.util.HashSet<>();
         for (Map<String, Object> loc : locations) {
             Object line = loc.get("line");
             if (line instanceof Number n) lines.add(n.intValue());
         }
-        assertTrue(lines.contains(30) || lines.contains(31) || lines.contains(35),
-            "At least one TYPE_USE @Marker position (parameter/local/type-arg) must appear; got lines: " + lines);
+        assertEquals(java.util.Set.of(6, 9, 12, 16, 30, 31, 35), lines,
+            "@Marker 0-based positions: class 6, field 9, ctor 12, method 16, "
+                + "TYPE_USE param 30, local 31, type-arg 35; got: " + lines);
     }
 
     // ========== MCP envelope seam (exact authored values through processMessage) ==========
