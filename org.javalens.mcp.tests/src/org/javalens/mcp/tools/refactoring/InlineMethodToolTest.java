@@ -62,24 +62,13 @@ class InlineMethodToolTest {
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
 
-        // Verify method info
         assertEquals("doubleValue", data.get("methodName"));
-        String methodClass = (String) data.get("methodClass");
-        assertNotNull(methodClass, "methodClass missing");
-        assertFalse(methodClass.isBlank(), "methodClass non-blank; got: " + data);
+        assertEquals("RefactoringTarget", data.get("methodClass"));
 
-        // Verify edit structure
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> edits = (List<Map<String, Object>>) data.get("edits");
-        assertNotNull(edits, "edits list missing");
-        assertFalse(edits.isEmpty());
-        Map<String, Object> edit = edits.get(0);
-        String newText = (String) edit.get("newText");
-        assertNotNull(newText, "newText missing on first edit");
-        assertFalse(newText.isBlank(), "newText non-blank; got: " + edit);
-
-        // The inlined code should contain the multiplication
-        assertTrue(newText.contains("x") || newText.contains("*"));
+        assertEquals(1, edits.size(), "inline_method emits exactly one edit");
+        assertEquals("(x * 2)", edits.get(0).get("newText"));
     }
 
     // ========== Semantic-grade tests ==========
@@ -121,26 +110,28 @@ class InlineMethodToolTest {
         ToolResponse response = tool.execute(args);
 
         assertFalse(response.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response.getError().getCode());
+        assertEquals("Invalid parameter 'filePath': Required", response.getError().getMessage());
     }
 
     @Test
     @DisplayName("requires line and column parameters")
     void requiresLineAndColumn() {
-        // Missing line
         ObjectNode args1 = objectMapper.createObjectNode();
         args1.put("filePath", refactoringTargetPath);
         args1.put("column", 22);
-
         ToolResponse response1 = tool.execute(args1);
         assertFalse(response1.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response1.getError().getCode());
+        assertEquals("Invalid parameter 'line/column': Must be >= 0", response1.getError().getMessage());
 
-        // Missing column
         ObjectNode args2 = objectMapper.createObjectNode();
         args2.put("filePath", refactoringTargetPath);
         args2.put("line", 64);
-
         ToolResponse response2 = tool.execute(args2);
         assertFalse(response2.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response2.getError().getCode());
+        assertEquals("Invalid parameter 'line/column': Must be >= 0", response2.getError().getMessage());
     }
 
     // ========== Error Handling Tests ==========
@@ -156,6 +147,9 @@ class InlineMethodToolTest {
         ToolResponse response = tool.execute(args);
 
         assertFalse(response.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response.getError().getCode());
+        assertEquals("Invalid parameter 'position': No method call found at position",
+            response.getError().getMessage());
     }
 
     @Test
@@ -197,38 +191,27 @@ class InlineMethodToolTest {
 
         ToolResponse response = tool.execute(args);
 
-        // The tool must NOT succeed silently with an inlined edit that contains `super`.
-        boolean refusedWithError = !response.isSuccess()
-            && response.getError() != null
-            && response.getError().getMessage() != null
-            && response.getError().getMessage().toLowerCase().contains("super");
+        // The tool's actual contract is branch (b): it succeeds (the body is paren-wrapped
+        // and inlined) but emits an explicit warning that `super` in the inlined code will
+        // re-bind at the call site. It must NOT inline silently.
+        assertTrue(response.isSuccess(),
+            () -> "expected success with a super warning; got: " + response.getError());
+        Map<String, Object> data = getData(response);
 
-        boolean surfacedAsWarning = false;
-        boolean leakedSuperIntoInlinedCode = false;
-        if (response.isSuccess()) {
-            Map<String, Object> data = getData(response);
-            Object warningsObj = data.get("warnings");
-            if (warningsObj instanceof List<?> warnings) {
-                surfacedAsWarning = warnings.stream()
-                    .anyMatch(w -> w != null && w.toString().toLowerCase().contains("super"));
-            }
-            // Check whether the inlined code body leaked super textually.
-            Object inlined = data.get("inlinedCode");
-            if (inlined != null && inlined.toString().contains("super.")) {
-                leakedSuperIntoInlinedCode = true;
-            }
-        }
-
-        // Silent leak is the bug — the inlined code shouldn't contain `super.` in a
-        // form that changes meaning. Either a refusal or an explicit warning is
-        // acceptable. Bare leak with no signal is not.
-        assertTrue(refusedWithError || surfacedAsWarning,
-            "Inlining a method with super.X() in its body at a subclass call site must " +
-                "either refuse with a `super`-mentioning error OR carry a `super`-mentioning " +
-                "warning. Got success=" + response.isSuccess() +
-                ", error=" + (response.getError() != null ? response.getError().getMessage() : "n/a") +
-                ", leakedSuperIntoInlined=" + leakedSuperIntoInlinedCode +
-                ", data=" + (response.isSuccess() ? getData(response).keySet() : "n/a"));
+        @SuppressWarnings("unchecked")
+        List<String> warnings = (List<String>) data.get("warnings");
+        assertEquals(List.of(
+            "Method body references `super` (super.method(), super.field, super(), or "
+                + "super::method). Inlining substitutes the body textually, but `super` in "
+                + "the inlined code will resolve against the CALL SITE's class hierarchy, not "
+                + "the original declaring class. If the call site is in a different class than "
+                + "the declaration, the dispatch target changes. Review carefully and replace "
+                + "`super.X` with the explicit target if needed."),
+            warnings,
+            "exactly one warning naming the super re-binding hazard; got: " + warnings);
+        // The inlined body is paren-wrapped (complex INFIX) and includes super verbatim —
+        // the warning is what makes this non-silent.
+        assertEquals("(super.toString() + \":labeled\")", data.get("inlinedCode"));
     }
 
     // ========== Behavior-matrix coverage ==========
@@ -305,6 +288,8 @@ class InlineMethodToolTest {
         args.put("filePath", "/nonexistent/Path.java");
         ToolResponse r = tool.execute(args);
         assertFalse(r.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.FILE_NOT_FOUND, r.getError().getCode());
+        assertEquals("File not found: /nonexistent/Path.java", r.getError().getMessage());
     }
 
     @Test
@@ -317,6 +302,9 @@ class InlineMethodToolTest {
         args.put("column", 0);
         ToolResponse r = tool.execute(args);
         assertFalse(r.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r.getError().getCode());
+        assertEquals("Invalid parameter 'position': No method call found at position",
+            r.getError().getMessage());
     }
 
     // ========== MCP envelope seam (exact authored values through processMessage) ==========
