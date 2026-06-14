@@ -82,16 +82,23 @@ class ValidateSyntaxToolTest {
         assertFalse(errors.isEmpty());
     }
 
-    @Test @DisplayName("requires filePath or content")
+    @Test @DisplayName("neither filePath nor content -> exact INVALID_PARAMETER")
     void requiresFilePathOrContent() {
-        assertFalse(tool.execute(objectMapper.createObjectNode()).isSuccess());
+        ToolResponse r = tool.execute(objectMapper.createObjectNode());
+        assertFalse(r.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r.getError().getCode());
+        assertEquals("Invalid parameter 'filePath/content': Must provide either filePath or content",
+            r.getError().getMessage());
     }
 
-    @Test @DisplayName("handles invalid file path")
+    @Test @DisplayName("non-existent file -> exact FILE_NOT_FOUND")
     void handlesInvalidFilePath() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", "/nonexistent/File.java");
-        assertFalse(tool.execute(args).isSuccess());
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.FILE_NOT_FOUND, r.getError().getCode());
+        assertEquals("File not found: /nonexistent/File.java", r.getError().getMessage());
     }
 
     // ========== Behavior-matrix coverage ==========
@@ -240,13 +247,19 @@ class ValidateSyntaxToolTest {
         assertEquals(Boolean.FALSE, data.get("valid"));
 
         java.util.Set<Integer> lines = new java.util.TreeSet<>();
+        java.util.Set<Integer> columns = new java.util.TreeSet<>();
         for (Map<String, Object> e : errorsOf(r)) {
             lines.add(((Number) e.get("line")).intValue());
+            columns.add(((Number) e.get("column")).intValue());
         }
         // The only broken line is 0-based line 1; a dropped zero-based conversion
         // would shift the reported error to line 2.
         assertEquals(java.util.Set.of(1), lines,
             "the syntax error is on exactly 0-based line 1; got: " + errorsOf(r));
+        // JDT points the error at the `=` token ("Expression expected after this token"),
+        // at 0-based column 10 of `    int x = ;`.
+        assertEquals(java.util.Set.of(10), columns,
+            "the missing-value syntax error sits at exact 0-based column 10; got: " + errorsOf(r));
     }
 
     // ========== MCP envelope seam (exact authored values through processMessage) ==========
