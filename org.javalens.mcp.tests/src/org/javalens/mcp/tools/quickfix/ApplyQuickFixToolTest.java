@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools.quickfix;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.ApplyQuickFixTool;
@@ -27,6 +29,7 @@ class ApplyQuickFixToolTest {
     TestProjectHelper helper = new TestProjectHelper();
 
     private ApplyQuickFixTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper objectMapper;
     private Path projectPath;
     private String calculatorPath;
@@ -37,6 +40,7 @@ class ApplyQuickFixToolTest {
         // Use loadProjectCopy since we might modify files
         JdtServiceImpl service = helper.loadProjectCopy("simple-maven");
         tool = new ApplyQuickFixTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         objectMapper = new ObjectMapper();
         projectPath = helper.getTempDirectory().resolve("simple-maven");
         calculatorPath = projectPath.resolve("src/main/java/com/example/Calculator.java").toString();
@@ -352,5 +356,28 @@ class ApplyQuickFixToolTest {
         assertNotNull(newText);
         assertTrue(newText.contains("throws") && newText.contains("java.io.IOException"),
             "Insert text must contain `throws java.io.IOException`; got: " + newText);
+    }
+
+    // ========== MCP envelope seam (exact authored values through processMessage) ==========
+
+    @Test
+    @DisplayName("Through the real MCP envelope: add_throws on Calculator.add inserts exactly ` throws java.io.IOException`")
+    void envelope_addThrows_exactInsertText() {
+        ObjectNode args = envelope.args();
+        args.put("filePath", calculatorPath);
+        args.put("fixId", "add_throws:java.io.IOException");
+        args.put("line", 14); // 0-based: Calculator.add() declaration
+        JsonNode payload = envelope.payload("apply_quick_fix", args);
+
+        assertTrue(payload.get("success").asBoolean(),
+            () -> "apply_quick_fix failed through the envelope: " + payload);
+        JsonNode data = payload.get("data");
+        assertEquals("add_throws", data.get("fixType").asText());
+        JsonNode edits = data.get("edits");
+        assertEquals(1, edits.size(), "exactly one edit through the envelope");
+        JsonNode edit = edits.get(0);
+        assertEquals("insert", edit.get("type").asText(), "add_throws is an insertion through the envelope");
+        assertEquals(" throws java.io.IOException", edit.get("newText").asText(),
+            "first-throws insertion text ` throws X` must survive the envelope verbatim");
     }
 }
