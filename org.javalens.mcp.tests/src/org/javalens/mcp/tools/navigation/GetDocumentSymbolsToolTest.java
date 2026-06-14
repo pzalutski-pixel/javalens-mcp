@@ -74,42 +74,30 @@ class GetDocumentSymbolsToolTest {
         Map<String, Object> data = getData(response);
         List<Map<String, Object>> symbols = getSymbols(data);
         assertFalse(symbols.isEmpty());
-        int totalSymbols = ((Number) data.get("totalSymbols")).intValue();
-        assertTrue(totalSymbols > 0,
-            "totalSymbols includes top-level + member symbols; must be > 0; got: " + data);
+        // Calculator: 1 top-level class + 5 members (lastResult, add, subtract, multiply,
+        // getLastResult) = 6 total symbols.
+        assertEquals(6, ((Number) data.get("totalSymbols")).intValue(),
+            "totalSymbols = top-level + members; got: " + data);
 
-        // Find Calculator class and verify all fields
         Map<String, Object> calcSymbol = symbols.stream()
             .filter(s -> "Calculator".equals(s.get("name")))
-            .findFirst()
-            .orElse(null);
-
-        assertNotNull(calcSymbol, "Calculator symbol must be present");
+            .findFirst().orElseThrow();
         assertEquals("class", calcSymbol.get("kind"));
-        assertTrue(((Number) calcSymbol.get("line")).intValue() >= 0,
-            "Calculator line >= 0; got: " + calcSymbol);
-
-        List<String> modifiers = (List<String>) calcSymbol.get("modifiers");
-        assertTrue(modifiers.contains("public"));
+        assertEquals(2, ((Number) calcSymbol.get("line")).intValue(),
+            "Calculator 0-based line (Javadoc-inclusive source-range start); got: " + calcSymbol);
+        assertEquals(List.of("public"), calcSymbol.get("modifiers"),
+            "Calculator is exactly `public`; got: " + calcSymbol.get("modifiers"));
 
         List<Map<String, Object>> children = getChildren(calcSymbol);
-        assertNotNull(children, "Calculator children must be present");
-        assertFalse(children.isEmpty(), "Calculator has members; children non-empty");
-
-        // Methods with signatures
-        assertTrue(children.stream().anyMatch(c -> "add".equals(c.get("name"))));
-        assertTrue(children.stream().anyMatch(c -> "subtract".equals(c.get("name"))));
-        assertTrue(children.stream().anyMatch(c -> "multiply".equals(c.get("name"))));
+        java.util.Set<String> childNames = children.stream()
+            .map(c -> (String) c.get("name")).collect(java.util.stream.Collectors.toSet());
+        assertEquals(java.util.Set.of("lastResult", "add", "subtract", "multiply", "getLastResult"),
+            childNames, "Calculator's exact member set; got: " + childNames);
 
         Map<String, Object> addMethod = children.stream()
-            .filter(c -> "add".equals(c.get("name")))
-            .findFirst()
-            .orElse(null);
-        assertNotNull(addMethod, "add method symbol must be present");
-        String addSig = (String) addMethod.get("signature");
-        assertNotNull(addSig, "add signature missing");
-        assertTrue(addSig.contains("add("),
-            "add signature must contain `add(`; got: " + addMethod);
+            .filter(c -> "add".equals(c.get("name"))).findFirst().orElseThrow();
+        assertEquals("add(int a, int b): int", addMethod.get("signature"),
+            "exact add signature; got: " + addMethod.get("signature"));
 
         // Fields with types
         Map<String, Object> lastResultField = children.stream()
@@ -175,17 +163,13 @@ class GetDocumentSymbolsToolTest {
 
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
-        // returnedCount on the meta reflects the post-clip emission, capped at 3.
-        Integer returned = response.getMeta().getReturnedCount();
-        assertNotNull(returned);
-        assertTrue(returned <= 3,
-            "Emitted symbol count must respect maxResults; got returnedCount=" + returned);
-        // totalSymbols (and meta.totalCount) is the pre-clip count; it may exceed
-        // maxResults when the file has more eligible symbols than the cap.
-        Integer totalSymbols = (Integer) data.get("totalSymbols");
-        assertTrue(totalSymbols >= returned,
-            "totalSymbols must be >= returnedCount (pre-clip vs post-clip); got total="
-                + totalSymbols + " returned=" + returned);
+        // Calculator has 6 symbols; maxResults=3 emits exactly 3, flags truncation, but
+        // totalSymbols still reports the pre-clip 6.
+        assertEquals(3, response.getMeta().getReturnedCount().intValue(),
+            "emitted symbol count capped at exactly 3");
+        assertEquals(Boolean.TRUE, response.getMeta().getTruncated());
+        assertEquals(6, ((Number) data.get("totalSymbols")).intValue(),
+            "totalSymbols is the pre-clip count; got: " + data.get("totalSymbols"));
     }
 
     // ========== Semantic-grade tests ==========
