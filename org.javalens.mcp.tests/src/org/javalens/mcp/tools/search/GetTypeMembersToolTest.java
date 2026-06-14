@@ -52,6 +52,10 @@ class GetTypeMembersToolTest {
         Map<String, Object> typeInfo = (Map<String, Object>) data.get("type");
         assertEquals("Calculator", typeInfo.get("name"));
         assertEquals("class", typeInfo.get("kind"));
+        assertEquals("com.example.Calculator", typeInfo.get("qualifiedName"));
+        assertTrue(((String) typeInfo.get("filePath")).replace('\\', '/')
+            .endsWith("src/main/java/com/example/Calculator.java"),
+            "type block filePath must be fixture-relative; got: " + typeInfo.get("filePath"));
 
         // Verify members — exact counts for Calculator (4 methods, 1 field, 0 nested)
         @SuppressWarnings("unchecked")
@@ -80,42 +84,62 @@ class GetTypeMembersToolTest {
 
     @Test @DisplayName("supports optional parameters")
     void supportsOptionalParameters() {
-        // Test includeInherited
+        // includeInherited adds Object methods that are absent by default.
         ObjectNode withInherited = objectMapper.createObjectNode();
         withInherited.put("typeName", "com.example.Calculator");
         withInherited.put("includeInherited", true);
-        assertTrue(tool.execute(withInherited).isSuccess());
+        ToolResponse ri = tool.execute(withInherited);
+        assertTrue(ri.isSuccess());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> inheritedMethods = (List<Map<String, Object>>) getData(ri).get("methods");
+        assertTrue(inheritedMethods.stream().anyMatch(m -> "toString".equals(m.get("name"))),
+            "includeInherited must surface Object.toString; got: " + inheritedMethods);
 
-        // Test memberKind filter
+        // memberKind=method returns exactly the 4 methods and omits the fields key.
         ObjectNode methodsOnly = objectMapper.createObjectNode();
         methodsOnly.put("typeName", "com.example.Calculator");
         methodsOnly.put("memberKind", "method");
         ToolResponse r = tool.execute(methodsOnly);
         assertTrue(r.isSuccess());
-        assertNotNull(getData(r).get("methods"));
+        assertEquals(4, ((List<?>) getData(r).get("methods")).size());
         assertNull(getData(r).get("fields"));
     }
 
-    @Test @DisplayName("finds type by simple name")
+    @Test @DisplayName("simple name resolves to the same type + members as the FQN")
+    @SuppressWarnings("unchecked")
     void findsTypeBySimpleName() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("typeName", "Calculator");
 
         ToolResponse r = tool.execute(args);
         assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+        Map<String, Object> typeInfo = (Map<String, Object>) data.get("type");
+        assertEquals("com.example.Calculator", typeInfo.get("qualifiedName"),
+            "simple name 'Calculator' must resolve to com.example.Calculator");
+        assertEquals(4, ((List<?>) data.get("methods")).size());
+        assertEquals(1, ((List<?>) data.get("fields")).size());
     }
 
-    @Test @DisplayName("requires typeName parameter")
+    @Test @DisplayName("missing typeName is rejected with INVALID_PARAMETER")
     void requiresTypeName() {
-        assertFalse(tool.execute(objectMapper.createObjectNode()).isSuccess());
+        ToolResponse r = tool.execute(objectMapper.createObjectNode());
+        assertFalse(r.isSuccess());
+        assertEquals("INVALID_PARAMETER", r.getError().getCode());
+        assertTrue(r.getError().getMessage().toLowerCase().contains("required"),
+            "message must explain typeName is required; got: " + r.getError().getMessage());
     }
 
-    @Test @DisplayName("handles unknown type gracefully")
+    @Test @DisplayName("unknown type is rejected with SYMBOL_NOT_FOUND naming the type")
     void handlesUnknownType() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("typeName", "com.nonexistent.Type");
 
-        assertFalse(tool.execute(args).isSuccess());
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess());
+        assertEquals("SYMBOL_NOT_FOUND", r.getError().getCode());
+        assertTrue(r.getError().getMessage().contains("com.nonexistent.Type"),
+            "message must name the unresolved type; got: " + r.getError().getMessage());
     }
 
     // ========== Semantic-grade tests ==========
@@ -153,10 +177,11 @@ class GetTypeMembersToolTest {
             .map(m -> (String) m.get("name"))
             .collect(java.util.stream.Collectors.toSet());
 
-        assertTrue(names.contains("draw"));
-        assertTrue(names.contains("fill"));
-        assertFalse(names.contains("toString"),
-            "Without includeInherited, Object methods like toString must not appear; got: " + names);
+        // FilledCircle declares its explicit constructor plus draw() and fill() (both
+        // @Override). Explicitly-declared constructors ARE included; without
+        // includeInherited, no Object methods appear.
+        assertEquals(java.util.Set.of("FilledCircle", "draw", "fill"), names,
+            "FilledCircle declares exactly its constructor + draw + fill; got: " + names);
     }
 
     // ========== Behavior-matrix coverage ==========
@@ -205,11 +230,10 @@ class GetTypeMembersToolTest {
         java.util.Set<String> names = nested.stream()
             .map(t -> (String) t.get("name"))
             .collect(java.util.stream.Collectors.toSet());
-        // TypeKindsFixture has Color, GenericContainer, Inner, DefaultMethodHolder, BoundedBox.
-        assertTrue(names.contains("Color"),
-            "Color enum must appear as nested type; got: " + names);
-        assertTrue(names.contains("GenericContainer"));
-        assertTrue(names.contains("Inner"));
+        // TypeKindsFixture declares exactly these five nested types.
+        assertEquals(java.util.Set.of("Color", "GenericContainer", "Inner",
+            "DefaultMethodHolder", "BoundedBox"), names,
+            "exact nested-type set of TypeKindsFixture; got: " + names);
     }
 
     @Test
@@ -227,13 +251,12 @@ class GetTypeMembersToolTest {
             .map(m -> (String) m.get("name"))
             .collect(java.util.stream.Collectors.toSet());
 
-        // With includeInherited, Object methods toString/equals/hashCode must appear.
-        assertTrue(names.contains("toString"),
-            "With includeInherited, Object.toString must appear; got: " + names);
-        assertTrue(names.contains("equals"),
-            "With includeInherited, Object.equals must appear; got: " + names);
-        assertTrue(names.contains("hashCode"),
-            "With includeInherited, Object.hashCode must appear; got: " + names);
+        // The full inherited Object method set is JDK-version-variable (e.g. wait/clone
+        // overloads), so an exact set is not derivable; assert the always-present subset
+        // plus the declared members, and the negative (no spurious draw/fill loss).
+        assertTrue(names.containsAll(java.util.Set.of("draw", "fill", "toString", "equals", "hashCode")),
+            "With includeInherited, FilledCircle's declared methods + Object toString/equals/hashCode "
+                + "must all appear; got: " + names);
     }
 
     @Test
@@ -315,9 +338,10 @@ class GetTypeMembersToolTest {
             .filter(m -> "add".equals(m.get("name")))
             .findFirst()
             .orElseThrow();
-        assertNotNull(add.get("signature"));
-        List<String> modifiers = (List<String>) add.get("modifiers");
-        assertTrue(modifiers.contains("public"));
+        assertEquals("add(int a, int b): int", add.get("signature"),
+            "exact rendered signature; got: " + add.get("signature"));
+        assertEquals(List.of("public"), add.get("modifiers"),
+            "Calculator.add is exactly `public`; got: " + add.get("modifiers"));
     }
 
     @Test
@@ -335,8 +359,8 @@ class GetTypeMembersToolTest {
             .findFirst()
             .orElseThrow();
         assertEquals("int", lr.get("type"));
-        List<String> modifiers = (List<String>) lr.get("modifiers");
-        assertTrue(modifiers.contains("private"));
+        assertEquals(List.of("private"), lr.get("modifiers"),
+            "Calculator.lastResult is exactly `private`; got: " + lr.get("modifiers"));
     }
 
     @Test
