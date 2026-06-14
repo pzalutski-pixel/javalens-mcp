@@ -55,22 +55,18 @@ class GetSuperMethodToolTest {
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
 
-        // Verify method info
-        assertNotNull(data.get("method"));
         @SuppressWarnings("unchecked")
         Map<String, Object> methodInfo = (Map<String, Object>) data.get("method");
-        assertNotNull(methodInfo.get("name"));
-        assertNotNull(methodInfo.get("signature"));
-
-        // Verify overrides info (may be null if not overriding)
-        if (data.get("overrides") != null) {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> overrides = (Map<String, Object>) data.get("overrides");
-            assertNotNull(overrides.get("declaringType"));
-        }
+        assertEquals("speak", methodInfo.get("name"));
+        // Dog.speak overrides Animal.speak — overrides MUST be present (no vacuous guard).
+        @SuppressWarnings("unchecked")
+        Map<String, Object> overrides = (Map<String, Object>) data.get("overrides");
+        assertNotNull(overrides, "Dog.speak overrides Animal.speak; overrides must be present: " + data);
+        assertEquals("com.example.Animal", overrides.get("declaringType"),
+            "the overridden method is declared in Animal; got: " + overrides);
     }
 
-    @Test @DisplayName("returns null overrides for non-overriding method")
+    @Test @DisplayName("returns null overrides + a message for a non-overriding base method")
     void handlesNonOverridingMethod() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", animalPath);
@@ -81,10 +77,9 @@ class GetSuperMethodToolTest {
 
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
-        // Should have null overrides or a message
-        if (data.get("overrides") == null) {
-            assertNotNull(data.get("message"));
-        }
+        // Animal.speak overrides nothing: overrides is null and a message explains why.
+        assertNull(data.get("overrides"), "base method has no super method; got: " + data.get("overrides"));
+        assertNotNull(data.get("message"), "a message must explain the absence; got: " + data);
     }
 
     @Test @DisplayName("requires filePath, line, column parameters (each rejected as INVALID_PARAMETER)")
@@ -133,7 +128,7 @@ class GetSuperMethodToolTest {
             rBlank.getError().getCode());
     }
 
-    @Test @DisplayName("handles non-method position gracefully")
+    @Test @DisplayName("non-method position (class decl) rejected with SYMBOL_NOT_FOUND")
     void handlesNonMethodPosition() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", animalPath);
@@ -142,6 +137,7 @@ class GetSuperMethodToolTest {
 
         ToolResponse r = tool.execute(args);
         assertFalse(r.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.SYMBOL_NOT_FOUND, r.getError().getCode());
     }
 
     // ========== Semantic-grade tests (exact-content assertions) ==========
