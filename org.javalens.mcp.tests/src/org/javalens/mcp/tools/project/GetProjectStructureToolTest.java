@@ -42,15 +42,17 @@ class GetProjectStructureToolTest {
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
 
-        // Verify project info — non-blank identity
-        String projectName = (String) data.get("projectName");
-        assertNotNull(projectName, "projectName missing");
-        assertFalse(projectName.isBlank(), "projectName non-blank; got: " + data);
+        // projectName is the imported workspace project "javalens-<fixture>-<hash>";
+        // the hash varies per import, so pin the stable prefix.
+        assertTrue(((String) data.get("projectName")).startsWith("javalens-simple-maven-"),
+            "got: " + data.get("projectName"));
         String projectRoot = (String) data.get("projectRoot");
         assertNotNull(projectRoot, "projectRoot missing");
         assertFalse(projectRoot.isBlank(), "projectRoot non-blank; got: " + data);
-        assertTrue((Integer) data.get("totalPackages") > 0);
-        assertTrue((Integer) data.get("totalFiles") > 0);
+        // simple-maven: 14 packages across main + test source roots (incl parent
+        // packages) and 71 source files.
+        assertEquals(14, ((Number) data.get("totalPackages")).intValue());
+        assertEquals(71, ((Number) data.get("totalFiles")).intValue());
 
         // Verify source roots
         @SuppressWarnings("unchecked")
