@@ -56,8 +56,9 @@ class LoadProjectToolTest {
         // simple-maven is a Maven project — buildSystem must reflect that.
         assertEquals("maven", buildSystem,
             "simple-maven fixture is Maven; got: " + data);
-        assertTrue((Integer) data.get("sourceFileCount") > 0);
-        assertTrue((Integer) data.get("packageCount") > 0);
+        // simple-maven fixture inventory: 71 source files across 7 packages.
+        assertEquals(71, ((Number) data.get("sourceFileCount")).intValue());
+        assertEquals(7, ((Number) data.get("packageCount")).intValue());
 
         // Verify packages list contains com.example
         @SuppressWarnings("unchecked")
@@ -70,26 +71,37 @@ class LoadProjectToolTest {
         assertNotNull(serviceRef.get(), "service reference must be populated on successful load");
     }
 
-    @Test @DisplayName("requires projectPath parameter")
+    @Test @DisplayName("missing projectPath -> exact INVALID_PARAMETER")
     void requiresProjectPath() {
-        assertFalse(tool.execute(objectMapper.createObjectNode()).isSuccess());
-        assertFalse(tool.execute(null).isSuccess());
+        ToolResponse empty = tool.execute(objectMapper.createObjectNode());
+        assertFalse(empty.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, empty.getError().getCode());
+        assertEquals("Invalid parameter 'projectPath': Required parameter missing",
+            empty.getError().getMessage());
+
+        ToolResponse nullArgs = tool.execute(null);
+        assertFalse(nullArgs.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, nullArgs.getError().getCode());
     }
 
-    @Test @DisplayName("handles invalid paths gracefully")
+    @Test @DisplayName("non-existent path -> FILE_NOT_FOUND; file (not dir) -> INVALID_PARAMETER")
     void handlesInvalidPaths() {
-        // Non-existent path
         ObjectNode nonExistent = objectMapper.createObjectNode();
         nonExistent.put("projectPath", "/nonexistent/path/project");
         ToolResponse r1 = tool.execute(nonExistent);
         assertFalse(r1.isSuccess());
         assertEquals("FILE_NOT_FOUND", r1.getError().getCode());
+        assertEquals("Project path not found: /nonexistent/path/project", r1.getError().getMessage());
 
-        // File instead of directory
+        // File instead of directory (pom.xml). The message carries a machine-specific path.
         ObjectNode filePath = objectMapper.createObjectNode();
         filePath.put("projectPath", projectPath.resolve("pom.xml").toString());
         ToolResponse r2 = tool.execute(filePath);
         assertFalse(r2.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r2.getError().getCode());
+        assertTrue(r2.getError().getMessage().startsWith("Project path is not a directory: ")
+                && r2.getError().getMessage().endsWith("pom.xml"),
+            "got: " + r2.getError().getMessage());
     }
 
     // ========== Bug-fix surface tests at the MCP boundary ===========================
@@ -201,10 +213,10 @@ class LoadProjectToolTest {
         assertTrue(pkgSet.contains("com.example.web"),
             "web module's package must appear; got: " + packages);
 
-        // Three modules × one Java file each = at least 3 source files.
-        assertTrue(((Number) data.get("sourceFileCount")).intValue() >= 3,
-            "multi-module-maven has 3 source files (Greeter, GreeterImpl, GreeterController); got: "
-                + data.get("sourceFileCount"));
+        // Three modules x one Java file each = exactly 3 source files, 3 packages.
+        assertEquals(3, ((Number) data.get("sourceFileCount")).intValue(),
+            "Greeter, GreeterImpl, GreeterController; got: " + data.get("sourceFileCount"));
+        assertEquals(3, ((Number) data.get("packageCount")).intValue());
     }
 
     @Test
@@ -230,8 +242,8 @@ class LoadProjectToolTest {
         assertFalse("gradle".equals(buildSystem),
             "plain-java has no build.gradle; buildSystem must not be 'gradle'; got: " + buildSystem);
 
-        assertTrue(((Number) data.get("sourceFileCount")).intValue() >= 1,
-            "plain-java has Hello.java; sourceFileCount must be >= 1");
+        assertEquals(2, ((Number) data.get("sourceFileCount")).intValue(),
+            "plain-java fixture has exactly two source files");
     }
 
     @Test
@@ -312,7 +324,8 @@ class LoadProjectToolTest {
         List<String> packages = (List<String>) data.get("packages");
         assertTrue(packages.contains("com.example"),
             "Hello.java in com.example must contribute its package; got: " + packages);
-        assertTrue(((Number) data.get("sourceFileCount")).intValue() >= 1);
+        assertEquals(1, ((Number) data.get("sourceFileCount")).intValue(),
+            "simple-gradle has exactly one source file (Hello.java)");
     }
 
     @Test
