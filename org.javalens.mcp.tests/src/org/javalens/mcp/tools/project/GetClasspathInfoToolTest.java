@@ -118,6 +118,8 @@ class GetClasspathInfoToolTest {
 
         List<Map<String, Object>> sourceFolders =
             (List<Map<String, Object>>) getData(r).get("sourceFolders");
+        // simple-maven has exactly two source folders: src/main/java and src/test/java.
+        assertEquals(2, sourceFolders.size(), "got: " + sourceFolders);
         java.util.Set<String> paths = new java.util.HashSet<>();
         for (Map<String, Object> entry : sourceFolders) {
             assertEquals("source", entry.get("kind"),
@@ -191,13 +193,14 @@ class GetClasspathInfoToolTest {
     }
 
     @Test
-    @DisplayName("projectName and projectRoot are reported with exact values")
+    @DisplayName("projectName carries the stable imported-workspace prefix; projectRoot present")
     void projectNameAndRoot_areReported() {
         ToolResponse r = tool.execute(objectMapper.createObjectNode());
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
-        assertNotNull(data.get("projectName"),
-            "projectName must be present; got: " + data);
+        // Imported workspace project is "javalens-<fixture>-<hash>"; the hash varies.
+        assertTrue(((String) data.get("projectName")).startsWith("javalens-simple-maven-"),
+            "got: " + data.get("projectName"));
         assertNotNull(data.get("projectRoot"),
             "projectRoot must be present; got: " + data);
     }
