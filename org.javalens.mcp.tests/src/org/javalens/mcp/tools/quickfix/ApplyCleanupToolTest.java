@@ -64,13 +64,25 @@ class ApplyCleanupToolTest {
         assertEquals(Boolean.TRUE, data.get("changed"),
             "the indexed loop is convertible; got: " + data);
 
-        String source = (String) data.get("source");
-        assertTrue(source.contains(" : nums)"),
-            "rewritten source must contain an enhanced for over nums; got:\n" + source);
-        assertFalse(source.contains("nums.get(i)"),
-            "the index access must be gone after conversion; got:\n" + source);
-        assertFalse(source.contains("i < nums.size()"),
-            "the index condition must be gone after conversion; got:\n" + source);
+        assertEquals("convert_loops", data.get("cleanupId"));
+        assertEquals("Control Statements Clean Up", data.get("label"));
+        // Exact rewritten source (CRLF-normalized): the indexed for becomes an enhanced for.
+        assertEquals(
+            "package com.example;\n"
+            + "\n"
+            + "import java.util.List;\n"
+            + "\n"
+            + "public class LoopDemo {\n"
+            + "\n"
+            + "    public int sum(List<Integer> nums) {\n"
+            + "        int total = 0;\n"
+            + "        for (Integer num : nums) {\n"
+            + "            total += num;\n"
+            + "        }\n"
+            + "        return total;\n"
+            + "    }\n"
+            + "}\n",
+            ((String) data.get("source")).replace("\r\n", "\n"));
     }
 
     @Test
@@ -92,7 +104,13 @@ class ApplyCleanupToolTest {
         ObjectNode args = mapper.createObjectNode();
         args.put("filePath", loopDemoPath);
         args.put("cleanupId", "no_such_cleanup");
-        assertFalse(tool.execute(args).isSuccess());
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r.getError().getCode());
+        // The message names the bad id; the supported-list suffix is dynamic.
+        assertTrue(r.getError().getMessage().startsWith(
+            "Invalid parameter 'cleanupId': Unknown clean-up 'no_such_cleanup'. Supported: "),
+            "got: " + r.getError().getMessage());
     }
 
     // ========== MCP envelope seam (exact authored values through processMessage) ==========
