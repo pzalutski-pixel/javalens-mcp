@@ -65,16 +65,20 @@ class ExtractMethodToolTest {
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
 
-        // Verify method info
         assertEquals("calculateSum", data.get("methodName"));
-        assertNotNull(data.get("parameters"));
-        assertNotNull(data.get("returnType"));
-
-        // Verify edit structure
-        assertNotNull(data.get("newMethodCode"));
-        String declaration = (String) data.get("newMethodCode");
-        assertTrue(declaration.contains("calculateSum"));
-        assertNotNull(data.get("methodCall"));
+        assertEquals("int", data.get("returnType"));
+        assertEquals("int sum = calculateSum(numbers);", data.get("methodCall"));
+        // Exact generated method (CRLF-normalized): tab-indented body, the `sum += num`
+        // line keeps the source selection's extra 4-space indent.
+        assertEquals(
+            "private int calculateSum(List<Integer> numbers) {\n"
+            + "\t\tint sum = 0;\n"
+            + "\t\tfor (Integer num : numbers) {\n"
+            + "\t\t    sum += num;\n"
+            + "\t\t}\n"
+            + "\t\treturn sum;\n"
+            + "\t}",
+            ((String) data.get("newMethodCode")).replace("\r\n", "\n"));
     }
 
     // ========== Required Parameter Tests ==========
@@ -93,6 +97,8 @@ class ExtractMethodToolTest {
         ToolResponse response = tool.execute(args);
 
         assertFalse(response.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response.getError().getCode());
+        assertEquals("Invalid parameter 'methodName': Required", response.getError().getMessage());
     }
 
     @Test
@@ -108,6 +114,8 @@ class ExtractMethodToolTest {
         ToolResponse response = tool.execute(args);
 
         assertFalse(response.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response.getError().getCode());
+        assertEquals("Invalid parameter 'filePath': Required", response.getError().getMessage());
     }
 
     // ========== Error Handling Tests ==========
@@ -126,6 +134,9 @@ class ExtractMethodToolTest {
 
         ToolResponse response1 = tool.execute(args1);
         assertFalse(response1.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response1.getError().getCode());
+        assertEquals("Invalid parameter 'methodName': Not a valid Java identifier",
+            response1.getError().getMessage());
 
         // Test reserved word
         ObjectNode args2 = objectMapper.createObjectNode();
@@ -138,6 +149,9 @@ class ExtractMethodToolTest {
 
         ToolResponse response2 = tool.execute(args2);
         assertFalse(response2.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response2.getError().getCode());
+        assertEquals("Invalid parameter 'methodName': Not a valid Java identifier",
+            response2.getError().getMessage());
     }
 
     @Test
@@ -154,6 +168,9 @@ class ExtractMethodToolTest {
         ToolResponse response = tool.execute(args);
 
         assertFalse(response.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response.getError().getCode());
+        assertEquals("Invalid parameter 'positions': All positions must be >= 0",
+            response.getError().getMessage());
     }
 
     // ========== Semantic-grade tests ==========
@@ -315,6 +332,9 @@ class ExtractMethodToolTest {
         ToolResponse r = tool.execute(args);
         assertFalse(r.isSuccess(),
             "Selection outside any method body must be rejected; got: " + r.getData());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r.getError().getCode());
+        assertEquals("Invalid parameter 'selection': Selection must be inside a method body",
+            r.getError().getMessage());
     }
 
     @Test
@@ -377,6 +397,8 @@ class ExtractMethodToolTest {
         ToolResponse r = tool.execute(args);
         assertFalse(r.isSuccess(),
             "Inverted range must be rejected");
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r.getError().getCode());
+        assertEquals("Invalid parameter 'positions': Invalid selection range", r.getError().getMessage());
     }
 
     // ========== Exact extracted-parameter type ==========
