@@ -87,7 +87,9 @@ class GetQuickFixesToolTest {
 
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
-        assertNotNull(data.get("fixes"));
+        // Calculator line 5 col 10 is the clean class declaration: no problems, no fixes.
+        assertEquals(0, ((Number) data.get("problemCount")).intValue());
+        assertTrue(getFixes(data).isEmpty());
     }
 
     @Test
@@ -99,7 +101,8 @@ class GetQuickFixesToolTest {
         ToolResponse response = tool.execute(args);
 
         assertFalse(response.isSuccess());
-        assertNotNull(response.getError());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response.getError().getCode());
+        assertEquals("Invalid parameter 'filePath': Required", response.getError().getMessage());
     }
 
     @Test
@@ -111,7 +114,8 @@ class GetQuickFixesToolTest {
         ToolResponse response = tool.execute(args);
 
         assertFalse(response.isSuccess());
-        assertNotNull(response.getError());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response.getError().getCode());
+        assertEquals("Invalid parameter 'line': Required and must be >= 0", response.getError().getMessage());
     }
 
     @Test
@@ -124,7 +128,10 @@ class GetQuickFixesToolTest {
         ToolResponse response = tool.execute(args);
 
         assertFalse(response.isSuccess());
-        assertNotNull(response.getError());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.FILE_NOT_FOUND, response.getError().getCode());
+        assertTrue(response.getError().getMessage().startsWith("File not found: ")
+                && response.getError().getMessage().endsWith("NonExistent.java"),
+            "got: " + response.getError().getMessage());
     }
 
     // ========== Semantic-grade tests ==========
@@ -144,10 +151,8 @@ class GetQuickFixesToolTest {
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
 
-        int problemCount = ((Number) data.get("problemCount")).intValue();
-        assertTrue(problemCount > 0,
-            "RefactoringTarget line 3 is an unused import; with the unused-import "
-                + "compiler option enabled JDT must report at least one IProblem. Data: " + data);
+        assertEquals(1, ((Number) data.get("problemCount")).intValue(),
+            "RefactoringTarget line 3 has exactly one unused-import problem; got: " + data);
 
         List<Map<String, Object>> fixes = getFixes(data);
         boolean hasRemoveImport = fixes.stream()
@@ -166,9 +171,11 @@ class GetQuickFixesToolTest {
             })
             .findFirst()
             .orElseThrow();
-        assertNotNull(removeImportFix.get("label"));
+        assertEquals("Remove unused import", removeImportFix.get("label"));
         assertEquals("IMPORT", removeImportFix.get("category"),
             "remove_import fixes must be categorized as IMPORT; got: " + removeImportFix);
+        assertEquals(90, ((Number) removeImportFix.get("relevance")).intValue(),
+            "UNUSED_IMPORT remove_import relevance must be 90; got: " + removeImportFix);
     }
 
     // ========== Behavior-matrix coverage ==========
