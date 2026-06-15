@@ -67,17 +67,10 @@ class InlineVariableToolTest {
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
 
-        // Verify variable info
         assertEquals("trimmed", data.get("variableName"));
-        String initializerText = (String) data.get("initializerText");
-        assertNotNull(initializerText, "initializerText missing");
-        assertFalse(initializerText.isBlank(), "initializerText non-blank; got: " + data);
-        int usageCount = ((Number) data.get("usageCount")).intValue();
-        assertTrue(usageCount > 0, "trimmed variable is used; usageCount > 0; got: " + data);
-
-        // Verify edit structure
-        List<Map<String, Object>> edits = getEdits(data);
-        assertFalse(edits.isEmpty());
+        assertEquals("input.trim()", data.get("initializerText"));
+        assertEquals(2, ((Number) data.get("usageCount")).intValue());
+        assertFalse(getEdits(data).isEmpty());
     }
 
     // ========== Safety Check Tests ==========
@@ -94,6 +87,9 @@ class InlineVariableToolTest {
 
         // Should refuse because variable is modified after initialization
         assertFalse(response.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response.getError().getCode());
+        assertEquals("Invalid parameter 'variable': Variable is modified after initialization, "
+            + "cannot safely inline", response.getError().getMessage());
     }
 
     @Test
@@ -107,6 +103,9 @@ class InlineVariableToolTest {
         ToolResponse response = tool.execute(args);
 
         assertFalse(response.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response.getError().getCode());
+        assertEquals("Invalid parameter 'variable': Variable has no initializer, cannot inline",
+            response.getError().getMessage());
     }
 
     // ========== Semantic-grade tests ==========
@@ -126,10 +125,7 @@ class InlineVariableToolTest {
         assertEquals("trimmed", data.get("variableName"));
 
         // Initializer text must literally be the trim() call.
-        String init = (String) data.get("initializerText");
-        assertNotNull(init);
-        assertTrue(init.contains("input.trim()"),
-            "initializerText must be `input.trim()`; got: " + init);
+        assertEquals("input.trim()", data.get("initializerText"));
 
         // `trimmed` is read twice: println(trimmed), println(trimmed.length()).
         assertEquals(2, ((Number) data.get("usageCount")).intValue(),
@@ -157,26 +153,28 @@ class InlineVariableToolTest {
         ToolResponse response = tool.execute(args);
 
         assertFalse(response.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response.getError().getCode());
+        assertEquals("Invalid parameter 'filePath': Required", response.getError().getMessage());
     }
 
     @Test
     @DisplayName("requires line and column parameters")
     void requiresLineAndColumn() {
-        // Missing line
         ObjectNode args1 = objectMapper.createObjectNode();
         args1.put("filePath", refactoringTargetPath);
         args1.put("column", 15);
-
         ToolResponse response1 = tool.execute(args1);
         assertFalse(response1.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response1.getError().getCode());
+        assertEquals("Invalid parameter 'line/column': Must be >= 0", response1.getError().getMessage());
 
-        // Missing column
         ObjectNode args2 = objectMapper.createObjectNode();
         args2.put("filePath", refactoringTargetPath);
         args2.put("line", 26);
-
         ToolResponse response2 = tool.execute(args2);
         assertFalse(response2.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response2.getError().getCode());
+        assertEquals("Invalid parameter 'line/column': Must be >= 0", response2.getError().getMessage());
     }
 
     // ========== Error Handling Tests ==========
@@ -192,6 +190,8 @@ class InlineVariableToolTest {
         ToolResponse response = tool.execute(args);
 
         assertFalse(response.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.SYMBOL_NOT_FOUND, response.getError().getCode());
+        assertEquals("Symbol not found: No variable at position", response.getError().getMessage());
     }
 
     // ========== Behavior-matrix coverage ==========
@@ -269,7 +269,10 @@ class InlineVariableToolTest {
     void nonExistentFile_isRejected() {
         ObjectNode args = trimmedArgs();
         args.put("filePath", "/nonexistent/Path.java");
-        assertFalse(tool.execute(args).isSuccess());
+        ToolResponse r = tool.execute(args);
+        assertFalse(r.isSuccess());
+        assertEquals(org.javalens.mcp.models.ErrorInfo.FILE_NOT_FOUND, r.getError().getCode());
+        assertEquals("File not found: /nonexistent/Path.java", r.getError().getMessage());
     }
 
     @Test
@@ -288,9 +291,8 @@ class InlineVariableToolTest {
             "Field position must be rejected; got success: " + r.getData());
         assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER,
             r.getError().getCode());
-        assertTrue(r.getError().getMessage().toLowerCase().contains("field"),
-            "Error message must mention the field-vs-local distinction; got: "
-                + r.getError().getMessage());
+        assertEquals("Invalid parameter 'variable': Can only inline local variables, not fields",
+            r.getError().getMessage());
     }
 
     @Test
@@ -314,8 +316,8 @@ class InlineVariableToolTest {
             "Parameter position must be rejected; got success: " + r.getData());
         assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER,
             r.getError().getCode());
-        assertTrue(r.getError().getMessage().toLowerCase().contains("parameter"),
-            "Error message must mention `parameter`; got: " + r.getError().getMessage());
+        assertEquals("Invalid parameter 'variable': Cannot inline method parameters",
+            r.getError().getMessage());
     }
 
     @Test
@@ -413,6 +415,10 @@ class InlineVariableToolTest {
         ToolResponse r = tool.execute(args);
         assertFalse(r.isSuccess(),
             "Inlining a for-init-declared variable must be refused; got success: " + r.getData());
+        // `i` is modified by `i++`, so it's refused as modified-after-init.
+        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, r.getError().getCode());
+        assertEquals("Invalid parameter 'variable': Variable is modified after initialization, "
+            + "cannot safely inline", r.getError().getMessage());
     }
 
     // ========== Exact edit lines ==========
