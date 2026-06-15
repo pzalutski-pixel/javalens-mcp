@@ -113,4 +113,11 @@ public class DiAndReflectionPatterns {
     public int getCount() { return count; }
     public boolean isActive() { return active; }
     public void setActive(boolean active) { this.active = active; }
+
+    // A second reflective Method.invoke call site, so Method.invoke has two
+    // call sites. With maxResults=1 the per-reflection-method cap drops the
+    // second one, exercising find_reflection_usage's truncation branch.
+    public Object secondInvoke(Method method, Object target) throws Exception {
+        return method.invoke(target);
+    }
 }

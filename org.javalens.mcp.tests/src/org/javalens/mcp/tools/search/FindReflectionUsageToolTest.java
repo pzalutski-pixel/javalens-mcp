@@ -49,8 +49,8 @@ class FindReflectionUsageToolTest {
 
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
-        assertEquals(7, ((Number) data.get("totalCalls")).intValue(),
-            "exactly seven reflection calls in DiAndReflectionPatterns.java");
+        assertEquals(8, ((Number) data.get("totalCalls")).intValue(),
+            "exactly eight reflection calls in DiAndReflectionPatterns.java (Method.invoke twice)");
     }
 
     @Test
@@ -63,7 +63,7 @@ class FindReflectionUsageToolTest {
         assertTrue(response.isSuccess());
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> calls = (List<Map<String, Object>>) getData(response).get("reflectionCalls");
-        assertEquals(7, calls.size());
+        assertEquals(8, calls.size());
         for (Map<String, Object> c : calls) {
             assertNotNull(c.get("reflectionMethod"), "every call must carry a reflectionMethod label; got: " + c);
         }
@@ -107,8 +107,8 @@ class FindReflectionUsageToolTest {
         @SuppressWarnings("unchecked")
         Map<String, Object> summary = (Map<String, Object>) data.get("summary");
         assertNotNull(summary);
-        // Each detected label has exactly 1 call in the fixture, so the per-label cap of 1
-        // leaves every count at exactly 1.
+        // The per-reflection-method cap of 1 leaves every count at exactly 1 — including
+        // Method.invoke, whose two call sites are clipped down to one.
         for (Map.Entry<String, Object> entry : summary.entrySet()) {
             assertEquals(1, ((Number) entry.getValue()).intValue(),
                 "maxResults=1 caps each reflection label's count to exactly 1; "
@@ -261,7 +261,7 @@ class FindReflectionUsageToolTest {
     }
 
     @Test
-    @DisplayName("totalCalls is the pre-clip total; reflectionCalls.size() is post-clip and equals meta.returnedCount")
+    @DisplayName("Default maxResults: no clip — totalCalls == reflectionCalls.size() == returnedCount == 8, truncated false")
     void totalCallsEqualsListSize() {
         ObjectNode args = objectMapper.createObjectNode();
 
@@ -269,16 +269,37 @@ class FindReflectionUsageToolTest {
         assertTrue(r.isSuccess());
         int total = ((Number) getData(r).get("totalCalls")).intValue();
         int listSize = callsOf(r).size();
-        // totalCalls (== meta.totalCount) reflects the pre-clip total across all reflection
-        // method labels — this can exceed the post-clip list size when the per-label cap
-        // truncates calls. reflectionCalls.size() == meta.returnedCount.
-        Integer returned = r.getMeta().getReturnedCount();
-        assertEquals(listSize, returned,
-            "reflectionCalls.size() must equal meta.returnedCount; got list=" + listSize
-                + " returned=" + returned);
-        assertTrue(total >= listSize,
-            "totalCalls (pre-clip) must be >= reflectionCalls.size() (post-clip); got total="
-                + total + " list=" + listSize);
+        // At the default cap (100) nothing is clipped, so the pre-clip total, the
+        // post-clip list, and meta.returnedCount all equal the eight call sites.
+        assertEquals(8, total, "pre-clip totalCalls");
+        assertEquals(8, listSize, "post-clip reflectionCalls.size()");
+        assertEquals(Integer.valueOf(8), r.getMeta().getReturnedCount(),
+            "meta.returnedCount == reflectionCalls.size()");
+        assertEquals(Integer.valueOf(8), r.getMeta().getTotalCount(),
+            "meta.totalCount == pre-clip totalCalls");
+        assertFalse(Boolean.TRUE.equals(r.getMeta().getTruncated()),
+            "nothing is clipped at the default cap, so truncated must be false");
+    }
+
+    @Test
+    @DisplayName("maxResults=1 truncates: Method.invoke's two sites clip to one, so totalCalls (8, pre-clip) exceeds the clipped list (7) and meta.truncated is true")
+    void maxResultsOne_truncatesMethodInvoke() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("maxResults", 1);
+        ToolResponse r = tool.execute(args);
+        assertTrue(r.isSuccess());
+        Map<String, Object> data = getData(r);
+
+        // Pre-clip total counts all eight call sites (Method.invoke twice). The per-
+        // reflection-method cap of 1 keeps one call per distinct label = seven.
+        assertEquals(8, ((Number) data.get("totalCalls")).intValue(),
+            "totalCalls is the pre-clip total across all labels");
+        assertEquals(7, callsOf(r).size(),
+            "the clipped list keeps one call per distinct label (7 APIs)");
+        assertEquals(Integer.valueOf(8), r.getMeta().getTotalCount());
+        assertEquals(Integer.valueOf(7), r.getMeta().getReturnedCount());
+        assertTrue(Boolean.TRUE.equals(r.getMeta().getTruncated()),
+            "dropping the second Method.invoke must flag truncation");
     }
 
     @Test
@@ -366,8 +387,8 @@ class FindReflectionUsageToolTest {
     // ========== Exact magnitude + scope isolation ==========
 
     @Test
-    @DisplayName("Exactly seven reflection calls, all in DiAndReflectionPatterns.java, with the exact per-API summary")
-    void reflectionUsage_exactlySevenCallsAllInFixture() {
+    @DisplayName("Exactly eight reflection calls, all in DiAndReflectionPatterns.java, with the exact per-API summary (Method.invoke twice)")
+    void reflectionUsage_exactlyEightCallsAllInFixture() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("maxResults", 100);
         ToolResponse r = tool.execute(args);
@@ -376,11 +397,12 @@ class FindReflectionUsageToolTest {
 
         // DiAndReflectionPatterns is the only file with reflection. Its call sites:
         // Class.forName, getDeclaredConstructor(), Constructor.newInstance(), getMethod,
-        // Method.invoke, getDeclaredField, Field.get — seven (setAccessible is not in
-        // the detection table). No matches may come from the classpath or workspace.
-        assertEquals(7, ((Number) data.get("totalCalls")).intValue(),
-            "exactly seven reflection call sites; got: " + callsOf(r));
-        assertEquals(7, callsOf(r).size());
+        // Method.invoke (twice: invokeByReflection + secondInvoke), getDeclaredField,
+        // Field.get — eight (setAccessible is not in the detection table). No matches
+        // may come from the classpath or workspace.
+        assertEquals(8, ((Number) data.get("totalCalls")).intValue(),
+            "exactly eight reflection call sites; got: " + callsOf(r));
+        assertEquals(8, callsOf(r).size());
 
         for (Map<String, Object> c : callsOf(r)) {
             String fp = String.valueOf(c.get("filePath")).replace('\\', '/');
@@ -395,9 +417,18 @@ class FindReflectionUsageToolTest {
             "Class.getMethod", "Method.invoke", "Class.getDeclaredField", "Field.get"),
             summary.keySet(),
             "exact set of detected reflection APIs; got: " + summary);
-        for (Map.Entry<String, Object> e : summary.entrySet()) {
-            assertEquals(1, ((Number) e.getValue()).intValue(),
-                "each API is called exactly once in the fixture; got: " + summary);
+        // Method.invoke has two call sites; every other API exactly one.
+        Map<String, Integer> expected = new java.util.LinkedHashMap<>();
+        expected.put("Class.forName", 1);
+        expected.put("Class.getDeclaredConstructor", 1);
+        expected.put("Constructor.newInstance", 1);
+        expected.put("Class.getMethod", 1);
+        expected.put("Method.invoke", 2);
+        expected.put("Class.getDeclaredField", 1);
+        expected.put("Field.get", 1);
+        for (Map.Entry<String, Integer> e : expected.entrySet()) {
+            assertEquals(e.getValue().intValue(), ((Number) summary.get(e.getKey())).intValue(),
+                "exact per-API count for " + e.getKey() + "; got: " + summary);
         }
     }
 
@@ -419,14 +450,14 @@ class FindReflectionUsageToolTest {
     // ========== MCP envelope seam (exact authored values through processMessage) ==========
 
     @Test
-    @DisplayName("Through the real MCP envelope: exactly seven reflection calls, none leaked from target/work")
-    void envelope_exactlySeven_noLeak() {
+    @DisplayName("Through the real MCP envelope: exactly eight reflection calls, none leaked from target/work")
+    void envelope_exactlyEight_noLeak() {
         JsonNode payload = envelope.assertEnvelopeFidelity("find_reflection_usage", envelope.args());
         assertTrue(payload.get("success").asBoolean(),
             () -> "find_reflection_usage failed through the envelope: " + payload);
         JsonNode data = payload.get("data");
-        assertEquals(7, data.get("totalCalls").asInt(),
-            "the seven reflection calls must survive the JSON-RPC envelope");
+        assertEquals(8, data.get("totalCalls").asInt(),
+            "the eight reflection calls must survive the JSON-RPC envelope");
         for (JsonNode c : data.get("reflectionCalls")) {
             String fp = c.get("filePath").asText().replace('\\', '/');
             assertFalse(fp.contains("target/work") || fp.contains("javalens-WS"),
