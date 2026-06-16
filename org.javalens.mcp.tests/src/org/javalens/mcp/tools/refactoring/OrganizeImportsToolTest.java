@@ -84,7 +84,7 @@ class OrganizeImportsToolTest {
 
     @Test
     @DisplayName("returns import range with line numbers when imports exist")
-    void returnsImportRangeWithLineNumbers() {
+    void returnsImportRangeWithLineNumbers() throws Exception {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", refactoringTargetPath);
 
@@ -96,11 +96,24 @@ class OrganizeImportsToolTest {
         @SuppressWarnings("unchecked")
         Map<String, Object> range = (Map<String, Object>) data.get("importRange");
         assertNotNull(range, "importRange must be present when imports exist");
-        // RefactoringTarget's 5 imports span 0-based lines 2-6 (offsets 24..154).
+        // RefactoringTarget's 5 imports span 0-based lines 2-6.
         assertEquals(2, ((Number) range.get("startLine")).intValue());
         assertEquals(6, ((Number) range.get("endLine")).intValue());
-        assertEquals(24, ((Number) range.get("startOffset")).intValue());
-        assertEquals(154, ((Number) range.get("endOffset")).intValue());
+        // Raw byte offsets are checkout-line-ending dependent (CRLF vs LF), so pin them by
+        // the content they bracket rather than absolute values: the range must cover exactly
+        // RefactoringTarget's five-import block.
+        int startOffset = ((Number) range.get("startOffset")).intValue();
+        int endOffset = ((Number) range.get("endOffset")).intValue();
+        assertTrue(endOffset > startOffset, "import range must be non-empty; got [" + startOffset + "," + endOffset + ")");
+        String source = java.nio.file.Files.readString(java.nio.file.Path.of(refactoringTargetPath));
+        assertEquals(
+            "import java.util.List;\n"
+            + "import java.util.ArrayList;\n"
+            + "import java.util.Map;\n"
+            + "import java.util.HashMap;\n"
+            + "import java.io.IOException;",
+            source.substring(startOffset, endOffset).replace("\r\n", "\n"),
+            "importRange must bracket exactly the five-import block");
     }
 
     @Test
