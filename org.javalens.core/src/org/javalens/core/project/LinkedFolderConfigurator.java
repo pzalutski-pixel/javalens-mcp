@@ -19,18 +19,19 @@ import java.util.stream.Stream;
 /**
  * Build-system-agnostic source-path discovery and Eclipse linked-folder creation.
  *
- * <p>The orchestrator harvests module / subproject / package roots from each
- * {@link BuildSystemImporter}, then delegates here for two operations:
+ * <p>Two operations:
  * <ol>
- *   <li><b>Source-path discovery</b> via {@link #addSourcePathsFromDirectory}:
+ *   <li><b>Source-path discovery</b> via {@link #addSourcePathsFromDirectory}, used
+ *       per module directory when an importer resolves its model:
  *       checks the standard layouts ({@code src/main/java}, {@code src/test/java},
  *       {@code src/main/kotlin}, {@code src/test/kotlin}, fallback {@code src/})
  *       and the generated-source directories written by annotation processors
  *       (Maven {@code target/generated-sources/*}, Gradle
  *       {@code build/generated/sources/<task>/{main,test}/java}).</li>
- *   <li><b>Linked-folder creation</b> via {@link #addLinkedSourceFolders}: for
- *       each discovered source path, create a uniquely-named linked folder under
- *       the workspace project, and append a source {@link IClasspathEntry}.</li>
+ *   <li><b>Linked-folder creation</b> via {@link #addLinkedSourceFolders}, used by
+ *       the orchestrator: for each source root of the model, create a uniquely-named
+ *       linked folder under the workspace project, and append a source
+ *       {@link IClasspathEntry}.</li>
  * </ol>
  *
  * <p>Linked folders keep Eclipse metadata inside the workspace, not in the user's
@@ -56,6 +57,22 @@ public class LinkedFolderConfigurator {
      * nothing standard matched.
      */
     public void addSourcePathsFromDirectory(Path projectPath, List<Path> sourcePaths) {
+        addConventionalSourcePaths(projectPath, sourcePaths);
+
+        // Bug B fix: include generated-source directories. Annotation processors
+        // (Lombok, MapStruct, Dagger, JPA Metamodel) write here at build time, and
+        // hand-written code references symbols from those generated files. Without
+        // these on the classpath as source folders, references are unresolved and
+        // many navigation/refactor tools return wrong results.
+        addGeneratedSourcePaths(projectPath, sourcePaths);
+    }
+
+    /**
+     * Add the hand-written source layouts found in {@code projectPath}: standard
+     * layouts first, then the "src/" fallback when no path already in
+     * {@code sourcePaths} lies under {@code projectPath}.
+     */
+    void addConventionalSourcePaths(Path projectPath, List<Path> sourcePaths) {
         // Check standard layouts.
         for (int i = 0; i < SOURCE_MAPPINGS.length - 1; i++) {
             Path srcPath = projectPath.resolve(SOURCE_MAPPINGS[i][0]);
@@ -73,13 +90,6 @@ public class LinkedFolderConfigurator {
                 sourcePaths.add(srcPath);
             }
         }
-
-        // Bug B fix: include generated-source directories. Annotation processors
-        // (Lombok, MapStruct, Dagger, JPA Metamodel) write here at build time, and
-        // hand-written code references symbols from those generated files. Without
-        // these on the classpath as source folders, references are unresolved and
-        // many navigation/refactor tools return wrong results.
-        addGeneratedSourcePaths(projectPath, sourcePaths);
     }
 
     /**
@@ -132,7 +142,7 @@ public class LinkedFolderConfigurator {
     // target/generated-sources/ (e.g. annotations, jaxws, jpamodelgen, ...). Gradle's
     // layout is build/generated/sources/<task>/{main,test}/java/. We probe one level
     // deep so each processor's directory becomes its own source folder.
-    private void addGeneratedSourcePaths(Path projectPath, List<Path> sourcePaths) {
+    void addGeneratedSourcePaths(Path projectPath, List<Path> sourcePaths) {
         addImmediateSubdirectories(projectPath.resolve("target").resolve("generated-sources"), sourcePaths);
         addImmediateSubdirectories(projectPath.resolve("target").resolve("generated-test-sources"), sourcePaths);
 

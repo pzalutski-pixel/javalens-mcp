@@ -1,6 +1,8 @@
 package org.javalens.core.project;
 
+import org.javalens.core.project.model.BuildModel;
 import org.javalens.core.project.model.LoadWarning;
+import org.javalens.core.project.model.Provenance;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -104,6 +106,17 @@ public class GradleImporter implements BuildSystemImporter {
 
     private String cachedCompilerLevel;
     private final List<Path> cachedProcessorJars = new ArrayList<>();
+
+    /**
+     * Compose the subproject read with {@link #getDependencies}, then the
+     * {@link #detectCompilerLevel} and {@link #detectAnnotationProcessors} answers that
+     * run caches. Subprojects come from a regex read of {@code settings.gradle}, so the
+     * model is {@link Provenance#STATIC_READ}.
+     */
+    @Override
+    public BuildModel resolve(Path projectRoot) {
+        return BuildModelAssembler.assemble(this, BuildSystem.GRADLE, Provenance.STATIC_READ, projectRoot);
+    }
 
     /**
      * Parse {@code settings.gradle} (or {@code settings.gradle.kts}) for {@code include}
@@ -226,9 +239,8 @@ public class GradleImporter implements BuildSystemImporter {
             if (process.exitValue() == 0) {
                 aggregateGradleClasspathFiles(projectPath, jars);
                 // Harvest compliance + processor jars while their aux files still exist.
-                // The cleanup in finally below removes them; subsequent
-                // applyCompilerOptions / applyAnnotationProcessing read from the cache
-                // populated here.
+                // The cleanup in finally below removes them; resolve() then reads level
+                // and processors from the cache populated here.
                 cachedCompilerLevel = readFirstGradleAuxFile(projectPath, GRADLE_COMPLIANCE_FILENAME);
                 cachedProcessorJars.addAll(readGradleProcessorJars(projectPath));
                 log.info("Got {} classpath entries from Gradle (compliance={}, {} processor jars)",
@@ -323,8 +335,7 @@ public class GradleImporter implements BuildSystemImporter {
 
     private void cleanupGradleClasspathFiles(Path projectPath) {
         // Cleanup all three aux files written by the init script. Compliance + processor
-        // files are read by applyCompilerOptions / applyAnnotationProcessing further along
-        // configureJavaProject, so cleanup happens after those callsites consume them.
+        // files were already harvested into the caches, so nothing reads them afterwards.
         Set<String> auxFiles = Set.of(
             GRADLE_CP_FILENAME, GRADLE_COMPLIANCE_FILENAME, GRADLE_PROCESSORS_FILENAME);
         try (Stream<Path> stream = Files.walk(projectPath)) {

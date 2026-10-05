@@ -1,6 +1,8 @@
 package org.javalens.core.project;
 
+import org.javalens.core.project.model.BuildModel;
 import org.javalens.core.project.model.LoadWarning;
+import org.javalens.core.project.model.Provenance;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,6 +39,17 @@ public class BazelImporter implements BuildSystemImporter {
         ".git", ".svn", ".mvn", ".gradle", ".settings", ".metadata",
         "node_modules", "target", "build", "bin", "out", "dist"
     );
+
+    /**
+     * Compose the BUILD package walk with {@link #getDependencies},
+     * {@link #detectCompilerLevel} and the processor SPI scan of
+     * {@link #getResolvedClasspathJars}. Packages and {@code javacopts} come from walking
+     * and regex-reading BUILD files, so the model is {@link Provenance#STATIC_READ}.
+     */
+    @Override
+    public BuildModel resolve(Path projectRoot) {
+        return BuildModelAssembler.assemble(this, BuildSystem.BAZEL, Provenance.STATIC_READ, projectRoot);
+    }
 
     /**
      * Walk the project tree for every directory containing a {@code BUILD} or

@@ -1,6 +1,8 @@
 package org.javalens.core.project;
 
+import org.javalens.core.project.model.BuildModel;
 import org.javalens.core.project.model.LoadWarning;
+import org.javalens.core.project.model.Provenance;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -54,6 +56,16 @@ public class MavenImporter implements BuildSystemImporter {
      */
     private static final String MAVEN_CP_FILENAME = "javalens-classpath.txt";
     private static final String MAVEN_CP_RELATIVE_PATH = "target/" + MAVEN_CP_FILENAME;
+
+    /**
+     * Compose the module walk with {@link #getDependencies}, {@link #detectCompilerLevel}
+     * and {@link #detectAnnotationProcessors}. Modules, level and processors come from
+     * regex reads of the poms, so the model is {@link Provenance#STATIC_READ}.
+     */
+    @Override
+    public BuildModel resolve(Path projectRoot) {
+        return BuildModelAssembler.assemble(this, BuildSystem.MAVEN, Provenance.STATIC_READ, projectRoot);
+    }
 
     /**
      * Detect if this is a multi-module Maven project.

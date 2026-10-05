@@ -23,6 +23,7 @@ import org.javalens.core.exceptions.ReloadRequiredException;
 import org.javalens.core.graph.ProjectGraphService;
 import org.javalens.core.project.BuildSystem;
 import org.javalens.core.project.ProjectImporter;
+import org.javalens.core.project.model.BuildModel;
 import org.javalens.core.project.model.LoadWarning;
 import org.javalens.core.search.SearchService;
 import org.javalens.core.sync.DiskStampService;
@@ -77,8 +78,13 @@ public class JdtServiceImpl implements IJdtService {
     private DiskSyncMode diskSyncMode;
 
     public JdtServiceImpl() {
+        this(new ProjectImporter());
+    }
+
+    /** Test seam: load through {@code projectImporter} instead of the default build-system dispatch. */
+    public JdtServiceImpl(ProjectImporter projectImporter) {
         this.workspaceManager = new WorkspaceManager();
-        this.projectImporter = new ProjectImporter();
+        this.projectImporter = projectImporter;
         this.timeoutSeconds = parseTimeout();
         this.diskSyncMode = DiskSyncMode.fromEnvironment(System.getenv("JAVALENS_DISK_SYNC"));
     }
@@ -119,10 +125,11 @@ public class JdtServiceImpl implements IJdtService {
         // Initialize workspace
         workspaceManager.initialize();
 
-        // Detect build system and collect project info
-        this.buildSystem = projectImporter.detectBuildSystem(projectRoot);
-        this.sourceFileCount = projectImporter.countSourceFiles(projectRoot);
-        this.packages = projectImporter.findPackages(projectRoot);
+        // Resolve the build model once; project info and configuration all derive from it.
+        BuildModel model = projectImporter.resolveModel(projectRoot);
+        this.buildSystem = model.buildSystem();
+        this.sourceFileCount = projectImporter.countSourceFiles(model);
+        this.packages = projectImporter.findPackages(model);
         this.packageCount = packages.size();
 
         log.info("Detected {} build system, {} source files, {} packages",
@@ -133,7 +140,7 @@ public class JdtServiceImpl implements IJdtService {
         IProject project = workspaceManager.createLinkedProject(projectName, projectRoot);
 
         // Configure as Java project with linked source folders
-        this.javaProject = projectImporter.configureJavaProject(project, projectRoot, workspaceManager);
+        this.javaProject = projectImporter.configureJavaProject(project, projectRoot, model, workspaceManager);
 
         // Initialize search service
         this.searchService = new SearchService(javaProject);

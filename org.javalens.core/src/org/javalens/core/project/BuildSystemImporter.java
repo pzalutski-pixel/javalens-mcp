@@ -1,41 +1,60 @@
 package org.javalens.core.project;
 
+import org.javalens.core.project.model.BuildModel;
 import org.javalens.core.project.model.LoadWarning;
+import org.javalens.core.project.model.Provenance;
 
 import java.nio.file.Path;
 import java.util.List;
 
 /**
- * Per-build-system contract for extracting a Java project's classpath, declared
- * compiler level, and annotation-processor jars.
+ * Per-build-system contract for resolving a Java project's {@link BuildModel}: its
+ * modules and source roots, classpath, declared compiler level, and annotation-processor
+ * jars.
  *
  * <p>The orchestrator ({@link ProjectImporter}) dispatches to the implementation
- * mapped to the detected {@link BuildSystem}, so adding support for a new build
- * system means implementing this interface and registering an instance in the
- * orchestrator's importer map — no edits to switch statements.
+ * mapped to the detected {@link BuildSystem}, calls {@link #resolve} once per load,
+ * and derives everything it configures from the returned model. Adding support for a
+ * new build system means implementing this interface and registering an instance in
+ * the orchestrator's importer map: no edits to switch statements.
  *
- * <p>Methods that only apply to some build systems have default implementations
+ * <p>The per-concern methods below are what each importer's {@link #resolve} composes.
+ * Methods that only apply to some build systems have default implementations
  * returning empty: for example, Bazel has no per-target {@code <annotationProcessorPaths>}
  * equivalent we parse, so it inherits the default empty {@link #detectAnnotationProcessors}
- * and instead overrides {@link #getResolvedClasspathJars} to feed the orchestrator's
- * cross-cutting SPI scan.
- *
- * <p>Source-path discovery is intentionally <i>not</i> part of this contract — each
- * build system's source layout (Maven module walk, Gradle subproject include,
- * Bazel BUILD package walk + fallback) is too different in shape to unify
- * cleanly. The orchestrator handles those per-importer.
+ * and instead overrides {@link #getResolvedClasspathJars} to feed the cross-cutting SPI
+ * scan.
  */
 public interface BuildSystemImporter {
 
     /**
      * No-op importer used as the fallback for {@link BuildSystem#UNKNOWN}. Returns
-     * null compiler level and empty lists for everything; the orchestrator falls
-     * back to JRE-only classpath and JVM-default compiler level for plain projects.
+     * null compiler level and empty lists for everything; its model probes the root
+     * for conventional source layouts, and the orchestrator falls back to a JRE-only
+     * classpath and JVM-default compiler level for plain projects.
      */
     BuildSystemImporter NONE = new BuildSystemImporter() {
         @Override public String detectCompilerLevel(Path projectPath) { return null; }
         @Override public List<String> getDependencies(Path projectPath, List<LoadWarning> warnings) { return List.of(); }
+        @Override public BuildModel resolve(Path projectRoot) {
+            return BuildModelAssembler.assemble(this, BuildSystem.UNKNOWN, Provenance.CONVENTION, projectRoot);
+        }
     };
+
+    /**
+     * Resolve the project's build model. The orchestrator calls this exactly once per
+     * load and derives source folders, classpath, compiler level and annotation
+     * processing from the result alone.
+     *
+     * <p>Every registered importer overrides this. The default keeps implementations
+     * written against the per-concern methods alone source compatible, and throws
+     * because such an implementation cannot say which build system or provenance its
+     * answers have.
+     */
+    default BuildModel resolve(Path projectRoot) {
+        throw new UnsupportedOperationException(
+            getClass().getName() + " does not resolve a build model");
+    }
 
     /**
      * Read the declared Java source level from this build system's project files,
@@ -48,8 +67,8 @@ public interface BuildSystemImporter {
     /**
      * Annotation processors explicitly declared in this build system's project files
      * (Maven {@code <annotationProcessorPaths>}, Gradle {@code annotationProcessor}
-     * configuration). Build systems without such a declaration return empty, and the
-     * orchestrator scans {@link #getResolvedClasspathJars} for SPI descriptors as a
+     * configuration). Build systems without such a declaration return empty, and
+     * {@link #resolve} scans {@link #getResolvedClasspathJars} for SPI descriptors as a
      * fallback.
      */
     default List<Path> detectAnnotationProcessors(Path projectPath) {

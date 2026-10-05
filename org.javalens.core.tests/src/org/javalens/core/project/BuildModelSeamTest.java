@@ -1,0 +1,313 @@
+package org.javalens.core.project;
+
+import org.eclipse.jdt.apt.core.util.AptConfig;
+import org.eclipse.jdt.core.IClasspathEntry;
+import org.eclipse.jdt.core.IJavaProject;
+import org.javalens.core.JdtServiceImpl;
+import org.javalens.core.fixtures.ClasspathSnapshot;
+import org.javalens.core.fixtures.TestProjectHelper;
+import org.javalens.core.project.model.BuildInputs;
+import org.javalens.core.project.model.BuildModel;
+import org.javalens.core.project.model.BuildModule;
+import org.javalens.core.project.model.LoadWarning;
+import org.javalens.core.project.model.Provenance;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
+
+import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.jar.JarEntry;
+import java.util.jar.JarOutputStream;
+
+import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+/**
+ * Pins the build-model seam: a load resolves the importer's {@link BuildModel} exactly
+ * once and derives source folders, file count, packages, classpath, compiler level, APT
+ * and warnings from that model alone.
+ *
+ * <p>The orchestrator tests register a {@link ModelStub} for {@link BuildSystem#UNKNOWN}
+ * (the temp projects carry no build file). The stub's per-concern methods answer nothing,
+ * so everything the load reports must come from {@link BuildSystemImporter#resolve}. Where
+ * source roots are pinned, the temp project also holds a conventional {@code src/main/java}
+ * the model does not declare, so layout probing by the orchestrator would be visible.
+ *
+ * <p>The resolve tests pin the models the plain-Java and Bazel importers compose from
+ * their per-concern methods.
+ */
+class BuildModelSeamTest {
+
+    @RegisterExtension
+    TestProjectHelper helper = new TestProjectHelper();
+
+    // ========== Orchestrator derives the load from the model ==========
+
+    @Test
+    @DisplayName("Load links exactly the model's source root, applies its level, counts and lists packages from it, and resolves once")
+    void loadDerivesFoldersLevelCountAndPackagesFromModel() throws Exception {
+        Path root = Files.createDirectories(helper.getTempDirectory().resolve("seam-custom-root"));
+        Path customJava = root.resolve("custom/java");
+        writeSource(customJava, "p", "P");
+        // Conventional layout the model does not declare: two files in package q.
+        Path conventional = root.resolve("src/main/java");
+        writeSource(conventional, "q", "Q1");
+        writeSource(conventional, "q", "Q2");
+
+        ModelStub stub = new ModelStub(model(BuildSystem.UNKNOWN, "17",
+            List.of(module(".", root, List.of(customJava), List.of())),
+            List.of(), List.of(), List.of()));
+        JdtServiceImpl service = load(root, stub);
+        ClasspathSnapshot snapshot = ClasspathSnapshot.capture(service.getJavaProject());
+
+        assertAll(
+            () -> assertEquals(List.of(customJava), snapshot.sourceFolders(), "linked source folders"),
+            () -> assertEquals("17", snapshot.compilerSource(), "COMPILER_SOURCE"),
+            () -> assertEquals(1, service.getSourceFileCount(), "source file count"),
+            () -> assertEquals(List.of("p"), service.getPackages(), "packages"),
+            () -> assertEquals(1, stub.resolveCalls, "resolve() calls for the whole load"),
+            () -> assertEquals(List.of(), service.getWarnings(), "warnings"));
+    }
+
+    @Test
+    @DisplayName("Source folders follow module order, each module's source roots before its generated roots")
+    void sourceFoldersFollowModuleOrder() throws Exception {
+        Path root = Files.createDirectories(helper.getTempDirectory().resolve("seam-order"));
+        Path alphaMain = root.resolve("alpha/main");
+        Path alphaTest = root.resolve("alpha/test");
+        Path alphaGen = root.resolve("alpha/gen");
+        Path betaMain = root.resolve("beta/main");
+        Path betaGen = root.resolve("beta/gen");
+        writeSource(alphaMain, "a", "A");
+        writeSource(alphaTest, "a", "ATest");
+        writeSource(alphaGen, "g", "G");
+        writeSource(betaMain, "b", "B");
+        writeSource(betaGen, "b", "BGen");
+        writeSource(root.resolve("src/main/java"), "q", "Q");
+
+        ModelStub stub = new ModelStub(model(BuildSystem.UNKNOWN, "17",
+            List.of(
+                module("alpha", root.resolve("alpha"), List.of(alphaMain, alphaTest), List.of(alphaGen)),
+                module("beta", root.resolve("beta"), List.of(betaMain), List.of(betaGen))),
+            List.of(), List.of(), List.of()));
+        JdtServiceImpl service = load(root, stub);
+        ClasspathSnapshot snapshot = ClasspathSnapshot.capture(service.getJavaProject());
+
+        // Linked-folder names are "src-<index>-<root-relative path>", so the index pins the order.
+        List<String> linkedFolderNames = Arrays.stream(service.getJavaProject().getRawClasspath())
+            .filter(entry -> entry.getEntryKind() == IClasspathEntry.CPE_SOURCE)
+            .map(entry -> entry.getPath().lastSegment())
+            .toList();
+        assertAll(
+            () -> assertEquals(List.of(alphaMain, alphaTest, alphaGen, betaMain, betaGen),
+                snapshot.sourceFolders(), "linked source folders"),
+            () -> assertEquals(List.of("src-0-alpha-main", "src-1-alpha-test", "src-2-alpha-gen",
+                "src-3-beta-main", "src-4-beta-gen"), linkedFolderNames, "linked folder names"),
+            () -> assertEquals(5, service.getSourceFileCount(), "source file count"),
+            () -> assertEquals(List.of("a", "g", "b"), service.getPackages(), "packages, first-seen order"),
+            () -> assertEquals(1, stub.resolveCalls, "resolve() calls for the whole load"));
+    }
+
+    @Test
+    @DisplayName("Classpath holds the model's existing entries in model order, then the root output directory")
+    void classpathFollowsModelThenRootOutputDirs() throws Exception {
+        Path root = Files.createDirectories(helper.getTempDirectory().resolve("seam-classpath"));
+        Path dependency = writeJar(root.resolve("libs/dependency.jar"), Map.of());
+        Path absent = root.resolve("libs/absent.jar");
+        Path rootClasses = Files.createDirectories(root.resolve("target/classes"));
+
+        ModelStub stub = new ModelStub(model(BuildSystem.UNKNOWN, "17", List.of(),
+            List.of(dependency.toString(), absent.toString()), List.of(), List.of()));
+        JdtServiceImpl service = load(root, stub);
+        ClasspathSnapshot snapshot = ClasspathSnapshot.capture(service.getJavaProject());
+
+        assertAll(
+            () -> assertEquals(List.of(dependency, rootClasses), snapshot.libraries(), "library entries"),
+            () -> assertEquals(1, stub.resolveCalls, "resolve() calls for the whole load"));
+    }
+
+    @Test
+    @DisplayName("APT is wired from the model's processor jars; a missing jar raises APT_PROCESSOR_JARS_MISSING naming it")
+    void processorJarsFromModelWireApt() throws Exception {
+        Path root = Files.createDirectories(helper.getTempDirectory().resolve("seam-apt"));
+        Path missingProcessor = root.resolve("processors/absent-processor.jar");
+
+        ModelStub stub = new ModelStub(model(BuildSystem.UNKNOWN, "17", List.of(),
+            List.of(), List.of(missingProcessor), List.of()));
+        JdtServiceImpl service = load(root, stub);
+        IJavaProject javaProject = service.getJavaProject();
+
+        List<LoadWarning> warnings = service.getWarnings();
+        assertAll(
+            () -> assertEquals(true, AptConfig.isEnabled(javaProject), "APT enabled"),
+            () -> assertEquals(List.of(LoadWarning.APT_PROCESSOR_JARS_MISSING),
+                warnings.stream().map(LoadWarning::code).toList(), "warning codes"),
+            () -> assertEquals("Annotation processors were declared but none of the 1 candidate jar(s) "
+                    + "were found on disk; APT is enabled with an empty factory path. Missing: ["
+                    + missingProcessor + "]",
+                warnings.isEmpty() ? null : warnings.get(0).message(), "warning message"));
+    }
+
+    @Test
+    @DisplayName("Model warnings surface first and unchanged, followed by the orchestrator's compliance warning")
+    void modelWarningsPrecedeComplianceWarnings() throws Exception {
+        Path root = Files.createDirectories(helper.getTempDirectory().resolve("seam-warnings"));
+        LoadWarning modelWarning = new LoadWarning(LoadWarning.BAZEL_NOT_BUILT,
+            "bazel-bin holds no jars", "Run 'bazel build //...'");
+
+        ModelStub stub = new ModelStub(model(BuildSystem.BAZEL, "1.6", List.of(),
+            List.of(), List.of(), List.of(modelWarning)));
+        JdtServiceImpl service = load(root, stub);
+        ClasspathSnapshot snapshot = ClasspathSnapshot.capture(service.getJavaProject());
+
+        List<LoadWarning> warnings = service.getWarnings();
+        assertAll(
+            () -> assertEquals(List.of(LoadWarning.BAZEL_NOT_BUILT, LoadWarning.COMPLIANCE_LEVEL_UNSUPPORTED),
+                warnings.stream().map(LoadWarning::code).toList(), "warning codes in order"),
+            () -> assertEquals(modelWarning, warnings.isEmpty() ? null : warnings.get(0), "model warning"),
+            () -> assertEquals("1.8", snapshot.compilerSource(), "COMPILER_SOURCE clamped from 1.6"));
+    }
+
+    @Test
+    @DisplayName("Without a model level, a model naming a build system gets the runtime level and COMPLIANCE_LEVEL_UNKNOWN")
+    void nullLevelFallbackUsesModelBuildSystem() throws Exception {
+        Path root = Files.createDirectories(helper.getTempDirectory().resolve("seam-no-level"));
+        String runtimeLevel = String.valueOf(Runtime.version().feature());
+
+        ModelStub stub = new ModelStub(model(BuildSystem.GRADLE, null, List.of(),
+            List.of(), List.of(), List.of()));
+        JdtServiceImpl service = load(root, stub);
+        ClasspathSnapshot snapshot = ClasspathSnapshot.capture(service.getJavaProject());
+
+        List<LoadWarning> warnings = service.getWarnings();
+        assertAll(
+            () -> assertEquals(BuildSystem.GRADLE, service.getBuildSystem(), "build system"),
+            () -> assertEquals(runtimeLevel, snapshot.compilerSource(), "COMPILER_SOURCE"),
+            () -> assertEquals(List.of(LoadWarning.COMPLIANCE_LEVEL_UNKNOWN),
+                warnings.stream().map(LoadWarning::code).toList(), "warning codes"),
+            () -> assertEquals("Could not determine declared Java source level for GRADLE project; "
+                    + "defaulting to runtime JVM major version " + runtimeLevel,
+                warnings.isEmpty() ? null : warnings.get(0).message(), "warning message"));
+    }
+
+    // ========== Importers compose their per-concern methods into a model ==========
+
+    @Test
+    @DisplayName("Plain Java resolves to one convention module at the root, hand-written and generated roots split")
+    void plainJavaResolvesRootConventionModule() throws Exception {
+        Path root = Files.createDirectories(helper.getTempDirectory().resolve("plain-layout"));
+        Path srcMain = Files.createDirectories(root.resolve("src/main/java"));
+        Path srcTest = Files.createDirectories(root.resolve("src/test/java"));
+        Path generated = Files.createDirectories(root.resolve("target/generated-sources/annotations"));
+        // A nested conventional layout in a directory no build file declares as a module.
+        Files.createDirectories(root.resolve("other/src/main/java"));
+
+        BuildModel expected = new BuildModel(BuildSystem.UNKNOWN, Provenance.CONVENTION,
+            List.of(new BuildModule(".", root, List.of(srcMain, srcTest), List.of(generated),
+                List.of(), null, false)),
+            List.of(), List.of(), null, new BuildInputs(List.of(), List.of()), List.of());
+
+        assertEquals(expected, BuildSystemImporter.NONE.resolve(root));
+    }
+
+    @Test
+    @DisplayName("Bazel resolves processor jars as the resolved classpath jars that carry the processor SPI descriptor")
+    void bazelResolvesProcessorJarsBySpiScan() throws Exception {
+        Path root = Files.createDirectories(helper.getTempDirectory().resolve("bazel-spi"));
+        Files.writeString(root.resolve("MODULE.bazel"), "module(name = \"spi\")\n");
+        Path processor = writeJar(root.resolve("bazel-bin/lib/processor.jar"), Map.of(
+            "META-INF/services/javax.annotation.processing.Processor", "p.Processor\n"));
+        Path library = writeJar(root.resolve("bazel-bin/lib/library.jar"), Map.of(
+            "p/readme.txt", "no processor here\n"));
+        // getDependencies canonicalizes every jar it collects.
+        Path processorReal = processor.toRealPath();
+        Path libraryReal = library.toRealPath();
+
+        BuildModel model = new BazelImporter().resolve(root);
+
+        assertAll(
+            () -> assertEquals(BuildSystem.BAZEL, model.buildSystem(), "build system"),
+            () -> assertEquals(Provenance.STATIC_READ, model.provenance(), "provenance"),
+            () -> assertEquals(List.of(new BuildModule(".", root, List.of(), List.of(), List.of(), null, false)),
+                model.modules(), "modules"),
+            // Collection order follows the directory walk, which the filesystem decides.
+            () -> assertEquals(Set.of(processorReal.toString(), libraryReal.toString()),
+                Set.copyOf(model.classpath()), "classpath"),
+            () -> assertEquals(2, model.classpath().size(), "classpath size"),
+            () -> assertEquals(List.of(processorReal), model.processorJars(), "processor jars"),
+            () -> assertEquals(null, model.analysisLevel(), "analysis level"),
+            () -> assertEquals(List.of(), model.warnings(), "warnings"));
+    }
+
+    // ========== Helpers ==========
+
+    /** Importer that answers only through {@link #resolve}, counting its calls. */
+    private static final class ModelStub implements BuildSystemImporter {
+        private final BuildModel model;
+        private int resolveCalls;
+
+        ModelStub(BuildModel model) {
+            this.model = model;
+        }
+
+        @Override
+        public BuildModel resolve(Path projectRoot) {
+            resolveCalls++;
+            return model;
+        }
+
+        @Override
+        public String detectCompilerLevel(Path projectPath) {
+            return null;
+        }
+
+        @Override
+        public List<String> getDependencies(Path projectPath, List<LoadWarning> warnings) {
+            return List.of();
+        }
+    }
+
+    private static JdtServiceImpl load(Path root, ModelStub stub) throws Exception {
+        JdtServiceImpl service = new JdtServiceImpl(new ProjectImporter(Map.of(BuildSystem.UNKNOWN, stub)));
+        service.loadProject(root);
+        return service;
+    }
+
+    private static BuildModel model(BuildSystem buildSystem, String level, List<BuildModule> modules,
+            List<String> classpath, List<Path> processorJars, List<LoadWarning> warnings) {
+        Provenance provenance = buildSystem == BuildSystem.UNKNOWN ? Provenance.CONVENTION : Provenance.STATIC_READ;
+        return new BuildModel(buildSystem, provenance, modules, classpath, processorJars, level,
+            new BuildInputs(List.of(), List.of()), warnings);
+    }
+
+    private static BuildModule module(String id, Path dir, List<Path> sourceRoots, List<Path> generatedRoots) {
+        return new BuildModule(id, dir, sourceRoots, generatedRoots, List.of(), null, false);
+    }
+
+    private static void writeSource(Path sourceRoot, String packageName, String className) throws IOException {
+        Path packageDir = Files.createDirectories(sourceRoot.resolve(packageName));
+        Files.writeString(packageDir.resolve(className + ".java"),
+            "package " + packageName + ";\n\npublic class " + className + " {\n}\n");
+    }
+
+    private static Path writeJar(Path jar, Map<String, String> entries) throws IOException {
+        Files.createDirectories(jar.getParent());
+        try (OutputStream out = Files.newOutputStream(jar);
+             JarOutputStream jarOut = new JarOutputStream(out)) {
+            for (Map.Entry<String, String> entry : entries.entrySet()) {
+                jarOut.putNextEntry(new JarEntry(entry.getKey()));
+                jarOut.write(entry.getValue().getBytes(StandardCharsets.UTF_8));
+                jarOut.closeEntry();
+            }
+        }
+        return jar;
+    }
+}

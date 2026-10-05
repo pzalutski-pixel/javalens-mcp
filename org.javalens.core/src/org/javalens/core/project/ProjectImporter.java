@@ -11,6 +11,8 @@ import org.eclipse.jdt.core.IClasspathEntry;
 import org.eclipse.jdt.core.IJavaProject;
 import org.eclipse.jdt.core.JavaCore;
 import org.eclipse.jdt.launching.JavaRuntime;
+import org.javalens.core.project.model.BuildModel;
+import org.javalens.core.project.model.BuildModule;
 import org.javalens.core.project.model.LoadWarning;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,13 +30,16 @@ import java.util.stream.Stream;
  * Orchestrator for importing external Java projects into the Eclipse workspace and
  * configuring their JDT classpath, compiler options, and annotation-processor wiring.
  *
+ * <p>A load resolves the project's {@link BuildModel} once, through {@link #resolveModel},
+ * and derives everything from it: source file count, packages, linked source folders,
+ * classpath, compiler level and APT.
+ *
  * <p>The work is split across collaborator classes, each owning one concern:
  * <ul>
  *   <li>{@link BuildSystem} — enum naming the supported build systems.</li>
- *   <li>{@link BuildSystemImporter} — per-build-system contract for classpath /
- *       compiler-level / annotation-processor extraction. Implemented by
- *       {@link MavenImporter}, {@link GradleImporter}, {@link BazelImporter};
- *       lookup-dispatched here via {@link #importerFor}.</li>
+ *   <li>{@link BuildSystemImporter}: per-build-system contract that resolves the
+ *       {@link BuildModel}. Implemented by {@link MavenImporter}, {@link GradleImporter},
+ *       {@link BazelImporter}; lookup-dispatched here via {@link #importerFor}.</li>
  *   <li>{@link LinkedFolderConfigurator} — Eclipse linked-folder creation and
  *       layout-specific source-path probing (build-system-agnostic).</li>
  * </ul>
@@ -43,7 +48,7 @@ import java.util.stream.Stream;
  * inside the workspace so the user's actual project directory is never polluted.
  *
  * <p>Adding support for a new build system: implement {@link BuildSystemImporter},
- * instantiate it as a field, register it in {@link #importers}, and extend
+ * register an instance in the default constructor's importer map, and extend
  * {@link #detectBuildSystem} to recognize the build file marker. The four orchestrator
  * methods ({@link #configureJavaProject}, {@link #applyAnnotationProcessing},
  * {@link #applyCompilerOptions}, {@link #addDependencyEntries}) require no edits.
@@ -60,21 +65,26 @@ public class ProjectImporter {
     private final List<LoadWarning> warnings = new ArrayList<>();
 
     private final LinkedFolderConfigurator linkedFolderConfigurator = new LinkedFolderConfigurator();
-    private final BazelImporter bazelImporter = new BazelImporter();
-    private final GradleImporter gradleImporter = new GradleImporter();
-    private final MavenImporter mavenImporter = new MavenImporter();
 
     /**
      * Dispatch table: detected {@link BuildSystem} → its {@link BuildSystemImporter}.
      * {@link BuildSystem#UNKNOWN} falls back to {@link BuildSystemImporter#NONE} via
-     * {@link #importerFor}. Adding a new build system: instantiate an importer field
-     * above, add one entry here, extend {@link #detectBuildSystem}.
+     * {@link #importerFor}. Adding a new build system: add one entry in the default
+     * constructor, extend {@link #detectBuildSystem}.
      */
-    private final Map<BuildSystem, BuildSystemImporter> importers = Map.of(
-        BuildSystem.MAVEN, mavenImporter,
-        BuildSystem.GRADLE, gradleImporter,
-        BuildSystem.BAZEL, bazelImporter
-    );
+    private final Map<BuildSystem, BuildSystemImporter> importers;
+
+    public ProjectImporter() {
+        this(Map.of(
+            BuildSystem.MAVEN, new MavenImporter(),
+            BuildSystem.GRADLE, new GradleImporter(),
+            BuildSystem.BAZEL, new BazelImporter()));
+    }
+
+    /** Test seam: dispatch to {@code importers}; unmapped build systems get {@link BuildSystemImporter#NONE}. */
+    ProjectImporter(Map<BuildSystem, BuildSystemImporter> importers) {
+        this.importers = Map.copyOf(importers);
+    }
 
     private BuildSystemImporter importerFor(BuildSystem buildSystem) {
         return importers.getOrDefault(buildSystem, BuildSystemImporter.NONE);
@@ -88,21 +98,44 @@ public class ProjectImporter {
     }
 
     /**
+     * Resolve the build model of the project at {@code projectPath}: detect its build
+     * system and ask that system's importer once. A load passes the result to
+     * {@link #countSourceFiles(BuildModel)}, {@link #findPackages(BuildModel)} and
+     * {@link #configureJavaProject(IProject, java.nio.file.Path, BuildModel,
+     * org.javalens.core.workspace.WorkspaceManager)}.
+     */
+    public BuildModel resolveModel(java.nio.file.Path projectPath) {
+        return importerFor(detectBuildSystem(projectPath)).resolve(projectPath);
+    }
+
+    /**
+     * Resolve the project's build model and configure the project from it. A load that
+     * already holds the model calls
+     * {@link #configureJavaProject(IProject, java.nio.file.Path, BuildModel,
+     * org.javalens.core.workspace.WorkspaceManager)} instead.
+     */
+    public IJavaProject configureJavaProject(IProject project, java.nio.file.Path projectPath,
+            org.javalens.core.workspace.WorkspaceManager workspaceManager) throws CoreException {
+        return configureJavaProject(project, projectPath, resolveModel(projectPath), workspaceManager);
+    }
+
+    /**
      * Configure an IProject as a Java project with proper classpath.
      * Creates linked folders for source directories to keep Eclipse metadata
      * in the workspace, not polluting the user's project directory.
      *
      * @param project The workspace project (must be created and open)
      * @param projectPath The filesystem path to the external project
+     * @param model The project's resolved build model; the only source of source
+     *              folders, classpath, compiler level and processor jars
      * @param workspaceManager WorkspaceManager for creating linked folders
      * @return Configured IJavaProject
      * @throws CoreException if configuration fails
      */
     public IJavaProject configureJavaProject(IProject project, java.nio.file.Path projectPath,
-            org.javalens.core.workspace.WorkspaceManager workspaceManager) throws CoreException {
-        // Reset accumulated state from any previous load. GradleImporter resets its
-        // own caches internally at the start of getDependencies(); the orchestrator
-        // does not need to clear them here.
+            BuildModel model, org.javalens.core.workspace.WorkspaceManager workspaceManager)
+            throws CoreException {
+        // Reset accumulated state from any previous load.
         warnings.clear();
 
         IJavaProject javaProject = JavaCore.create(project);
@@ -127,21 +160,22 @@ public class ProjectImporter {
                     + "will report BUILDPATH errors."));
         }
 
+        // The importer's warnings follow the JRE check and precede the compliance and
+        // APT warnings added below.
+        warnings.addAll(model.warnings());
+
         // 2. Add JRE container (provides java.* classes)
         IPath jreContainerPath = JavaRuntime.getDefaultJREContainerEntry().getPath();
         entries.add(JavaCore.newContainerEntry(jreContainerPath));
 
-        // 3. Create linked folders and add source entries. Source-path aggregation is
-        // build-system-aware (Maven modules, Gradle subprojects, Bazel packages); the
-        // per-directory layout probing and linked-folder creation live in
-        // LinkedFolderConfigurator.
-        List<java.nio.file.Path> sourcePaths = getAllSourcePaths(projectPath);
+        // 3. Create linked folders and add source entries, one per model source root in
+        // model order. Linked-folder names carry the index, so the order keeps them stable.
         linkedFolderConfigurator.addLinkedSourceFolders(
-            entries, project, projectPath, sourcePaths, workspaceManager,
-            mavenImporter.isMultiModule(projectPath));
+            entries, project, projectPath, sourceRoots(model), workspaceManager,
+            model.modules().size() > 1);
 
-        // 4. Add dependency JARs from build system
-        addDependencyEntries(entries, projectPath);
+        // 4. Add dependency JARs from the model
+        addDependencyEntries(entries, projectPath, model);
 
         // 5. Add output location
         IPath outputPath = project.getFullPath().append("bin");
@@ -156,43 +190,21 @@ public class ProjectImporter {
         // Bug G fix: apply the project's declared compiler source level. Without this, JDT
         // falls back to defaults that may be older than the source code, causing legitimate
         // language features (e.g. Java 21 record patterns) to be reported as syntax errors.
-        BuildSystem buildSystem = detectBuildSystem(projectPath);
-        applyCompilerOptions(javaProject, projectPath, buildSystem);
+        applyCompilerOptions(javaProject, model);
 
         // Bug H fix: enable annotation processing and register the processor jars declared
         // by the project. Without this, code that references annotation-processor-generated
         // members (Lombok @Data getters, MapStruct mappers, JPA metamodels) shows those
         // members as unresolved during analysis.
-        applyAnnotationProcessing(javaProject, projectPath, buildSystem);
+        applyAnnotationProcessing(javaProject, model);
 
         log.info("Configured Java project with {} classpath entries", entries.size());
         return javaProject;
     }
 
     /**
-     * Enable JDT's APT framework on the project and register annotation-processor jars on
-     * its factory path. Splits into {@link #collectProcessorJars} (gathering) and
-     * {@link #wireApt} (registration), each with a single concern.
-     */
-    private void applyAnnotationProcessing(IJavaProject javaProject, java.nio.file.Path projectPath, BuildSystem buildSystem) {
-        java.util.Set<java.nio.file.Path> processorJars = collectProcessorJars(projectPath, buildSystem);
-        if (processorJars.isEmpty()) return;
-        wireApt(javaProject, processorJars, projectPath);
-    }
-
-    /**
-     * Union of annotation processors from two complementary sources:
-     * <ol>
-     *   <li><b>Build-system-specific declarations</b> — {@code <annotationProcessorPaths>}
-     *       (Maven), the {@code annotationProcessor} configuration (Gradle).</li>
-     *   <li><b>Generic classpath scan</b> — any jar on the resolved classpath that contains
-     *       {@code META-INF/services/javax.annotation.processing.Processor}. Catches Bazel
-     *       projects (processors come from {@code java_plugin} rules we don't introspect)
-     *       and any system that drops a processor jar on the compile classpath without a
-     *       separate processor-path declaration. Maven/Gradle inherit the empty default for
-     *       {@link BuildSystemImporter#getResolvedClasspathJars} since their declarations
-     *       are already harvested above.
-     * </ol>
+     * Enable JDT's APT framework on the project and register the model's
+     * annotation-processor jars on its factory path via {@link #wireApt}.
      *
      * <p>Note: an earlier draft also fired {@code GENERATED_SOURCES_NOT_FOUND} when
      * processors were declared but no generated-source directory existed. That produced
@@ -202,16 +214,10 @@ public class ProjectImporter {
      * cannot reliably distinguish "build hasn't run" from "this processor doesn't emit",
      * so the warning was removed.
      */
-    private java.util.Set<java.nio.file.Path> collectProcessorJars(java.nio.file.Path projectPath, BuildSystem buildSystem) {
-        BuildSystemImporter importer = importerFor(buildSystem);
-        java.util.LinkedHashSet<java.nio.file.Path> processorJars = new java.util.LinkedHashSet<>();
-        processorJars.addAll(importer.detectAnnotationProcessors(projectPath));
-        for (java.nio.file.Path jar : importer.getResolvedClasspathJars(projectPath, warnings)) {
-            if (jarDeclaresAnnotationProcessor(jar)) {
-                processorJars.add(jar);
-            }
-        }
-        return processorJars;
+    private void applyAnnotationProcessing(IJavaProject javaProject, BuildModel model) {
+        java.util.Set<java.nio.file.Path> processorJars = new java.util.LinkedHashSet<>(model.processorJars());
+        if (processorJars.isEmpty()) return;
+        wireApt(javaProject, processorJars);
     }
 
     /**
@@ -222,8 +228,7 @@ public class ProjectImporter {
      * is recorded so the {@code load_project} response signals the silent-degradation
      * state ("APT enabled, factory path empty") to MCP clients.
      */
-    private void wireApt(IJavaProject javaProject, java.util.Set<java.nio.file.Path> processorJars,
-            java.nio.file.Path projectPath) {
+    private void wireApt(IJavaProject javaProject, java.util.Set<java.nio.file.Path> processorJars) {
         try {
             AptConfig.setEnabled(javaProject, true);
             IFactoryPath factoryPath = AptConfig.getDefaultFactoryPath(javaProject);
@@ -255,30 +260,14 @@ public class ProjectImporter {
     }
 
     /**
-     * Returns true iff the jar declares at least one annotation processor via the standard
-     * SPI descriptor at {@code META-INF/services/javax.annotation.processing.Processor}.
-     * A corrupted / truncated / unreadable jar logs a warning and returns false; this
-     * matches "no processor declared" externally but leaves a diagnostic trail so the
-     * silent-no-op case is investigable.
-     */
-    private boolean jarDeclaresAnnotationProcessor(java.nio.file.Path jar) {
-        try (java.util.jar.JarFile jf = new java.util.jar.JarFile(jar.toFile())) {
-            return jf.getEntry("META-INF/services/javax.annotation.processing.Processor") != null;
-        } catch (IOException e) {
-            log.warn("Could not read jar {} while scanning for annotation processors: {}",
-                jar, e.getMessage());
-            return false;
-        }
-    }
-
-    /**
-     * Read the project's declared Java source level from build metadata and apply it to
-     * the {@link IJavaProject}. Sets {@code COMPILER_SOURCE}, {@code COMPILER_COMPLIANCE},
-     * and {@code COMPILER_CODEGEN_TARGET_PLATFORM} so the JDT compiler parses and validates
+     * Apply the model's Java analysis level to the {@link IJavaProject}. Sets
+     * {@code COMPILER_SOURCE}, {@code COMPILER_COMPLIANCE}, and
+     * {@code COMPILER_CODEGEN_TARGET_PLATFORM} so the JDT compiler parses and validates
      * code at the same level the build system uses.
      */
-    private void applyCompilerOptions(IJavaProject javaProject, java.nio.file.Path projectPath, BuildSystem buildSystem) {
-        String level = importerFor(buildSystem).detectCompilerLevel(projectPath);
+    private void applyCompilerOptions(IJavaProject javaProject, BuildModel model) {
+        String level = model.analysisLevel();
+        BuildSystem buildSystem = model.buildSystem();
         // Final fallback for any build system that didn't surface a level: use the running
         // JVM's feature version. This keeps Plain Java projects (no build file) and
         // partially-declared Maven/Gradle/Bazel projects parsing modern syntax instead of
@@ -375,51 +364,21 @@ public class ProjectImporter {
     }
 
     /**
-     * Get all source directories, including from submodules if multi-module project.
+     * Every source root of the model in link order: per module, its source roots, then
+     * its generated source roots.
      */
-    private List<java.nio.file.Path> getAllSourcePaths(java.nio.file.Path projectPath) {
-        List<java.nio.file.Path> sourcePaths = new ArrayList<>();
-
-        // Walk the Maven module tree recursively. A module declared by the root pom can
-        // itself be an aggregator (<packaging>pom</packaging> with its own <modules> and
-        // no src/main/java); a flat depth-1 walk would visit it, find nothing, and never
-        // descend, leaving every nested leaf module's sources unindexed (issue #8).
-        // MavenImporter.walkModules handles the recursion + cycle guard; the visitor here
-        // probes each module root for standard source layouts.
-        mavenImporter.walkModules(projectPath,
-            module -> linkedFolderConfigurator.addSourcePathsFromDirectory(module, sourcePaths));
-
-        // If multi-project Gradle, also check each subproject. Without this, subproject
-        // src/main/java directories and their build/generated/sources/* are absent from
-        // the classpath and types declared in subprojects show as unresolved.
-        for (java.nio.file.Path subproject : gradleImporter.getSubprojects(projectPath)) {
-            linkedFolderConfigurator.addSourcePathsFromDirectory(subproject, sourcePaths);
+    private static List<java.nio.file.Path> sourceRoots(BuildModel model) {
+        List<java.nio.file.Path> roots = new ArrayList<>();
+        for (BuildModule module : model.modules()) {
+            roots.addAll(module.sourceRoots());
+            roots.addAll(module.generatedSourceRoots());
         }
-
-        // For Bazel multi-target builds, walk for every BUILD/BUILD.bazel package and
-        // probe it for standard layouts (src/main/java, etc.). Without this, only targets
-        // co-located with their .java files are discovered (handled by the fallback below).
-        if (detectBuildSystem(projectPath) == BuildSystem.BAZEL) {
-            for (java.nio.file.Path targetPkg : bazelImporter.getTargetPackages(projectPath)) {
-                linkedFolderConfigurator.addSourcePathsFromDirectory(targetPkg, sourcePaths);
-            }
-        }
-
-        // For Bazel projects without standard source layout, scan for directories that
-        // hold both BUILD files and .java sources directly.
-        if (sourcePaths.isEmpty() && detectBuildSystem(projectPath) == BuildSystem.BAZEL) {
-            bazelImporter.addFallbackSourcePaths(projectPath, sourcePaths);
-        }
-
-        return sourcePaths;
+        return roots;
     }
 
-    private void addDependencyEntries(List<IClasspathEntry> entries, java.nio.file.Path projectPath) {
-        BuildSystem buildSystem = detectBuildSystem(projectPath);
-
-        List<String> jars = importerFor(buildSystem).getDependencies(projectPath, warnings);
-
-        for (String jar : jars) {
+    private void addDependencyEntries(List<IClasspathEntry> entries, java.nio.file.Path projectPath,
+            BuildModel model) {
+        for (String jar : model.classpath()) {
             java.nio.file.Path jarPath = java.nio.file.Path.of(jar);
             if (Files.exists(jarPath)) {
                 IPath eclipsePath = new Path(jar);
@@ -434,7 +393,7 @@ public class ProjectImporter {
         addIfExists(entries, projectPath, "build/classes/java/main");
         addIfExists(entries, projectPath, "build/classes/java/test");
 
-        log.info("Added {} dependency entries from {}", jars.size(), buildSystem);
+        log.info("Added {} dependency entries from {}", model.classpath().size(), model.buildSystem());
     }
 
     private void addIfExists(List<IClasspathEntry> entries, java.nio.file.Path projectPath, String relativePath) {
@@ -446,14 +405,20 @@ public class ProjectImporter {
     }
 
     /**
-     * Count Java source files in the project.
-     * Supports multi-module projects.
+     * Resolve the project's build model and count the Java source files under its
+     * source roots. A load that already holds the model calls
+     * {@link #countSourceFiles(BuildModel)} instead.
      */
     public int countSourceFiles(java.nio.file.Path projectPath) {
-        int count = 0;
-        List<java.nio.file.Path> sourcePaths = getAllSourcePaths(projectPath);
+        return countSourceFiles(resolveModel(projectPath));
+    }
 
-        for (java.nio.file.Path srcPath : sourcePaths) {
+    /**
+     * Count the Java source files under the model's source roots, generated roots included.
+     */
+    public int countSourceFiles(BuildModel model) {
+        int count = 0;
+        for (java.nio.file.Path srcPath : sourceRoots(model)) {
             try (Stream<java.nio.file.Path> stream = Files.walk(srcPath)) {
                 count += (int) stream.filter(p -> p.toString().endsWith(".java")).count();
             } catch (IOException e) {
@@ -464,14 +429,20 @@ public class ProjectImporter {
     }
 
     /**
-     * Find all packages in the project.
-     * Supports multi-module projects.
+     * Resolve the project's build model and list the packages under its source roots.
+     * A load that already holds the model calls {@link #findPackages(BuildModel)} instead.
      */
     public List<String> findPackages(java.nio.file.Path projectPath) {
-        List<String> packages = new ArrayList<>();
-        List<java.nio.file.Path> sourcePaths = getAllSourcePaths(projectPath);
+        return findPackages(resolveModel(projectPath));
+    }
 
-        for (java.nio.file.Path srcPath : sourcePaths) {
+    /**
+     * List the packages that hold Java files under the model's source roots, in
+     * first-seen order without duplicates.
+     */
+    public List<String> findPackages(BuildModel model) {
+        List<String> packages = new ArrayList<>();
+        for (java.nio.file.Path srcPath : sourceRoots(model)) {
             try (Stream<java.nio.file.Path> stream = Files.walk(srcPath)) {
                 stream.filter(Files::isDirectory)
                       .filter(this::containsJavaFiles)
