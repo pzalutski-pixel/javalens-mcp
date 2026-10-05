@@ -85,11 +85,14 @@ public class MavenImporter implements BuildSystemImporter {
     }
 
     /**
-     * Get list of module directories for a multi-module project.
+     * Get the module directories that {@code moduleRoot}'s pom.xml declares, in
+     * declaration order. A {@code <module>} entry that is not a valid path, or whose
+     * directory does not exist, is skipped and appended to {@code warnings} as a
+     * {@link LoadWarning#MODULE_NOT_LOADED}.
      */
-    private List<Path> getModules(Path projectPath) {
+    private List<Path> getModules(Path projectRoot, Path moduleRoot, List<LoadWarning> warnings) {
         List<Path> modules = new ArrayList<>();
-        Path pomPath = projectPath.resolve("pom.xml");
+        Path pomPath = moduleRoot.resolve("pom.xml");
 
         if (!Files.exists(pomPath)) {
             return modules;
@@ -100,10 +103,8 @@ public class MavenImporter implements BuildSystemImporter {
             Matcher matcher = MODULE_PATTERN.matcher(content);
             while (matcher.find()) {
                 String moduleName = matcher.group(1).trim();
-                Path modulePath = projectPath.resolve(moduleName);
-                if (Files.exists(modulePath) && Files.isDirectory(modulePath)) {
-                    modules.add(modulePath);
-                }
+                DeclaredPaths.mavenModuleDir(projectRoot, pomPath, moduleName, warnings)
+                    .ifPresent(modules::add);
             }
         } catch (IOException e) {
             log.warn("Error reading pom.xml for modules: {}", e.getMessage());
@@ -121,13 +122,17 @@ public class MavenImporter implements BuildSystemImporter {
      * back to an already-visited directory exits cleanly.
      *
      * <p>The visitor is invoked once per module root in the reactor; callers wire their
-     * own per-module logic (e.g. probing for source layouts).
+     * own per-module logic (e.g. probing for source layouts). Each {@code <module>} entry
+     * that does not resolve to a directory is appended to {@code warnings} as a
+     * {@link LoadWarning#MODULE_NOT_LOADED}, every declaration of a pom before those of
+     * its modules.
      */
-    public void walkModules(Path projectPath, Consumer<Path> visitor) {
-        walkModulesInternal(projectPath, visitor, new HashSet<>());
+    public void walkModules(Path projectPath, Consumer<Path> visitor, List<LoadWarning> warnings) {
+        walkModulesInternal(projectPath, projectPath, visitor, new HashSet<>(), warnings);
     }
 
-    private void walkModulesInternal(Path moduleRoot, Consumer<Path> visitor, Set<Path> visited) {
+    private void walkModulesInternal(Path projectRoot, Path moduleRoot, Consumer<Path> visitor,
+            Set<Path> visited, List<LoadWarning> warnings) {
         Path canonical;
         try {
             canonical = moduleRoot.toRealPath();
@@ -139,8 +144,8 @@ public class MavenImporter implements BuildSystemImporter {
         visitor.accept(moduleRoot);
 
         if (isMultiModule(moduleRoot)) {
-            for (Path child : getModules(moduleRoot)) {
-                walkModulesInternal(child, visitor, visited);
+            for (Path child : getModules(projectRoot, moduleRoot, warnings)) {
+                walkModulesInternal(projectRoot, child, visitor, visited, warnings);
             }
         }
     }
@@ -206,11 +211,11 @@ public class MavenImporter implements BuildSystemImporter {
     public List<Path> detectAnnotationProcessors(Path projectPath) {
         List<Path> jars = new ArrayList<>();
         LinkedHashSet<Path> visited = new LinkedHashSet<>();
-        collectProcessorJarsRecursive(projectPath, null, jars, visited);
+        collectProcessorJarsRecursive(projectPath, projectPath, null, jars, visited);
         return jars;
     }
 
-    private void collectProcessorJarsRecursive(Path moduleRoot, String parentPomContent,
+    private void collectProcessorJarsRecursive(Path projectRoot, Path moduleRoot, String parentPomContent,
             List<Path> jars, Set<Path> visited) {
         if (!visited.add(moduleRoot)) return;
 
@@ -227,14 +232,16 @@ public class MavenImporter implements BuildSystemImporter {
 
         parseProcessorPathsFromPomContent(content, parentPomContent, jars);
 
-        // Recurse into <modules> entries.
+        // Recurse into <modules> entries. The module walk reports every entry that does
+        // not resolve to a directory; this recursion reads the same entries, so what it
+        // would report is dropped to keep one warning per declaration.
+        List<LoadWarning> reportedByModuleWalk = new ArrayList<>();
         Matcher matcher = MODULE_PATTERN.matcher(content);
         while (matcher.find()) {
             String moduleName = matcher.group(1).trim();
-            Path childRoot = moduleRoot.resolve(moduleName);
-            if (Files.isDirectory(childRoot)) {
-                collectProcessorJarsRecursive(childRoot, content, jars, visited);
-            }
+            DeclaredPaths.mavenModuleDir(projectRoot, pom, moduleName, reportedByModuleWalk)
+                .ifPresent(childRoot -> collectProcessorJarsRecursive(
+                    projectRoot, childRoot, content, jars, visited));
         }
     }
 

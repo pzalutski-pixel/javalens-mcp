@@ -51,6 +51,8 @@ class LoadWarningTest {
         assertEquals("BAZEL_NOT_BUILT", LoadWarning.BAZEL_NOT_BUILT);
         assertEquals("COMPLIANCE_LEVEL_UNKNOWN", LoadWarning.COMPLIANCE_LEVEL_UNKNOWN);
         assertEquals("APT_PROCESSOR_JARS_MISSING", LoadWarning.APT_PROCESSOR_JARS_MISSING);
+        assertEquals("MODULE_NOT_LOADED", LoadWarning.MODULE_NOT_LOADED);
+        assertEquals("MODULE_LAYOUT_ASSUMED", LoadWarning.MODULE_LAYOUT_ASSUMED);
     }
 
     @Test
@@ -64,7 +66,9 @@ class LoadWarningTest {
             LoadWarning.GRADLE_SUBPROCESS_FAILED,
             LoadWarning.BAZEL_NOT_BUILT,
             LoadWarning.COMPLIANCE_LEVEL_UNKNOWN,
-            LoadWarning.APT_PROCESSOR_JARS_MISSING
+            LoadWarning.APT_PROCESSOR_JARS_MISSING,
+            LoadWarning.MODULE_NOT_LOADED,
+            LoadWarning.MODULE_LAYOUT_ASSUMED
         };
         for (int i = 0; i < codes.length; i++) {
             for (int j = i + 1; j < codes.length; j++) {

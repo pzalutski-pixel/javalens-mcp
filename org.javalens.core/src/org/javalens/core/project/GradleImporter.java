@@ -126,8 +126,11 @@ public class GradleImporter implements BuildSystemImporter {
      * {@code include 'a', 'b'} and {@code include('a')}. Colon-prefixed paths
      * (e.g. {@code include ':app:core'}) are normalized: leading colons stripped,
      * internal colons converted to file separators.
+     *
+     * <p>An include that is not a valid path, or whose directory does not exist, is
+     * skipped and appended to {@code warnings} as a {@link LoadWarning#MODULE_NOT_LOADED}.
      */
-    public List<Path> getSubprojects(Path projectPath) {
+    public List<Path> getSubprojects(Path projectPath, List<LoadWarning> warnings) {
         Path settings = projectPath.resolve("settings.gradle");
         if (!Files.exists(settings)) settings = projectPath.resolve("settings.gradle.kts");
         if (!Files.exists(settings)) return List.of();
@@ -142,12 +145,8 @@ public class GradleImporter implements BuildSystemImporter {
                 while (nameMatcher.find()) {
                     String raw = nameMatcher.group(1).trim();
                     if (raw.isEmpty()) continue;
-                    // Gradle ':app:core' notation -> 'app/core' on disk.
-                    String pathStr = raw.replaceAll("^:+", "").replace(':', '/');
-                    Path subprojectPath = projectPath.resolve(pathStr);
-                    if (Files.isDirectory(subprojectPath)) {
-                        subprojects.add(subprojectPath);
-                    }
+                    DeclaredPaths.gradleProjectDir(projectPath, settings, raw, warnings)
+                        .ifPresent(subprojects::add);
                 }
             }
         } catch (IOException e) {

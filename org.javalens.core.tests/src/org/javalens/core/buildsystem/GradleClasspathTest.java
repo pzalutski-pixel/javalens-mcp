@@ -13,9 +13,11 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Stream;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -85,11 +87,13 @@ class GradleClasspathTest {
             include 'delta', ':nested:inner'
             """);
 
-        List<Path> subprojects = new GradleImporter().getSubprojects(projectRoot);
+        List<LoadWarning> warnings = new ArrayList<>();
+        List<Path> subprojects = new GradleImporter().getSubprojects(projectRoot, warnings);
         // Compare by relative path to the project root for OS-independence.
         List<String> rel = subprojects.stream()
             .map(p -> projectRoot.relativize(p).toString().replace('\\', '/'))
             .toList();
+        assertEquals(List.of(), warnings, "every include resolves to an existing directory");
         assertEquals(5, subprojects.size(),
             "Expected 5 subprojects (alpha, beta, gamma, delta, nested/inner); got: " + rel);
         assertTrue(rel.contains("alpha"), "missing 'alpha' (single-quote form); got: " + rel);
@@ -105,12 +109,14 @@ class GradleClasspathTest {
     void getSubprojectsReturnsEmptyWhenSettingsMissing() throws Exception {
         Path projectRoot = helper.getTempDirectory().resolve("no-settings");
         Files.createDirectories(projectRoot);
-        assertTrue(new GradleImporter().getSubprojects(projectRoot).isEmpty(),
+        List<LoadWarning> warnings = new ArrayList<>();
+        assertTrue(new GradleImporter().getSubprojects(projectRoot, warnings).isEmpty(),
             "Expected empty list when settings.gradle is absent");
+        assertEquals(List.of(), warnings, "no settings file declares anything to report");
     }
 
     @Test
-    @DisplayName("getSubprojects: subprojects whose directories don't exist are dropped silently")
+    @DisplayName("getSubprojects: an include whose directory doesn't exist is skipped and reported as MODULE_NOT_LOADED")
     void getSubprojectsDropsNonexistentDirectories() throws Exception {
         Path projectRoot = helper.getTempDirectory().resolve("nonexistent-include");
         Files.createDirectories(projectRoot);
@@ -120,11 +126,46 @@ class GradleClasspathTest {
             include 'phantom-module'
             """);
 
-        List<Path> subprojects = new GradleImporter().getSubprojects(projectRoot);
-        assertEquals(1, subprojects.size(),
-            "Expected only the existing 'real-module' to be returned; got: " + subprojects);
-        assertTrue(subprojects.get(0).getFileName().toString().equals("real-module"),
-            "Expected 'real-module', got: " + subprojects.get(0));
+        List<LoadWarning> warnings = new ArrayList<>();
+        List<Path> subprojects = new GradleImporter().getSubprojects(projectRoot, warnings);
+
+        assertAll(
+            () -> assertEquals(List.of(projectRoot.resolve("real-module")), subprojects, "subprojects"),
+            () -> assertEquals(List.of(new LoadWarning(LoadWarning.MODULE_NOT_LOADED,
+                    "settings.gradle declares 'phantom-module', but its directory phantom-module does not exist",
+                    "Create the directory or remove the declaration from settings.gradle.",
+                    "phantom-module")),
+                warnings, "warnings"));
+    }
+
+    @Test
+    @DisplayName("getSubprojects: a missing include and an include that is not a valid path are each reported in declaration order, and later includes still load")
+    void getSubprojectsReportsMissingAndInvalidIncludes() throws Exception {
+        Path projectRoot = helper.getTempDirectory().resolve("unloadable-includes");
+        Files.createDirectories(projectRoot.resolve("app"));
+        // The third include's quoted name holds a NUL character, which is not a valid path
+        // on any OS. 'app' is declared last, so it loads only if neither rejection aborts
+        // the read.
+        Files.writeString(projectRoot.resolve("settings.gradle"),
+            "include 'phantom'\n"
+                + "include 'bad\0name'\n"
+                + "include 'app'\n");
+
+        List<LoadWarning> warnings = new ArrayList<>();
+        List<Path> subprojects = new GradleImporter().getSubprojects(projectRoot, warnings);
+
+        assertAll(
+            () -> assertEquals(List.of(projectRoot.resolve("app")), subprojects, "subprojects"),
+            () -> assertEquals(List.of(
+                    new LoadWarning(LoadWarning.MODULE_NOT_LOADED,
+                        "settings.gradle declares 'phantom', but its directory phantom does not exist",
+                        "Create the directory or remove the declaration from settings.gradle.",
+                        "phantom"),
+                    new LoadWarning(LoadWarning.MODULE_NOT_LOADED,
+                        "settings.gradle declares 'bad\\0name', which is not a valid path: control character U+0000",
+                        "Correct the declaration in settings.gradle.",
+                        "bad\\0name")),
+                warnings, "warnings"));
     }
 
     /**

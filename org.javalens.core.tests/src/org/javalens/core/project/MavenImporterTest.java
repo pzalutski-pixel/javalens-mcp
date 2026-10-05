@@ -1,5 +1,7 @@
 package org.javalens.core.project;
 
+import org.javalens.core.project.model.BuildModel;
+import org.javalens.core.project.model.BuildModule;
 import org.javalens.core.project.model.LoadWarning;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,6 +17,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -164,8 +167,10 @@ class MavenImporterTest {
         Files.writeString(root.resolve("b/pom.xml"), "<project/>");
 
         List<Path> visited = new ArrayList<>();
-        importer.walkModules(root, visited::add);
+        List<LoadWarning> warnings = new ArrayList<>();
+        importer.walkModules(root, visited::add, warnings);
 
+        assertEquals(List.of(), warnings, "every <module> resolves to an existing directory");
         assertEquals(3, visited.size(),
             "Aggregator + 2 modules = 3 visits; got: " + visited);
         assertTrue(visited.stream().anyMatch(p -> p.endsWith("a")));
@@ -184,16 +189,19 @@ class MavenImporterTest {
             "<project><modules><module>../a</module></modules></project>");
 
         List<Path> visited = new ArrayList<>();
-        importer.walkModules(root, visited::add);
+        List<LoadWarning> warnings = new ArrayList<>();
+        importer.walkModules(root, visited::add, warnings);
 
         // Root + a/ = 2 visits. The `../a` self-reference inside a/pom.xml must
         // NOT cause infinite recursion or an extra visit.
         assertEquals(2, visited.size(),
             "Cycle (../a inside a/pom.xml) must not produce additional visits; got: " + visited);
+        // `../a` names an existing directory, so the cycle is not an unloaded module.
+        assertEquals(List.of(), warnings, "warnings");
     }
 
     @Test
-    @DisplayName("walkModules skips <module> entries that don't resolve to directories")
+    @DisplayName("walkModules skips a <module> entry that doesn't resolve to a directory and reports it as MODULE_NOT_LOADED")
     void walkModules_skipsMissingDirectories(@TempDir Path root) throws IOException {
         Files.writeString(root.resolve("pom.xml"),
             "<project><modules>"
@@ -204,12 +212,60 @@ class MavenImporterTest {
         Files.writeString(root.resolve("a/pom.xml"), "<project/>");
 
         List<Path> visited = new ArrayList<>();
-        importer.walkModules(root, visited::add);
+        List<LoadWarning> warnings = new ArrayList<>();
+        importer.walkModules(root, visited::add, warnings);
 
-        // Root + a/ — the `missing` module is silently dropped because it has
-        // no directory.
-        assertEquals(2, visited.size(),
-            "Non-existent <module> entry must be skipped; got: " + visited);
+        // Root + a/: the `missing` module has no directory, so it is not visited.
+        assertAll(
+            () -> assertEquals(List.of(root, root.resolve("a")), visited, "visited module roots"),
+            () -> assertEquals(List.of(missingModule("pom.xml", "missing", "missing")),
+                warnings, "warnings"));
+    }
+
+    @Test
+    @DisplayName("walkModules reports each unloaded <module> once with its declaring pom, root declarations before nested ones")
+    void walkModules_reportsMissingModulesAtEveryDepth(@TempDir Path root) throws IOException {
+        writeTreeWithMissingModules(root);
+
+        List<Path> visited = new ArrayList<>();
+        List<LoadWarning> warnings = new ArrayList<>();
+        importer.walkModules(root, visited::add, warnings);
+
+        assertAll(
+            () -> assertEquals(List.of(root, root.resolve("core")), visited, "visited module roots"),
+            () -> assertEquals(List.of(
+                    missingModule("pom.xml", "ghost", "ghost"),
+                    missingModule("core/pom.xml", "inner-gone", "core/inner-gone")),
+                warnings, "warnings"));
+    }
+
+    @Test
+    @DisplayName("resolve reports each unloaded <module> once although the processor scan reads the same poms")
+    void resolve_reportsEachMissingModuleOnce(@TempDir Path root) throws IOException {
+        writeTreeWithMissingModules(root);
+        // Fail Maven fast; its warning follows the module warnings.
+        String mvnCmd = root.resolve("never-existed-mvn").toString();
+        System.setProperty("javalens.maven.binary", mvnCmd);
+
+        BuildModel model = importer.resolve(root);
+
+        List<LoadWarning> warnings = model.warnings();
+        assertAll(
+            () -> assertEquals(List.of(".", "core"),
+                model.modules().stream().map(BuildModule::id).toList(), "module ids"),
+            () -> assertEquals(List.of(LoadWarning.MODULE_NOT_LOADED, LoadWarning.MODULE_NOT_LOADED,
+                    LoadWarning.MAVEN_SUBPROCESS_FAILED),
+                warnings.stream().map(LoadWarning::code).toList(), "warning codes"),
+            () -> assertEquals(List.of(
+                    missingModule("pom.xml", "ghost", "ghost"),
+                    missingModule("core/pom.xml", "inner-gone", "core/inner-gone")),
+                warnings.subList(0, Math.min(2, warnings.size())), "module warnings"),
+            // The message embeds the OS's process-start error text, which differs per OS
+            // and locale, so only the fields Maven's importer composes itself are pinned.
+            () -> assertEquals(null, warnings.get(warnings.size() - 1).module(), "subprocess warning module"),
+            () -> assertEquals("Install Maven and ensure '" + mvnCmd + "' is on PATH for the process that "
+                    + "launches JavaLens. Project dependencies will be unresolved until this is fixed.",
+                warnings.get(warnings.size() - 1).remediation(), "subprocess warning remediation"));
     }
 
     // ========== getDependencies failure path ==========
@@ -241,5 +297,31 @@ class MavenImporterTest {
         List<Path> processors = importer.detectAnnotationProcessors(projectRoot);
         assertTrue(processors.isEmpty(),
             "No <annotationProcessorPaths> → no processors; got: " + processors);
+    }
+
+    // ========== Helpers ==========
+
+    /**
+     * Root pom declaring {@code core} (present) and {@code ghost} (absent); {@code core}'s
+     * pom declares {@code inner-gone} (absent).
+     */
+    private static void writeTreeWithMissingModules(Path root) throws IOException {
+        Files.writeString(root.resolve("pom.xml"),
+            "<project><modules>"
+                + "<module>core</module>"
+                + "<module>ghost</module>"
+                + "</modules></project>");
+        Files.createDirectories(root.resolve("core"));
+        Files.writeString(root.resolve("core/pom.xml"),
+            "<project><modules>"
+                + "<module>inner-gone</module>"
+                + "</modules></project>");
+    }
+
+    private static LoadWarning missingModule(String declaringPom, String module, String relativeDir) {
+        return new LoadWarning(LoadWarning.MODULE_NOT_LOADED,
+            declaringPom + " declares '" + module + "', but its directory " + relativeDir + " does not exist",
+            "Create the directory or remove the declaration from " + declaringPom + ".",
+            module);
     }
 }

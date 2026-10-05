@@ -46,12 +46,15 @@ final class BuildModelAssembler {
      * before the importer runs its build tool, and {@link BuildSystemImporter#getDependencies}
      * runs before the level and processor lookups, because {@link GradleImporter} answers
      * those from what its Gradle run wrote.
+     *
+     * <p>The model's warnings are module discovery's, in discovery order, followed by the
+     * importer's.
      */
     static BuildModel assemble(BuildSystemImporter importer, BuildSystem buildSystem,
             Provenance provenance, Path projectRoot) {
-        List<BuildModule> modules = conventionalModules(projectRoot, buildSystem);
-
         List<LoadWarning> warnings = new ArrayList<>();
+        List<BuildModule> modules = conventionalModules(projectRoot, buildSystem, warnings);
+
         List<String> classpath = importer.getDependencies(projectRoot, warnings);
         String level = importer.detectCompilerLevel(projectRoot);
 
@@ -69,7 +72,12 @@ final class BuildModelAssembler {
             List.copyOf(processorJars), level, new BuildInputs(List.of(), List.of()), warnings);
     }
 
-    private static List<BuildModule> conventionalModules(Path projectRoot, BuildSystem buildSystem) {
+    /**
+     * Discover and probe the module directories. A declared module that is not loaded is
+     * appended to {@code warnings} as a {@link LoadWarning#MODULE_NOT_LOADED}.
+     */
+    private static List<BuildModule> conventionalModules(Path projectRoot, BuildSystem buildSystem,
+            List<LoadWarning> warnings) {
         List<BuildModule> modules = new ArrayList<>();
         // Every source root found so far, in link order. The "src/" fallback for a
         // directory is skipped when this list already holds a path under it.
@@ -78,9 +86,9 @@ final class BuildModelAssembler {
         // A module declared by the root pom can itself be an aggregator with its own
         // <modules> and no sources; walkModules recurses into it. Without a root
         // pom.xml the walk visits the root alone.
-        MAVEN.walkModules(projectRoot, dir -> modules.add(probe(projectRoot, dir, discovered)));
+        MAVEN.walkModules(projectRoot, dir -> modules.add(probe(projectRoot, dir, discovered)), warnings);
 
-        for (Path subproject : GRADLE.getSubprojects(projectRoot)) {
+        for (Path subproject : GRADLE.getSubprojects(projectRoot, warnings)) {
             modules.add(probe(projectRoot, subproject, discovered));
         }
 

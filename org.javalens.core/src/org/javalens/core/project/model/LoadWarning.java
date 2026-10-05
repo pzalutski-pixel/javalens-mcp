@@ -22,6 +22,10 @@ package org.javalens.core.project.model;
  *   <li>{@code APT_PROCESSOR_JARS_MISSING} — annotation processors were declared but
  *       every candidate jar was missing from disk at wiring time; APT is enabled with
  *       an empty factory path so generated members will not resolve.</li>
+ *   <li>{@code MODULE_NOT_LOADED}: a module a build file declares was not loaded because
+ *       its name is not a valid path or its directory does not exist.</li>
+ *   <li>{@code MODULE_LAYOUT_ASSUMED}: a module's source roots were assumed from
+ *       conventional layouts because the build model did not describe it.</li>
  * </ul>
  *
  * @param code stable identifier (see list above)
@@ -62,6 +66,23 @@ public record LoadWarning(String code, String message, String remediation, Strin
      * referencing {@code java.lang.Object} produces a BUILDPATH cascade.
      */
     public static final String JRE_REGISTRATION_FAILED = "JRE_REGISTRATION_FAILED";
+
+    /**
+     * A build file declares a module (a Maven {@code <module>}, a Gradle {@code include})
+     * that was not loaded, because the declared name is not a valid path or its directory
+     * does not exist. The rest of the project loads without it. {@code module} carries the
+     * declared name with control characters escaped; the message names the declaring file,
+     * relative to the project root, and the reason.
+     */
+    public static final String MODULE_NOT_LOADED = "MODULE_NOT_LOADED";
+
+    /**
+     * A module's source roots were assumed from conventional layouts because the build
+     * model did not describe it. When resolving the whole build model fails, the project
+     * root is loaded as the single module {@code "."}, probed for conventional and
+     * generated-source layouts, and the message names the failure.
+     */
+    public static final String MODULE_LAYOUT_ASSUMED = "MODULE_LAYOUT_ASSUMED";
 
     public LoadWarning(String code, String message, String remediation) {
         this(code, message, remediation, null);

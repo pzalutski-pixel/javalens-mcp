@@ -11,9 +11,11 @@ import org.eclipse.jdt.core.IClasspathEntry;
 import org.eclipse.jdt.core.IJavaProject;
 import org.eclipse.jdt.core.JavaCore;
 import org.eclipse.jdt.launching.JavaRuntime;
+import org.javalens.core.project.model.BuildInputs;
 import org.javalens.core.project.model.BuildModel;
 import org.javalens.core.project.model.BuildModule;
 import org.javalens.core.project.model.LoadWarning;
+import org.javalens.core.project.model.Provenance;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -103,9 +105,46 @@ public class ProjectImporter {
      * {@link #countSourceFiles(BuildModel)}, {@link #findPackages(BuildModel)} and
      * {@link #configureJavaProject(IProject, java.nio.file.Path, BuildModel,
      * org.javalens.core.workspace.WorkspaceManager)}.
+     *
+     * <p>Never throws. When the importer fails, the result is a {@link Provenance#CONVENTION}
+     * model of one module at the project root, carrying a
+     * {@link LoadWarning#MODULE_LAYOUT_ASSUMED}, so the load still completes.
      */
     public BuildModel resolveModel(java.nio.file.Path projectPath) {
-        return importerFor(detectBuildSystem(projectPath)).resolve(projectPath);
+        BuildSystem buildSystem = detectBuildSystem(projectPath);
+        try {
+            return importerFor(buildSystem).resolve(projectPath);
+        } catch (RuntimeException e) {
+            log.warn("Resolving the {} build model of {} failed; assuming conventional layouts at the project root",
+                buildSystem, projectPath, e);
+            return assumedLayoutModel(buildSystem, projectPath, e);
+        }
+    }
+
+    /**
+     * The model of a project whose build model could not be resolved: one module, ".", at
+     * the root, whose source roots come from probing the root directory alone for
+     * conventional and generated-source layouts, and one
+     * {@link LoadWarning#MODULE_LAYOUT_ASSUMED} naming {@code failure}. Module discovery,
+     * which may be what failed, is not run again.
+     */
+    private BuildModel assumedLayoutModel(BuildSystem buildSystem, java.nio.file.Path projectRoot,
+            RuntimeException failure) {
+        List<java.nio.file.Path> sourceRoots = new ArrayList<>();
+        linkedFolderConfigurator.addConventionalSourcePaths(projectRoot, sourceRoots);
+        List<java.nio.file.Path> generatedRoots = new ArrayList<>();
+        linkedFolderConfigurator.addGeneratedSourcePaths(projectRoot, generatedRoots);
+
+        LoadWarning warning = new LoadWarning(
+            LoadWarning.MODULE_LAYOUT_ASSUMED,
+            "Resolving the " + buildSystem.name() + " build model failed ("
+                + failure.getClass().getSimpleName() + ": " + failure.getMessage()
+                + "); source roots were assumed from conventional layouts at the project root",
+            "Check the project's build files, then reload the project.",
+            ".");
+        return new BuildModel(buildSystem, Provenance.CONVENTION,
+            List.of(new BuildModule(".", projectRoot, sourceRoots, generatedRoots, List.of(), null, false)),
+            List.of(), List.of(), null, new BuildInputs(List.of(), List.of()), List.of(warning));
     }
 
     /**
