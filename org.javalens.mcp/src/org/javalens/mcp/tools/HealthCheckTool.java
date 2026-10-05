@@ -58,7 +58,7 @@ public class HealthCheckTool implements Tool {
             Check server status and project state.
 
             USAGE: Call on startup to verify server is operational.
-            OUTPUT: Server status, project info if loaded, capabilities.
+            OUTPUT: Server status, project info if loaded (a loaded project reports its buildModel summary and any load warnings, as load_project does), capabilities.
 
             WORKFLOW:
             1. Call health_check to verify server is running
@@ -114,6 +114,11 @@ public class HealthCheckTool implements Tool {
             case LOADED -> {
                 projectStatus.put("loaded", true);
                 projectStatus.put("message", "Project loaded successfully");
+                // The build model summary and warnings load_project reported, so a project
+                // auto-loaded through JAVA_PROJECT_PATH shows a degraded load too.
+                if (service != null) {
+                    LoadReport.putInto(projectStatus, service);
+                }
             }
             case FAILED -> {
                 projectStatus.put("loaded", false);

@@ -349,5 +349,7 @@ class AbstractToolTest {
         @Override public int getLineNumber(org.eclipse.jdt.core.ICompilationUnit cu, int o) { return 0; }
         @Override public int getColumnNumber(org.eclipse.jdt.core.ICompilationUnit cu, int o) { return 0; }
         @Override public List<java.nio.file.Path> getAllJavaFiles() { return List.of(); }
+        @Override public org.javalens.core.project.model.BuildModel getBuildModel() { return null; }
+        @Override public String getAnalysisLevel() { return null; }
     }
 }

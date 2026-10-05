@@ -38,6 +38,11 @@ class LoadProjectToolTest {
     @SuppressWarnings("unchecked")
     private Map<String, Object> getData(ToolResponse r) { return (Map<String, Object>) r.getData(); }
 
+    /** {@code buildModel.buildSystem} of a load_project response, or null when it has no buildModel. */
+    private static Object buildSystemOf(Map<String, Object> data) {
+        return data.get("buildModel") instanceof Map<?, ?> buildModel ? buildModel.get("buildSystem") : null;
+    }
+
     @Test @DisplayName("loads project with complete response")
     void loadsProjectComprehensively() {
         ObjectNode args = objectMapper.createObjectNode();
@@ -48,13 +53,11 @@ class LoadProjectToolTest {
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
 
-        // Verify project info — recognized build system
+        // Verify project info: recognized build system
         assertTrue((Boolean) data.get("loaded"));
         assertNotNull(data.get("projectPath"), "projectPath key must be present");
-        String buildSystem = (String) data.get("buildSystem");
-        assertNotNull(buildSystem, "buildSystem missing");
-        // simple-maven is a Maven project — buildSystem must reflect that.
-        assertEquals("maven", buildSystem,
+        // simple-maven is a Maven project; buildModel.buildSystem must reflect that.
+        assertEquals("maven", buildSystemOf(data),
             "simple-maven fixture is Maven; got: " + data);
         // simple-maven fixture inventory: 71 source files across 7 packages.
         assertEquals(71, ((Number) data.get("sourceFileCount")).intValue());
@@ -107,7 +110,7 @@ class LoadProjectToolTest {
     // ========== Bug-fix surface tests at the MCP boundary ===========================
     // These verify what an AI agent actually sees in the load_project response — not
     // just that the engine state is correct, but that the JSON-serialized tool response
-    // carries the bug-fix-specific fields (warnings, buildSystem, classpathEntryCount,
+    // carries the bug-fix-specific fields (warnings, buildModel, classpathEntryCount,
     // packages) faithfully.
 
     @Test @DisplayName("Bug X: subprocess failure surfaces a 'warnings' array in the response")
@@ -141,10 +144,8 @@ class LoadProjectToolTest {
 
     @Test @DisplayName("clean project response: no 'warnings' field when nothing went wrong")
     void cleanProjectOmitsWarningsField() {
-        // Default fixture is simple-maven. The load should not surface warnings on a
-        // clean project IF mvn is available; if mvn isn't on PATH, MAVEN_SUBPROCESS_FAILED
-        // would appear (which is the *correct* signal) — we don't gate on tool presence
-        // here, we just assert the *shape*: warnings is either absent or non-null-list.
+        // simple-maven declares its level and has no dependencies, so Maven's classpath step
+        // succeeds and the load meets nothing worth a warning.
         ObjectNode args = objectMapper.createObjectNode();
         args.put("projectPath", projectPath.toString());
 
@@ -152,16 +153,11 @@ class LoadProjectToolTest {
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
 
-        // The contract: 'warnings' is omitted when the load is clean. If mvn is missing
-        // it's present and explains why. Either way the field must not break the response.
-        Object warnings = data.get("warnings");
-        if (warnings != null) {
-            assertTrue(warnings instanceof List,
-                "warnings field must be a JSON array when present, got " + warnings.getClass());
-        }
+        assertEquals(false, data.containsKey("warnings"),
+            "'warnings' is omitted when the load is clean; got: " + data.get("warnings"));
     }
 
-    @Test @DisplayName("buildSystem and packages fields shape match documented response")
+    @Test @DisplayName("simple-maven response carries exactly the documented fields; buildModel reports Maven, read statically, level 21, the root as its one module")
     void responseExposesDocumentedFields() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("projectPath", projectPath.toString());
@@ -170,23 +166,29 @@ class LoadProjectToolTest {
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
 
-        // Fields the AI agent depends on for follow-up tool calls.
-        assertEquals("maven", data.get("buildSystem"),
-            "buildSystem must be the lowercase build system name (Maven/Gradle/Bazel/etc.)");
-        assertNotNull(data.get("loadedAt"), "loadedAt timestamp must be present");
-        assertNotNull(data.get("classpathEntryCount"),
-            "classpathEntryCount must be present so the agent can sanity-check the load");
-
-        // packages list is bounded to 20 in the response — verify it's a list.
-        @SuppressWarnings("unchecked")
-        List<String> packages = (List<String>) data.get("packages");
-        assertNotNull(packages, "packages field must be present");
+        // The build system is reported only inside buildModel, and a clean load carries no
+        // warnings. Maven modules and levels are still read from the poms (static-read); the
+        // pom declares maven.compiler.source 21; the root is the only module.
+        assertAll(
+            () -> assertEquals(List.of("loaded", "projectPath", "sourceFileCount", "packageCount",
+                    "packages", "classpathEntryCount", "loadedAt", "buildModel"),
+                List.copyOf(data.keySet()), "response fields in order"),
+            () -> assertEquals(Map.of(
+                    "buildSystem", "maven",
+                    "source", "static-read",
+                    "analysisLevel", "21",
+                    "moduleCount", 1,
+                    "modules", List.of(Map.of("id", ".", "dir", "."))),
+                data.get("buildModel"), "buildModel"),
+            () -> assertEquals(List.of("buildSystem", "source", "analysisLevel", "moduleCount", "modules"),
+                data.get("buildModel") instanceof Map<?, ?> buildModel ? List.copyOf(buildModel.keySet()) : null,
+                "buildModel fields in order"));
     }
 
     // ========== Behavior-matrix coverage ==========
 
     @Test
-    @DisplayName("multi-module-maven loads with 3 modules: api, impl, web each contributing one package")
+    @DisplayName("multi-module-maven reports the root and its api, impl and web modules, each module contributing one package")
     @SuppressWarnings("unchecked")
     void multiModuleMaven_loadsThreeModulesWithExpectedPackages() {
         Path multiModule = helper.getFixturePath("multi-module-maven");
@@ -200,7 +202,22 @@ class LoadProjectToolTest {
 
         Map<String, Object> data = getData(r);
         assertEquals(true, data.get("loaded"));
-        assertEquals("maven", data.get("buildSystem"));
+        // The root pom declares api, impl and web and maven.compiler.source 21; the root
+        // itself is the first module. A module's id and dir are its directory relative to
+        // the root, "." for the root.
+        assertEquals(Map.of(
+                "buildSystem", "maven",
+                "source", "static-read",
+                "analysisLevel", "21",
+                "moduleCount", 4,
+                "modules", List.of(
+                    Map.of("id", ".", "dir", "."),
+                    Map.of("id", "api", "dir", "api"),
+                    Map.of("id", "impl", "dir", "impl"),
+                    Map.of("id", "web", "dir", "web"))),
+            data.get("buildModel"), "buildModel");
+        assertEquals(false, data.containsKey("buildSystem"),
+            "the build system is reported only inside buildModel");
 
         // Three modules each declare one package: com.example.api, com.example.impl,
         // com.example.web. The packages list must include all three.
@@ -234,13 +251,17 @@ class LoadProjectToolTest {
 
         Map<String, Object> data = getData(r);
         assertEquals(true, data.get("loaded"));
-        // No pom.xml or build.gradle — buildSystem should NOT report maven or gradle.
-        String buildSystem = (String) data.get("buildSystem");
-        assertNotNull(buildSystem);
-        assertFalse("maven".equals(buildSystem),
-            "plain-java has no pom.xml; buildSystem must not be 'maven'; got: " + buildSystem);
-        assertFalse("gradle".equals(buildSystem),
-            "plain-java has no build.gradle; buildSystem must not be 'gradle'; got: " + buildSystem);
+        // No build file: the root is the one module, laid out by convention, and with no
+        // declared level the project is analyzed at the running JVM's level.
+        assertEquals(Map.of(
+                "buildSystem", "unknown",
+                "source", "convention",
+                "analysisLevel", String.valueOf(Runtime.version().feature()),
+                "moduleCount", 1,
+                "modules", List.of(Map.of("id", ".", "dir", "."))),
+            data.get("buildModel"), "buildModel");
+        assertEquals(false, data.containsKey("buildSystem"),
+            "the build system is reported only inside buildModel");
 
         assertEquals(2, ((Number) data.get("sourceFileCount")).intValue(),
             "plain-java fixture has exactly two source files");
@@ -302,7 +323,7 @@ class LoadProjectToolTest {
     }
 
     @Test
-    @DisplayName("simple-gradle loads with buildSystem='gradle' and Hello.java visible")
+    @DisplayName("simple-gradle loads with buildModel.buildSystem='gradle' and Hello.java visible")
     @SuppressWarnings("unchecked")
     void simpleGradle_loadsAsGradleProject() {
         Path gradleProject = helper.getFixturePath("simple-gradle");
@@ -317,9 +338,11 @@ class LoadProjectToolTest {
 
         Map<String, Object> data = getData(r);
         assertEquals(true, data.get("loaded"));
-        assertEquals("gradle", data.get("buildSystem"),
-            "buildSystem must be lowercase 'gradle' for a build.gradle project; got: "
-                + data.get("buildSystem"));
+        assertEquals("gradle", buildSystemOf(data),
+            "buildModel.buildSystem must be lowercase 'gradle' for a build.gradle project; got: "
+                + data.get("buildModel"));
+        assertEquals(false, data.containsKey("buildSystem"),
+            "the build system is reported only inside buildModel");
 
         List<String> packages = (List<String>) data.get("packages");
         assertTrue(packages.contains("com.example"),

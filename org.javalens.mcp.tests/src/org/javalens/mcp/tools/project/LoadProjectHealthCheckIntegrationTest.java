@@ -4,20 +4,26 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.core.project.model.LoadWarning;
 import org.javalens.mcp.JavaLensApplication;
 import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.Tool;
 import org.javalens.mcp.tools.ToolRegistry;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
+import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -30,8 +36,45 @@ import static org.junit.jupiter.api.Assertions.*;
  * bug where loading a project via the tool left health_check reporting "not
  * loaded" (the loading state was flipped only by the JAVA_PROJECT_PATH
  * auto-load path). This test exercises the actual registered tools.
+ *
+ * <p>Once a project is loaded, health_check reports the same {@code buildModel} summary
+ * and the same {@code warnings} that load_project reported, both through execute() and
+ * through the JSON-RPC envelope.
  */
 class LoadProjectHealthCheckIntegrationTest {
+
+    private static final String MAVEN_BINARY_PROPERTY = "javalens.maven.binary";
+
+    /**
+     * simple-maven's build model: the pom declares maven.compiler.source 21 and no modules,
+     * so the root is the one module. Maven modules and levels are read from the poms.
+     */
+    private static final Map<String, Object> SIMPLE_MAVEN_BUILD_MODEL = Map.of(
+        "buildSystem", "maven",
+        "source", "static-read",
+        "analysisLevel", "21",
+        "moduleCount", 1,
+        "modules", List.of(Map.of("id", ".", "dir", ".")));
+
+    /**
+     * The build model of {@link #writeProjectWithMissingModule}: the root and {@code present}
+     * load, {@code ghost} does not, and the root pom declares maven.compiler.release 17.
+     */
+    private static final Map<String, Object> MISSING_MODULE_BUILD_MODEL = Map.of(
+        "buildSystem", "maven",
+        "source", "static-read",
+        "analysisLevel", "17",
+        "moduleCount", 2,
+        "modules", List.of(
+            Map.of("id", ".", "dir", "."),
+            Map.of("id", "present", "dir", "present")));
+
+    /** The root pom's {@code <module>ghost</module>}, whose directory does not exist. */
+    private static final Map<String, Object> GHOST_WARNING = Map.of(
+        "code", LoadWarning.MODULE_NOT_LOADED,
+        "message", "pom.xml declares 'ghost', but its directory ghost does not exist",
+        "remediation", "Create the directory or remove the declaration from pom.xml.",
+        "module", "ghost");
 
     @RegisterExtension
     TestProjectHelper helper = new TestProjectHelper();
@@ -39,11 +82,13 @@ class LoadProjectHealthCheckIntegrationTest {
     private ToolRegistry registry;
     private ObjectMapper objectMapper;
     private Path projectPath;
+    private String savedMavenBinary;
 
     @BeforeEach
     void setUp() throws Exception {
         objectMapper = new ObjectMapper();
         projectPath = helper.getFixturePath("simple-maven");
+        savedMavenBinary = System.getProperty(MAVEN_BINARY_PROPERTY);
 
         // Build the app and run its REAL registerTools() so the load_project
         // tool carries its production callback (the place the bug lived).
@@ -56,6 +101,15 @@ class LoadProjectHealthCheckIntegrationTest {
         registerTools.setAccessible(true);
         registerTools.invoke(app);
         registry = r;
+    }
+
+    @AfterEach
+    void restoreMavenBinary() {
+        if (savedMavenBinary == null) {
+            System.clearProperty(MAVEN_BINARY_PROPERTY);
+        } else {
+            System.setProperty(MAVEN_BINARY_PROPERTY, savedMavenBinary);
+        }
     }
 
     @SuppressWarnings("unchecked")
@@ -79,7 +133,7 @@ class LoadProjectHealthCheckIntegrationTest {
     }
 
     @Test
-    @DisplayName("health_check reports LOADED after a successful load_project tool call")
+    @DisplayName("health_check reports LOADED after a successful load_project tool call, with the load's buildModel and no warnings")
     void healthCheck_afterToolLoad_loaded() {
         ObjectNode loadArgs = objectMapper.createObjectNode();
         loadArgs.put("projectPath", projectPath.toString());
@@ -97,12 +151,45 @@ class LoadProjectHealthCheckIntegrationTest {
         assertEquals("Ready", data.get("status"));
         assertEquals("loaded", project.get("status"));
         assertEquals("strict", data.get("diskSync"), "the live service's disk-sync mode is reported");
+
+        // A clean load: neither tool carries a 'warnings' field.
+        Map<String, Object> loadData = getData(load);
+        assertAll(
+            () -> assertEquals(SIMPLE_MAVEN_BUILD_MODEL, loadData.get("buildModel"), "load_project buildModel"),
+            () -> assertEquals(false, loadData.containsKey("warnings"), "load_project carries no warnings"),
+            () -> assertEquals(Map.of(
+                    "status", "loaded",
+                    "loaded", true,
+                    "message", "Project loaded successfully",
+                    "buildModel", SIMPLE_MAVEN_BUILD_MODEL),
+                project, "health_check project"),
+            () -> assertEquals(List.of("status", "loaded", "message", "buildModel"),
+                List.copyOf(project.keySet()), "health_check project fields in order"));
+    }
+
+    @Test
+    @DisplayName("After a load that leaves a declared module unloaded, health_check reports the same buildModel and warnings as load_project")
+    void healthCheck_afterDegradedLoad_reportsLoadWarnings() throws Exception {
+        Path root = writeProjectWithMissingModule();
+        String mvnCmd = failMavenFast();
+
+        ObjectNode loadArgs = objectMapper.createObjectNode();
+        loadArgs.put("projectPath", root.toString());
+        ToolResponse load = call("load_project", loadArgs);
+        assertTrue(load.isSuccess(), () -> "load_project failed: " + load.getError());
+        ToolResponse health = call("health_check", objectMapper.createObjectNode());
+        assertTrue(health.isSuccess());
+
+        assertMissingModuleReport(
+            objectMapper.valueToTree(load.getData()),
+            objectMapper.valueToTree(getData(health).get("project")),
+            mvnCmd);
     }
 
     // ========== MCP envelope seam: load_project -> health_check through processMessage ==========
 
     @Test
-    @DisplayName("Through the real MCP envelope (processMessage): load_project flips health_check to loaded/Ready/strict")
+    @DisplayName("Through the real MCP envelope (processMessage): load_project flips health_check to loaded/Ready/strict with the load's buildModel")
     void envelope_loadThenHealthCheck_reportsLoaded() throws Exception {
         // The integration tests above drive the real registerTools() wiring but call tools
         // via execute(). This adds the missing JSON-RPC serialization layer: the same
@@ -127,5 +214,135 @@ class LoadProjectHealthCheckIntegrationTest {
         assertEquals("loaded", project.get("status").asText());
         assertEquals("strict", healthPayload.get("data").get("diskSync").asText(),
             "the live service's disk-sync mode must survive the JSON-RPC envelope");
+
+        JsonNode loadData = loadPayload.get("data");
+        JsonNode expectedBuildModel = envelope.mapper().valueToTree(SIMPLE_MAVEN_BUILD_MODEL);
+        assertAll(
+            () -> assertEquals(expectedBuildModel, loadData.get("buildModel"), "load_project buildModel"),
+            () -> assertEquals(false, loadData.has("warnings"), "load_project carries no warnings"),
+            () -> assertEquals(expectedBuildModel, project.get("buildModel"), "health_check project.buildModel"),
+            () -> assertEquals(List.of("status", "loaded", "message", "buildModel"), fieldNames(project),
+                "health_check project fields in order"));
+    }
+
+    @Test
+    @DisplayName("Through the real MCP envelope: after a load that leaves a declared module unloaded, health_check reports the same buildModel and warnings as load_project")
+    void envelope_afterDegradedLoad_reportsLoadWarnings() throws Exception {
+        Path root = writeProjectWithMissingModule();
+        String mvnCmd = failMavenFast();
+        // No service yet: the server as it starts, before any load_project call.
+        EnvelopeHarness envelope = new EnvelopeHarness(null);
+
+        ObjectNode loadArgs = envelope.args();
+        loadArgs.put("projectPath", root.toString());
+        JsonNode loadPayload = envelope.assertEnvelopeFidelity("load_project", loadArgs);
+        assertTrue(loadPayload.get("success").asBoolean(),
+            () -> "load_project failed through the envelope: " + loadPayload);
+        JsonNode healthPayload = envelope.assertEnvelopeFidelity("health_check", envelope.args());
+        assertTrue(healthPayload.get("success").asBoolean(),
+            () -> "health_check failed through the envelope: " + healthPayload);
+
+        assertMissingModuleReport(loadPayload.get("data"), healthPayload.get("data").get("project"), mvnCmd);
+    }
+
+    // ========== Helpers ==========
+
+    /**
+     * Pin load_project's report of {@link #writeProjectWithMissingModule} and health_check's
+     * {@code project} after it. The load's warnings are the module walk's MODULE_NOT_LOADED
+     * for {@code ghost}, then Maven's classpath step failing to start {@code mvnCmd}.
+     */
+    private void assertMissingModuleReport(JsonNode loadData, JsonNode project, String mvnCmd) {
+        JsonNode warnings = loadData.path("warnings");
+        JsonNode subprocessWarning = warnings.path(1);
+        assertAll(
+            () -> assertEquals(objectMapper.valueToTree(MISSING_MODULE_BUILD_MODEL), loadData.get("buildModel"),
+                "load_project buildModel"),
+            () -> assertEquals(List.of(LoadWarning.MODULE_NOT_LOADED, LoadWarning.MAVEN_SUBPROCESS_FAILED),
+                warningCodes(warnings), "load_project warning codes in order"),
+            () -> assertEquals(objectMapper.valueToTree(GHOST_WARNING), warnings.get(0), "ghost's warning"),
+            () -> assertEquals(List.of("code", "message", "remediation", "module"), fieldNames(warnings.path(0)),
+                "ghost's warning fields in order"),
+            // The subprocess warning names no module, so it carries no 'module' field.
+            () -> assertEquals(List.of("code", "message", "remediation"), fieldNames(subprocessWarning),
+                "subprocess warning fields in order"),
+            () -> assertEquals("Install Maven and ensure '" + mvnCmd + "' is on PATH for the process that "
+                    + "launches JavaLens. Project dependencies will be unresolved until this is fixed.",
+                subprocessWarning.path("remediation").asText(), "subprocess warning remediation"),
+            // The message ends with the OS's process-start error text, which differs per OS
+            // and locale, so only the part Maven's importer composes is pinned.
+            () -> assertTrue(subprocessWarning.path("message").asText().startsWith("Could not start '" + mvnCmd + "': "),
+                () -> "subprocess warning message: " + subprocessWarning.path("message").asText()),
+            () -> assertEquals(List.of("status", "loaded", "message", "buildModel", "warnings"), fieldNames(project),
+                "health_check project fields in order"),
+            () -> assertEquals("loaded", project.path("status").asText(), "health_check project status"),
+            () -> assertEquals(loadData.get("buildModel"), project.get("buildModel"),
+                "health_check buildModel equals load_project's"),
+            () -> assertEquals(loadData.get("warnings"), project.get("warnings"),
+                "health_check warnings equal load_project's"));
+    }
+
+    /**
+     * A Maven aggregator whose pom declares {@code present}, which exists with its own pom
+     * and one source file, and {@code ghost}, which has no directory. The root pom declares
+     * maven.compiler.release 17.
+     */
+    private Path writeProjectWithMissingModule() throws IOException {
+        Path root = Files.createDirectories(helper.getTempDirectory().resolve("missing-module-maven"));
+        Files.writeString(root.resolve("pom.xml"), """
+            <project>
+                <modelVersion>4.0.0</modelVersion>
+                <groupId>com.example</groupId>
+                <artifactId>missing-module-parent</artifactId>
+                <version>1.0.0</version>
+                <packaging>pom</packaging>
+                <modules>
+                    <module>present</module>
+                    <module>ghost</module>
+                </modules>
+                <properties>
+                    <maven.compiler.release>17</maven.compiler.release>
+                </properties>
+            </project>
+            """);
+        Path present = Files.createDirectories(root.resolve("present"));
+        Files.writeString(present.resolve("pom.xml"), """
+            <project>
+                <modelVersion>4.0.0</modelVersion>
+                <parent>
+                    <groupId>com.example</groupId>
+                    <artifactId>missing-module-parent</artifactId>
+                    <version>1.0.0</version>
+                </parent>
+                <artifactId>present</artifactId>
+            </project>
+            """);
+        Path packageDir = Files.createDirectories(present.resolve("src/main/java/com/example/present"));
+        Files.writeString(packageDir.resolve("Present.java"),
+            "package com.example.present;\n\npublic class Present {\n}\n");
+        return root;
+    }
+
+    /**
+     * Point Maven at a binary that does not exist, so the classpath step fails at once.
+     *
+     * @return the Maven command the load will try to start
+     */
+    private String failMavenFast() {
+        String mvnCmd = helper.getTempDirectory().resolve("no-such-mvn").toString();
+        System.setProperty(MAVEN_BINARY_PROPERTY, mvnCmd);
+        return mvnCmd;
+    }
+
+    private static List<String> warningCodes(JsonNode warnings) {
+        List<String> codes = new ArrayList<>();
+        warnings.forEach(warning -> codes.add(warning.path("code").asText()));
+        return codes;
+    }
+
+    private static List<String> fieldNames(JsonNode node) {
+        List<String> names = new ArrayList<>();
+        node.fieldNames().forEachRemaining(names::add);
+        return names;
     }
 }

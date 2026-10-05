@@ -29,11 +29,13 @@ import java.util.jar.JarOutputStream;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 
 /**
  * Pins the build-model seam: a load resolves the importer's {@link BuildModel} exactly
  * once and derives source folders, file count, packages, classpath, compiler level, APT
- * and warnings from that model alone.
+ * and warnings from that model alone. The service then exposes that model and the level it
+ * applied.
  *
  * <p>The orchestrator tests register a {@link ModelStub} for {@link BuildSystem#UNKNOWN}
  * (the temp projects carry no build file). The stub's per-concern methods answer nothing,
@@ -196,6 +198,65 @@ class BuildModelSeamTest {
             () -> assertEquals("Could not determine declared Java source level for GRADLE project; "
                     + "defaulting to runtime JVM major version " + runtimeLevel,
                 warnings.isEmpty() ? null : warnings.get(0).message(), "warning message"));
+    }
+
+    // ========== The service exposes the load's model and applied level ==========
+
+    @Test
+    @DisplayName("A load exposes the model the importer resolves and the level it applied; before the load both are null")
+    void serviceExposesResolvedModelAndAppliedLevel() throws Exception {
+        Path root = helper.getFixturePath("multi-module-maven").toAbsolutePath().normalize();
+        JdtServiceImpl service = new JdtServiceImpl();
+        BuildModel modelBeforeLoad = service.getBuildModel();
+        String levelBeforeLoad = service.getAnalysisLevel();
+
+        service.loadProject(root);
+
+        BuildModel model = service.getBuildModel();
+        assertAll(
+            () -> assertEquals(null, modelBeforeLoad, "build model before the load"),
+            () -> assertEquals(null, levelBeforeLoad, "analysis level before the load"),
+            () -> assertEquals(new ProjectImporter().resolveModel(root), model, "the model the importer resolves"),
+            // The root pom's maven.compiler.source.
+            () -> assertEquals("21", service.getAnalysisLevel(), "analysis level"));
+        // The root pom declares api, impl and web; the root itself is the first module. A
+        // module's id is its directory relative to the root.
+        assertEquals(List.of(
+                Map.entry(".", root),
+                Map.entry("api", root.resolve("api")),
+                Map.entry("impl", root.resolve("impl")),
+                Map.entry("web", root.resolve("web"))),
+            model.modules().stream().map(module -> Map.entry(module.id(), module.dir())).toList(),
+            "module ids and directories");
+    }
+
+    @Test
+    @DisplayName("The analysis level is the level applied to the project: a model level below JDT's range is reported clamped to 1.8")
+    void analysisLevelIsTheClampedAppliedLevel() throws Exception {
+        Path root = Files.createDirectories(helper.getTempDirectory().resolve("seam-level-clamped"));
+
+        ModelStub stub = new ModelStub(model(BuildSystem.MAVEN, "1.6", List.of(),
+            List.of(), List.of(), List.of()));
+        JdtServiceImpl service = load(root, stub);
+
+        assertAll(
+            () -> assertSame(stub.model, service.getBuildModel(), "build model: the importer's, level 1.6 kept"),
+            () -> assertEquals("1.8", service.getAnalysisLevel(), "analysis level"));
+    }
+
+    @Test
+    @DisplayName("Without a model level, the analysis level is the running JVM's level the load applied")
+    void analysisLevelIsTheRuntimeFallback() throws Exception {
+        Path root = Files.createDirectories(helper.getTempDirectory().resolve("seam-level-fallback"));
+        String runtimeLevel = String.valueOf(Runtime.version().feature());
+
+        ModelStub stub = new ModelStub(model(BuildSystem.UNKNOWN, null, List.of(),
+            List.of(), List.of(), List.of()));
+        JdtServiceImpl service = load(root, stub);
+
+        assertAll(
+            () -> assertSame(stub.model, service.getBuildModel(), "build model: the importer's, no level"),
+            () -> assertEquals(runtimeLevel, service.getAnalysisLevel(), "analysis level"));
     }
 
     // ========== Importers compose their per-concern methods into a model ==========

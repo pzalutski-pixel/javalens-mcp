@@ -6,6 +6,7 @@ import org.eclipse.jdt.core.IJavaProject;
 import org.eclipse.jdt.core.IType;
 import org.javalens.core.exceptions.ReloadRequiredException;
 import org.javalens.core.graph.ProjectGraphService;
+import org.javalens.core.project.model.BuildModel;
 import org.javalens.core.project.model.LoadWarning;
 import org.javalens.core.search.SearchService;
 import org.javalens.core.sync.DiskSyncMode;
@@ -193,4 +194,21 @@ public interface IJdtService {
     default List<LoadWarning> getWarnings() {
         return List.of();
     }
+
+    /**
+     * Get the build model resolved by the most recent {@code loadProject} call: the build
+     * system, where the project's structure came from, and its modules.
+     *
+     * @return the resolved model, or {@code null} before a project is loaded
+     */
+    BuildModel getBuildModel();
+
+    /**
+     * Get the Java level the loaded project is analyzed at: the compiler source level applied
+     * to the project. That is the model's level, or the running JVM's level when the model
+     * declares none, clamped into the range JDT supports.
+     *
+     * @return the applied level, or {@code null} before a project is loaded
+     */
+    String getAnalysisLevel();
 }

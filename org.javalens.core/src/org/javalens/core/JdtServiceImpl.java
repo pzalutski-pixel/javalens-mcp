@@ -73,7 +73,8 @@ public class JdtServiceImpl implements IJdtService {
     private int sourceFileCount;
     private int packageCount;
     private List<String> packages;
-    private BuildSystem buildSystem;
+    private BuildModel buildModel;
+    private String analysisLevel;
 
     private DiskSyncMode diskSyncMode;
 
@@ -127,13 +128,13 @@ public class JdtServiceImpl implements IJdtService {
 
         // Resolve the build model once; project info and configuration all derive from it.
         BuildModel model = projectImporter.resolveModel(projectRoot);
-        this.buildSystem = model.buildSystem();
+        this.buildModel = model;
         this.sourceFileCount = projectImporter.countSourceFiles(model);
         this.packages = projectImporter.findPackages(model);
         this.packageCount = packages.size();
 
         log.info("Detected {} build system, {} source files, {} packages",
-            buildSystem, sourceFileCount, packageCount);
+            model.buildSystem(), sourceFileCount, packageCount);
 
         // Create project in workspace (metadata stays in workspace, not user's project)
         String projectName = "javalens-" + projectRoot.getFileName();
@@ -141,6 +142,8 @@ public class JdtServiceImpl implements IJdtService {
 
         // Configure as Java project with linked source folders
         this.javaProject = projectImporter.configureJavaProject(project, projectRoot, model, workspaceManager);
+        // The level configuration applied, after the runtime fallback and the clamp.
+        this.analysisLevel = javaProject.getOption(JavaCore.COMPILER_SOURCE, true);
 
         // Initialize search service
         this.searchService = new SearchService(javaProject);
@@ -334,6 +337,16 @@ public class JdtServiceImpl implements IJdtService {
     }
 
     @Override
+    public BuildModel getBuildModel() {
+        return buildModel;
+    }
+
+    @Override
+    public String getAnalysisLevel() {
+        return analysisLevel;
+    }
+
+    @Override
     public Path getProjectRoot() {
         return projectRoot;
     }
@@ -412,8 +425,9 @@ public class JdtServiceImpl implements IJdtService {
         return packages;
     }
 
+    /** The build system of the loaded model, or {@code null} before a project is loaded. */
     public BuildSystem getBuildSystem() {
-        return buildSystem;
+        return buildModel == null ? null : buildModel.buildSystem();
     }
 
     public int getClasspathEntryCount() {

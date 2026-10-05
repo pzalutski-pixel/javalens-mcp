@@ -3,14 +3,12 @@ package org.javalens.mcp.tools;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.javalens.core.IJdtService;
 import org.javalens.core.JdtServiceImpl;
-import org.javalens.core.project.model.LoadWarning;
 import org.javalens.mcp.models.ToolResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -44,11 +42,12 @@ public class LoadProjectTool implements Tool {
             MUST be called before using other analysis tools.
 
             USAGE: load_project(projectPath="/path/to/project")
-            OUTPUT: Project structure summary including packages, source files, build system
+            OUTPUT: Project structure summary including packages, source files, buildModel (build system, source of the structure: build-tool, static-read or convention, analysis level, modules) and warnings (present only when the load was degraded)
 
             Supports:
             - Maven projects (pom.xml)
             - Gradle projects (build.gradle or build.gradle.kts)
+            - Bazel projects (MODULE.bazel or WORKSPACE)
             - Plain Java projects with src/ directory
 
             WORKFLOW:
@@ -122,7 +121,6 @@ public class LoadProjectTool implements Tool {
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("loaded", true);
             result.put("projectPath", service.getPathUtils().formatPath(path));
-            result.put("buildSystem", service.getBuildSystem().name().toLowerCase());
             result.put("sourceFileCount", service.getSourceFileCount());
             result.put("packageCount", service.getPackageCount());
 
@@ -133,22 +131,11 @@ public class LoadProjectTool implements Tool {
             result.put("classpathEntryCount", service.getClasspathEntryCount());
             result.put("loadedAt", service.getLoadedAt().toString());
 
-            // Surface any warnings collected during the load (e.g., mvn subprocess failure).
-            // Bug X fix: previously these failures were silently swallowed and the user saw
-            // a successful response with a degraded classpath.
-            List<LoadWarning> warnings = service.getWarnings();
-            if (!warnings.isEmpty()) {
-                List<Map<String, Object>> warningJson = new ArrayList<>();
-                for (LoadWarning w : warnings) {
-                    Map<String, Object> entry = new LinkedHashMap<>();
-                    entry.put("code", w.code());
-                    entry.put("message", w.message());
-                    if (w.remediation() != null) entry.put("remediation", w.remediation());
-                    if (w.module() != null) entry.put("module", w.module());
-                    warningJson.add(entry);
-                }
-                result.put("warnings", warningJson);
-                log.warn("Project loaded with {} warning(s)", warnings.size());
+            // Where the structure came from, and every warning the load produced (e.g., mvn
+            // subprocess failure), exactly as health_check reports them.
+            LoadReport.putInto(result, service);
+            if (!service.getWarnings().isEmpty()) {
+                log.warn("Project loaded with {} warning(s)", service.getWarnings().size());
             }
 
             log.info("Project loaded successfully: {} files, {} packages",
