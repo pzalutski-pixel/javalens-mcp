@@ -1,6 +1,7 @@
 package org.javalens.core;
 
 import org.eclipse.core.resources.IFile;
+import org.eclipse.core.resources.IFolder;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IResource;
 import org.eclipse.core.runtime.CoreException;
@@ -38,6 +39,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -65,8 +67,8 @@ public class JdtServiceImpl implements IJdtService {
     private SearchService searchService;
     private ProjectGraphService projectGraphService;
     private DiskStampService diskStampService;
-    private final java.util.Map<Path, org.eclipse.core.resources.IFolder> sourceRootFolders =
-        new java.util.LinkedHashMap<>();
+    /** Each source root's external location, normalized, to its linked folder, in classpath order. */
+    private final Map<Path, IFolder> sourceRootFolders = new java.util.LinkedHashMap<>();
     private Instant loadedAt;
 
     // Project info for health_check
@@ -144,6 +146,8 @@ public class JdtServiceImpl implements IJdtService {
         this.javaProject = projectImporter.configureJavaProject(project, projectRoot, model, workspaceManager);
         // The level configuration applied, after the runtime fallback and the clamp.
         this.analysisLevel = javaProject.getOption(JavaCore.COMPILER_SOURCE, true);
+        // File paths resolve to workspace files through the linked source folders.
+        mapSourceRootFolders();
 
         // Initialize search service
         this.searchService = new SearchService(javaProject);
@@ -163,25 +167,29 @@ public class JdtServiceImpl implements IJdtService {
     }
 
     /**
-     * Build the disk-truth stamps for #26's verify-and-repair: map each source
-     * root's linked folder to its external path, stamp every source file plus
-     * the build files. A failure here degrades to manual-sync behavior with a
-     * warning rather than failing the load.
+     * Map each source root's external location to its linked folder. Every file path,
+     * from a tool or from disk sync, resolves to its workspace file through this map.
+     */
+    private void mapSourceRootFolders() throws JavaModelException {
+        sourceRootFolders.clear();
+        for (IPackageFragmentRoot root : javaProject.getPackageFragmentRoots()) {
+            if (root.getKind() != IPackageFragmentRoot.K_SOURCE) continue;
+            if (!(root.getResource() instanceof IFolder folder)) continue;
+            IPath location = folder.getLocation();
+            if (location == null) continue;
+            sourceRootFolders.put(Path.of(location.toOSString()).toAbsolutePath().normalize(), folder);
+        }
+    }
+
+    /**
+     * Build the disk-truth stamps for verify-and-repair: stamp every source file
+     * under the mapped source roots plus the build files. A failure here degrades
+     * to manual-sync behavior with a warning rather than failing the load.
      */
     private void initializeDiskSync() {
-        sourceRootFolders.clear();
         try {
-            List<Path> rootPaths = new ArrayList<>();
-            for (IPackageFragmentRoot root : javaProject.getPackageFragmentRoots()) {
-                if (root.getKind() != IPackageFragmentRoot.K_SOURCE) continue;
-                if (!(root.getResource() instanceof org.eclipse.core.resources.IFolder folder)) continue;
-                IPath location = folder.getLocation();
-                if (location == null) continue;
-                Path external = Path.of(location.toOSString()).toAbsolutePath().normalize();
-                sourceRootFolders.put(external, folder);
-                rootPaths.add(external);
-            }
-            this.diskStampService = new DiskStampService(rootPaths, collectBuildFiles());
+            this.diskStampService = new DiskStampService(
+                List.copyOf(sourceRootFolders.keySet()), collectBuildFiles());
             this.diskStampService.stampAll();
         } catch (Exception e) {
             log.warn("Disk-sync stamping failed; falling back to manual sync: {}", e.getMessage());
@@ -252,14 +260,14 @@ public class JdtServiceImpl implements IJdtService {
         }
         // Adds and deletes change the resource tree shape: refresh the owning
         // source-root link deeply so new packages and removals are both seen.
-        java.util.Set<org.eclipse.core.resources.IFolder> foldersToRefresh = new java.util.LinkedHashSet<>();
+        java.util.Set<IFolder> foldersToRefresh = new java.util.LinkedHashSet<>();
         for (Path changed : concat(changes.added(), changes.deleted())) {
-            org.eclipse.core.resources.IFolder owner = owningSourceRootFolder(changed);
+            Map.Entry<Path, IFolder> owner = owningSourceRoot(changed);
             if (owner != null) {
-                foldersToRefresh.add(owner);
+                foldersToRefresh.add(owner.getValue());
             }
         }
-        for (org.eclipse.core.resources.IFolder folder : foldersToRefresh) {
+        for (IFolder folder : foldersToRefresh) {
             folder.refreshLocal(IResource.DEPTH_INFINITE, new NullProgressMonitor());
         }
 
@@ -280,24 +288,34 @@ public class JdtServiceImpl implements IJdtService {
         return result;
     }
 
-    /** Map an external file path to its workspace IFile through the linked source roots. */
+    /**
+     * Map a normalized absolute file path to its workspace IFile in the linked folder of
+     * the source root that owns it; null when no source root holds the path.
+     */
     private IFile resolveWorkspaceFile(Path externalPath) {
-        org.eclipse.core.resources.IFolder owner = owningSourceRootFolder(externalPath);
+        Map.Entry<Path, IFolder> owner = owningSourceRoot(externalPath);
         if (owner == null) {
             return null;
         }
-        Path root = Path.of(owner.getLocation().toOSString()).toAbsolutePath().normalize();
-        Path relative = root.relativize(externalPath);
-        return owner.getFile(new org.eclipse.core.runtime.Path(relative.toString().replace('\\', '/')));
+        Path relative = owner.getKey().relativize(externalPath);
+        return owner.getValue().getFile(new org.eclipse.core.runtime.Path(relative.toString().replace('\\', '/')));
     }
 
-    private org.eclipse.core.resources.IFolder owningSourceRootFolder(Path externalPath) {
-        for (java.util.Map.Entry<Path, org.eclipse.core.resources.IFolder> entry : sourceRootFolders.entrySet()) {
-            if (externalPath.startsWith(entry.getKey())) {
-                return entry.getValue();
+    /**
+     * The source root that owns {@code externalPath}, as its location and linked folder:
+     * of the roots whose location holds the path, the deepest. A root nested in another is
+     * excluded from the outer root's source entry, so a file under it belongs to the inner
+     * root. Null when no source root holds the path.
+     */
+    private Map.Entry<Path, IFolder> owningSourceRoot(Path externalPath) {
+        Map.Entry<Path, IFolder> owner = null;
+        for (Map.Entry<Path, IFolder> entry : sourceRootFolders.entrySet()) {
+            if (externalPath.startsWith(entry.getKey())
+                    && (owner == null || entry.getKey().getNameCount() > owner.getKey().getNameCount())) {
+                owner = entry;
             }
         }
-        return null;
+        return owner;
     }
 
     /**
@@ -446,58 +464,14 @@ public class JdtServiceImpl implements IJdtService {
             return null;
         }
 
-        try {
-            // Convert path to a format we can search for
-            String pathStr = filePath.toString().replace('\\', '/');
-
-            // Extract the package-qualified class path (e.g., dev/javalens/tools/SearchSymbolsTool.java)
-            String classPath = pathStr;
-
-            // Remove common source prefixes to get the class path
-            String[] sourcePrefixes = {"src/main/java/", "src/test/java/", "src/main/kotlin/", "src/test/kotlin/", "src/"};
-            for (String prefix : sourcePrefixes) {
-                if (pathStr.contains(prefix)) {
-                    int idx = pathStr.indexOf(prefix);
-                    classPath = pathStr.substring(idx + prefix.length());
-                    break;
-                }
-            }
-
-            // Convert path to package + class name
-            String withoutExt = classPath.replace(".java", "");
-            String qualifiedName = withoutExt.replace('/', '.');
-
-            // Try to find the type by qualified name
-            IType type = javaProject.findType(qualifiedName);
-            if (type != null) {
-                return type.getCompilationUnit();
-            }
-
-            // Fallback: search through all source folders
-            for (IPackageFragmentRoot root : javaProject.getPackageFragmentRoots()) {
-                if (root.getKind() == IPackageFragmentRoot.K_SOURCE) {
-                    // Extract package name from classPath
-                    int lastSlash = classPath.lastIndexOf('/');
-                    String packageName = lastSlash > 0 ? classPath.substring(0, lastSlash).replace('/', '.') : "";
-                    String className = lastSlash > 0 ? classPath.substring(lastSlash + 1) : classPath;
-
-                    IPackageFragment pkg = root.getPackageFragment(packageName);
-                    if (pkg != null && pkg.exists()) {
-                        ICompilationUnit cu = pkg.getCompilationUnit(className);
-                        if (cu != null && cu.exists()) {
-                            return cu;
-                        }
-                    }
-                }
-            }
-
+        // A relative path is relative to the project root, as tools resolve it.
+        IFile file = resolveWorkspaceFile(pathUtils.resolve(filePath.toString()));
+        ICompilationUnit cu = file == null ? null : JavaCore.createCompilationUnitFrom(file);
+        if (cu == null || !cu.exists()) {
             log.debug("Compilation unit not found for: {}", filePath);
             return null;
-
-        } catch (Exception e) {
-            log.warn("Error getting compilation unit for {}: {}", filePath, e.getMessage());
-            return null;
         }
+        return cu;
     }
 
     @Override

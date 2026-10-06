@@ -2,8 +2,11 @@ package org.javalens.core.project;
 
 import org.eclipse.jdt.apt.core.util.AptConfig;
 import org.eclipse.jdt.core.IClasspathEntry;
+import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IJavaProject;
+import org.eclipse.jdt.core.IMethod;
 import org.eclipse.jdt.core.IType;
+import org.eclipse.jdt.core.JavaModelException;
 import org.javalens.core.JdtServiceImpl;
 import org.javalens.core.fixtures.ClasspathSnapshot;
 import org.javalens.core.fixtures.TestProjectHelper;
@@ -21,6 +24,7 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -44,6 +48,10 @@ import static org.junit.jupiter.api.Assertions.assertSame;
  * so everything the load reports must come from {@link BuildSystemImporter#resolve}. Where
  * source roots are pinned, the temp project also holds a conventional {@code src/main/java}
  * the model does not declare, so layout probing by the orchestrator would be visible.
+ *
+ * <p>The file-path tests pin how the service maps a path to a compilation unit: through
+ * the linked source folder whose location holds the file, the innermost one when roots are
+ * nested, so the unit is always the one read from exactly that file.
  *
  * <p>The resolve tests pin the models the plain-Java and Bazel importers compose from
  * their per-concern methods.
@@ -366,6 +374,129 @@ class BuildModelSeamTest {
             () -> assertEquals(runtimeLevel, service.getAnalysisLevel(), "analysis level"));
     }
 
+    // ========== A file path maps to the compilation unit of exactly that file ==========
+
+    @Test
+    @DisplayName("A file in a custom source root maps to its own unit by absolute path, by an unnormalized absolute path and by a path relative to the project root")
+    void filePathInCustomRootMapsToItsUnit() throws Exception {
+        Path root = Files.createDirectories(helper.getTempDirectory().resolve("unit-custom-root"));
+        Path customJava = root.resolve("custom/java");
+        writeSource(customJava, "p", "A", "run");
+        Path file = customJava.resolve("p/A.java");
+
+        JdtServiceImpl service = load(root, new ModelStub(model(BuildSystem.UNKNOWN, "17",
+            List.of(module(".", root, List.of(customJava), List.of())),
+            List.of(), List.of(), List.of())));
+
+        UnitView expected = new UnitView(file, "p", List.of("A"), List.of("run"));
+        assertAll(
+            () -> assertEquals(expected, view(service.getCompilationUnit(file)), "absolute path"),
+            () -> assertEquals(expected, view(service.getCompilationUnit(root.resolve("custom/../custom/java/p/A.java"))),
+                "absolute path with redundant segments"),
+            () -> assertEquals(expected, view(service.getCompilationUnit(Path.of("custom/java/p/A.java"))),
+                "path relative to the project root"));
+    }
+
+    @Test
+    @DisplayName("Two modules holding the same qualified name: each file's path maps to the unit read from that file")
+    void sameQualifiedNameInTwoModulesMapsEachPathToItsOwnUnit() throws Exception {
+        Path root = Files.createDirectories(helper.getTempDirectory().resolve("unit-same-name"));
+        Path modASrc = root.resolve("modA/src");
+        Path modBSrc = root.resolve("modB/src");
+        writeSource(modASrc, "p", "Util", "alpha");
+        writeSource(modBSrc, "p", "Util", "beta");
+        Path utilA = modASrc.resolve("p/Util.java");
+        Path utilB = modBSrc.resolve("p/Util.java");
+
+        JdtServiceImpl service = load(root, new ModelStub(model(BuildSystem.UNKNOWN, "17",
+            List.of(
+                module("modA", root.resolve("modA"), List.of(modASrc), List.of()),
+                module("modB", root.resolve("modB"), List.of(modBSrc), List.of())),
+            List.of(), List.of(), List.of())));
+
+        assertAll(
+            () -> assertEquals(new UnitView(utilA, "p", List.of("Util"), List.of("alpha")),
+                view(service.getCompilationUnit(utilA)), "modA/src/p/Util.java"),
+            () -> assertEquals(new UnitView(utilB, "p", List.of("Util"), List.of("beta")),
+                view(service.getCompilationUnit(utilB)), "modB/src/p/Util.java"));
+    }
+
+    @Test
+    @DisplayName("With a source root inside another, a file under the inner root maps to the inner root's unit and a file under the outer root to the outer root's")
+    void nestedRootsMapEachFileToItsInnermostRoot() throws Exception {
+        Path root = Files.createDirectories(helper.getTempDirectory().resolve("unit-nested-root"));
+        Path outer = root.resolve("src");
+        Path inner = root.resolve("src/gen");
+        writeSource(outer, "p", "Outer", "outerWork");
+        writeSource(inner, "q", "Gen", "generated");
+        Path outerFile = outer.resolve("p/Outer.java");
+        Path genFile = inner.resolve("q/Gen.java");
+
+        JdtServiceImpl service = load(root, new ModelStub(model(BuildSystem.UNKNOWN, "17",
+            List.of(module(".", root, List.of(outer, inner), List.of())),
+            List.of(), List.of(), List.of())));
+
+        assertAll(
+            () -> assertEquals(new UnitView(genFile, "q", List.of("Gen"), List.of("generated")),
+                view(service.getCompilationUnit(genFile)), "src/gen/q/Gen.java"),
+            () -> assertEquals(new UnitView(outerFile, "p", List.of("Outer"), List.of("outerWork")),
+                view(service.getCompilationUnit(outerFile)), "src/p/Outer.java"));
+    }
+
+    @Test
+    @DisplayName("A file under no linked source root, even one whose path names a loaded type, and a missing file inside a linked root map to no unit")
+    void pathOutsideEveryRootOrMissingMapsToNoUnit() throws Exception {
+        Path root = Files.createDirectories(helper.getTempDirectory().resolve("unit-outside"));
+        Path customJava = root.resolve("custom/java");
+        writeSource(customJava, "p", "A", "run");
+        // Not source roots of the model: one file in a package no root holds, and a copy
+        // of p.A under a directory named src.
+        writeSource(root.resolve("notlinked"), "p", "X");
+        writeSource(root.resolve("copies/src"), "p", "A", "copied");
+
+        JdtServiceImpl service = load(root, new ModelStub(model(BuildSystem.UNKNOWN, "17",
+            List.of(module(".", root, List.of(customJava), List.of())),
+            List.of(), List.of(), List.of())));
+
+        assertAll(
+            () -> assertNull(view(service.getCompilationUnit(root.resolve("notlinked/p/X.java"))),
+                "notlinked/p/X.java"),
+            () -> assertNull(view(service.getCompilationUnit(root.resolve("copies/src/p/A.java"))),
+                "copies/src/p/A.java"),
+            () -> assertNull(view(service.getCompilationUnit(customJava.resolve("p/Missing.java"))),
+                "custom/java/p/Missing.java"),
+            () -> assertEquals(new UnitView(customJava.resolve("p/A.java"), "p", List.of("A"), List.of("run")),
+                view(service.getCompilationUnit(customJava.resolve("p/A.java"))), "custom/java/p/A.java"));
+    }
+
+    @Test
+    @DisplayName("Disk sync repairs an edited file under a nested root through that root, so the file's unit reflects the edit")
+    void diskSyncRepairsEditUnderNestedRootThroughInnermostRoot() throws Exception {
+        Path root = Files.createDirectories(helper.getTempDirectory().resolve("unit-nested-sync"));
+        Path outer = root.resolve("src");
+        Path inner = root.resolve("src/gen");
+        writeSource(outer, "p", "Outer");
+        writeSource(inner, "q", "Gen", "before");
+        Path genFile = inner.resolve("q/Gen.java");
+
+        JdtServiceImpl service = load(root, new ModelStub(model(BuildSystem.UNKNOWN, "17",
+            List.of(module(".", root, List.of(outer, inner), List.of())),
+            List.of(), List.of(), List.of())));
+        // Reading the unit opens it, so the edit is seen only if disk sync refreshes it.
+        UnitView beforeEdit = view(service.getCompilationUnit(genFile));
+
+        writeSource(inner, "q", "Gen", "after");
+        List<Path> repaired = service.ensureFresh();
+        UnitView afterEdit = view(service.getCompilationUnit(genFile));
+
+        assertAll(
+            () -> assertEquals(new UnitView(genFile, "q", List.of("Gen"), List.of("before")), beforeEdit,
+                "unit before the edit"),
+            () -> assertEquals(List.of(genFile), repaired, "files disk sync repaired"),
+            () -> assertEquals(new UnitView(genFile, "q", List.of("Gen"), List.of("after")), afterEdit,
+                "unit after the edit"));
+    }
+
     // ========== Importers compose their per-concern methods into a model ==========
 
     @Test
@@ -500,10 +631,16 @@ class BuildModelSeamTest {
         return new BuildModule(id, dir, sourceRoots, generatedRoots, List.of(), null, false);
     }
 
-    private static void writeSource(Path sourceRoot, String packageName, String className) throws IOException {
+    /** Write {@code packageName.className} into {@code sourceRoot}, declaring a no-argument void method per name. */
+    private static void writeSource(Path sourceRoot, String packageName, String className, String... methodNames)
+            throws IOException {
         Path packageDir = Files.createDirectories(sourceRoot.resolve(packageName));
+        StringBuilder methods = new StringBuilder();
+        for (String methodName : methodNames) {
+            methods.append("    public void ").append(methodName).append("() {\n    }\n");
+        }
         Files.writeString(packageDir.resolve(className + ".java"),
-            "package " + packageName + ";\n\npublic class " + className + " {\n}\n");
+            "package " + packageName + ";\n\npublic class " + className + " {\n" + methods + "}\n");
     }
 
     /** The file {@code type} was read from, or null when the type did not resolve. */
@@ -512,6 +649,30 @@ class BuildModelSeamTest {
             return null;
         }
         return Path.of(type.getResource().getLocation().toOSString());
+    }
+
+    /** A compilation unit as the file-path tests pin it. */
+    private record UnitView(Path file, String packageName, List<String> types, List<String> methods) {
+    }
+
+    /**
+     * The file {@code unit} was read from, its package, its top-level types and their
+     * methods in declaration order; null when there is no unit.
+     */
+    private static UnitView view(ICompilationUnit unit) throws JavaModelException {
+        if (unit == null) {
+            return null;
+        }
+        List<String> types = new ArrayList<>();
+        List<String> methods = new ArrayList<>();
+        for (IType type : unit.getTypes()) {
+            types.add(type.getElementName());
+            for (IMethod method : type.getMethods()) {
+                methods.add(method.getElementName());
+            }
+        }
+        return new UnitView(Path.of(unit.getResource().getLocation().toOSString()),
+            unit.getParent().getElementName(), types, methods);
     }
 
     private static void writeFile(Path file, String content) throws IOException {

@@ -101,10 +101,13 @@ public interface IJdtService {
     IJavaProject getJavaProject();
 
     /**
-     * Get the ICompilationUnit for a file path.
+     * Get the ICompilationUnit read from exactly the file at a path. The file maps to the
+     * linked folder of the source root whose location holds it, the innermost when roots are
+     * nested, so a type of the same qualified name elsewhere never answers for it.
      *
      * @param filePath Path to the source file (absolute or relative to project root)
-     * @return ICompilationUnit or null if not found
+     * @return the file's ICompilationUnit, or null when no source root holds the file or the
+     *         file does not exist
      */
     ICompilationUnit getCompilationUnit(Path filePath);
 
