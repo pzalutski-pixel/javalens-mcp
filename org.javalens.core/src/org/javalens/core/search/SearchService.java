@@ -35,6 +35,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Predicate;
 
 /**
  * Wraps JDT SearchEngine for AI-optimized queries.
@@ -51,6 +52,12 @@ import java.util.Map;
 public class SearchService {
 
     private static final Logger log = LoggerFactory.getLogger(SearchService.class);
+
+    /**
+     * The {@code maxResults} that collects every match. Callers that filter, deduplicate or
+     * rewrite the matches they receive pass it, so no match is dropped before they see it.
+     */
+    public static final int ALL_MATCHES = Integer.MAX_VALUE;
 
     private final IJavaProject project;
     private final SearchEngine engine;
@@ -69,14 +76,35 @@ public class SearchService {
     }
 
     /**
-     * Search for symbols matching a pattern.
+     * Search for declarations matching a pattern.
      *
      * @param pattern Glob pattern (e.g., "Order*", "*Service")
-     * @param searchFor Type of element: TYPE, METHOD, FIELD, or null for all
+     * @param searchFor Type of element: TYPE, METHOD, FIELD, or null for all types
      * @param maxResults Maximum results to return
-     * @return List of matching elements
+     * @return The first {@code maxResults} matching declarations and the count of all of them
      */
     public SearchResult searchSymbols(String pattern, Integer searchFor, int maxResults) throws CoreException {
+        return searchSymbols(pattern, searchFor, element -> true, 0, maxResults);
+    }
+
+    /**
+     * Search for declarations matching a pattern, keep those {@code accept} admits, and return
+     * one page of them. Every match the search reports is checked against the pattern and
+     * {@code accept} before any is counted or kept, so nothing caps the search ahead of its
+     * filters.
+     *
+     * @param pattern Glob pattern: {@code *} matches any characters, {@code ?} exactly one
+     * @param searchFor Type of element: TYPE, METHOD, FIELD, or null for all types
+     * @param accept The declarations to keep among those matching the pattern
+     * @param offset How many kept declarations, in search order, precede the page
+     * @param limit The most declarations the page holds
+     * @return The page ({@code matches}, kept declarations {@code offset} onward, at most
+     *     {@code limit} of them) and the count of every kept declaration ({@code totalEncountered}).
+     *     Declarations follow the page exactly when {@code offset + matches().size()} is less
+     *     than that count.
+     */
+    public SearchResult searchSymbols(String pattern, Integer searchFor, Predicate<IJavaElement> accept,
+                                      int offset, int limit) throws CoreException {
         // JDT's R_PATTERN_MATCH supports `*` natively but not `?`. The tool's contract
         // documents both as wildcards, so for patterns containing `?` we broaden the
         // JDT search (substituting `?` -> `*`) and then narrow client-side with a regex
@@ -107,11 +135,10 @@ public class SearchService {
             return new SearchResult(List.of(), 0);
         }
 
-        // If we broadened with `?`->`*`, collect more raw matches than the cap so the
-        // client-side filter can find enough still-matching entries. Otherwise the cap
-        // applies directly.
-        int collectCap = hasQuestionMark ? Math.max(maxResults * 4, 200) : maxResults;
-        CollectingSearchRequestor requestor = new CollectingSearchRequestor(collectCap);
+        // The `?` narrowing and `accept` run on every reported match before it is counted,
+        // so the page and the count both describe the declarations that pass.
+        List<SearchMatch> page = new ArrayList<>();
+        int[] passing = { 0 };
 
         // Sources-only scope: symbol search returns the project's own declared symbols,
         // not classpath/JDK types or workspace-metadata phantoms (which leak unresolvable
@@ -120,45 +147,30 @@ public class SearchService {
             jdtPattern,
             new SearchParticipant[] { SearchEngine.getDefaultSearchParticipant() },
             sourceScope,
-            requestor,
+            new SearchRequestor() {
+                @Override
+                public void acceptSearchMatch(SearchMatch match) {
+                    if (!(match.getElement() instanceof IJavaElement element)) {
+                        return;
+                    }
+                    if (clientFilter != null && !clientFilter.matcher(element.getElementName()).matches()) {
+                        return;
+                    }
+                    if (!accept.test(element)) {
+                        return;
+                    }
+                    if (passing[0] >= offset && page.size() < limit) {
+                        page.add(match);
+                    }
+                    passing[0]++;
+                }
+            },
             new NullProgressMonitor()
         );
 
-        List<SearchMatch> raw = requestor.getMatches();
-        if (clientFilter == null) {
-            log.debug("Symbol search '{}' found {} results", pattern, raw.size());
-            // When `?` was not in the pattern, requestor's totalEncountered reflects
-            // the raw match count and matches.size() is clipped at maxResults — that's
-            // the correct truncation signal.
-            return requestor.toResult();
-        }
-
-        // Narrow with the proper glob-as-regex against the matched element's simple name.
-        // Track the post-filter total encountered (including any beyond maxResults) so
-        // truncation is reported correctly: the raw search may have returned more
-        // entries than the broadened cap, AND the client-side ?-filter may drop some.
-        List<SearchMatch> narrowed = new ArrayList<>();
-        int narrowedTotal = 0;
-        for (SearchMatch m : raw) {
-            String name = simpleNameOf(m);
-            if (name != null && clientFilter.matcher(name).matches()) {
-                narrowedTotal++;
-                if (narrowed.size() < maxResults) {
-                    narrowed.add(m);
-                }
-            }
-        }
-        log.debug("Symbol search '{}' found {} raw, {} after client-side ?-filter",
-            pattern, raw.size(), narrowedTotal);
-        return new SearchResult(narrowed, narrowedTotal);
-    }
-
-    private static String simpleNameOf(SearchMatch m) {
-        Object element = m.getElement();
-        if (element instanceof org.eclipse.jdt.core.IJavaElement je) {
-            return je.getElementName();
-        }
-        return null;
+        log.debug("Symbol search '{}' kept {} declarations, returning {} from offset {}",
+            pattern, passing[0], page.size(), offset);
+        return new SearchResult(page, passing[0]);
     }
 
     /**

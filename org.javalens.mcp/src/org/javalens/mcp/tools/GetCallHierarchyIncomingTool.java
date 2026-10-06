@@ -11,6 +11,7 @@ import org.eclipse.jdt.core.Signature;
 import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.IJdtService;
 import org.javalens.core.search.SearchResult;
+import org.javalens.core.search.SearchService;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
 import org.slf4j.Logger;
@@ -113,11 +114,10 @@ public class GetCallHierarchyIncomingTool extends AbstractTool {
             String declaringClass = declaringType != null ? declaringType.getFullyQualifiedName() : "Unknown";
             String signature = buildMethodSignature(method);
 
-            // Use SearchService to find all references to this method. Request 2× the cap
-            // because some matches don't yield an enclosing method (e.g. references in
-            // initializers) and are skipped during extraction.
+            // Every reference to this method: extraction skips matches it cannot place,
+            // so it must see all of them before the count and the page are taken.
             SearchResult result = service.getSearchService()
-                .findAllReferences(method, maxResults * 2);
+                .findAllReferences(method, SearchService.ALL_MATCHES);
 
             // Extract caller information from each match. Count total successful
             // extractions separately from the displayed list so truncated is accurate:
@@ -133,9 +133,7 @@ public class GetCallHierarchyIncomingTool extends AbstractTool {
                     }
                 }
             }
-            // If the underlying search itself was clipped at 2× maxResults, more callers
-            // may exist beyond what we processed — fold that into truncated.
-            boolean truncated = totalCallers > maxResults || result.truncated();
+            boolean truncated = totalCallers > maxResults;
 
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("method", methodName);

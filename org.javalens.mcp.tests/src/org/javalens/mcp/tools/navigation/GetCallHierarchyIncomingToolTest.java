@@ -84,6 +84,53 @@ class GetCallHierarchyIncomingToolTest {
         assertEquals(Boolean.TRUE, r.getMeta().getTruncated());
     }
 
+    @Test @DisplayName("maxResults=0 and maxResults=1 page add's callers while totalCallers counts all four, through execute() and the envelope")
+    void smallMaxResults_countEveryCaller() {
+        // add's first caller in search order (SearchPatterns.java sorts before
+        // service/UserService.java and the test sources) is createObjects, calling
+        // calc.add(1, 2) at line 58, the name at column 26.
+        Map<String, Object> firstCaller = new java.util.LinkedHashMap<>();
+        firstCaller.put("filePath", "src/main/java/com/example/SearchPatterns.java");
+        firstCaller.put("line", 58);
+        firstCaller.put("column", 26);
+        firstCaller.put("context", "int result = calc.add(1, 2);");
+        firstCaller.put("callerMethod", "createObjects");
+        firstCaller.put("callerSignature", "createObjects()");
+        firstCaller.put("callerClass", "com.example.SearchPatterns");
+        assertAll(
+            () -> assertCallers(0, List.of()),
+            () -> assertCallers(1, List.of(firstCaller)));
+    }
+
+    /** add's payload with {@code maxResults}: the given callers, of four in total. */
+    private void assertCallers(int maxResults, List<Map<String, Object>> callers) {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        args.put("line", 14);
+        args.put("column", 15);
+        args.put("maxResults", maxResults);
+
+        Map<String, Object> data = new java.util.LinkedHashMap<>();
+        data.put("method", "add");
+        data.put("declaringClass", "com.example.Calculator");
+        data.put("signature", "add(int, int)");
+        data.put("totalCallers", 4);
+        data.put("callers", callers);
+        Map<String, Object> meta = new java.util.LinkedHashMap<>();
+        meta.put("totalCount", 4);
+        meta.put("returnedCount", callers.size());
+        meta.put("truncated", true);
+        meta.put("suggestedNextTools", List.of(
+            "get_call_hierarchy_outgoing to see what this method calls",
+            "go_to_definition to navigate to a caller"));
+        JsonNode expected = objectMapper.valueToTree(Map.of("success", true, "data", data, "meta", meta));
+
+        assertEquals(expected, objectMapper.valueToTree(tool.execute(args.deepCopy())),
+            "execute() payload for maxResults=" + maxResults);
+        assertEquals(expected, envelope.assertEnvelopeFidelity("get_call_hierarchy_incoming", args),
+            "envelope payload for maxResults=" + maxResults);
+    }
+
     @Test @DisplayName("missing filePath / line rejected with INVALID_PARAMETER")
     void requiresParameters() {
         ObjectNode noFile = objectMapper.createObjectNode();

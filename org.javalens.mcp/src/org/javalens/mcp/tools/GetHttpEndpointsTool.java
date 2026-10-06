@@ -168,8 +168,9 @@ public class GetHttpEndpointsTool extends AbstractTool {
             if (annotationType == null) {
                 return;
             }
+            // Every use of the annotation: only those on methods are handlers.
             List<SearchMatch> matches = service.getSearchService().findReferences(
-                annotationType, SearchService.ReferenceKind.ANNOTATION, 1000).matches();
+                annotationType, SearchService.ReferenceKind.ANNOTATION, SearchService.ALL_MATCHES).matches();
             for (SearchMatch match : matches) {
                 if (!(match.getElement() instanceof IMethod handler)) {
                     continue;

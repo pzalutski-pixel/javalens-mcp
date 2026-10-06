@@ -143,8 +143,9 @@ public class GetJpaModelTool extends AbstractTool {
                 if (annotationType == null) {
                     continue;
                 }
+                // Every use of the annotation: only those on types are entities.
                 List<SearchMatch> matches = service.getSearchService().findReferences(
-                    annotationType, SearchService.ReferenceKind.ANNOTATION, 1000).matches();
+                    annotationType, SearchService.ReferenceKind.ANNOTATION, SearchService.ALL_MATCHES).matches();
                 for (SearchMatch match : matches) {
                     if (match.getElement() instanceof IType type
                         && seen.add(type.getHandleIdentifier())) {

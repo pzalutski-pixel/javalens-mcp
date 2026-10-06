@@ -31,6 +31,7 @@ import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.IJdtService;
 import org.javalens.core.MethodFormatter;
 import org.javalens.core.ModifierFormatter;
+import org.javalens.core.search.SearchService;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
 import org.slf4j.Logger;
@@ -232,8 +233,10 @@ public class AnalyzeMethodTool extends AbstractTool {
         List<Map<String, Object>> callers = new ArrayList<>();
 
         try {
+            // Every reference: callers are the distinct enclosing methods, so the first
+            // maxCallers of them can lie past any fixed number of references.
             List<SearchMatch> references = service.getSearchService()
-                .findAllReferences(method, maxCallers * 2).matches();
+                .findAllReferences(method, SearchService.ALL_MATCHES).matches();
 
             Set<String> seenCallers = new HashSet<>();
 
@@ -441,9 +444,9 @@ public class AnalyzeMethodTool extends AbstractTool {
                 result.put("overrides", superInfo);
             }
 
-            // Find overriding methods
+            // Find every overriding method
             List<SearchMatch> overriders = service.getSearchService()
-                .findOverridingMethods(method, 20).matches();
+                .findOverridingMethods(method, SearchService.ALL_MATCHES).matches();
             if (!overriders.isEmpty()) {
                 List<Map<String, Object>> overriderList = new ArrayList<>();
                 for (SearchMatch match : overriders) {

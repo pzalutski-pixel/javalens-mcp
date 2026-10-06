@@ -33,6 +33,7 @@ import org.eclipse.jdt.core.dom.rewrite.ListRewrite;
 import org.eclipse.jdt.core.search.IJavaSearchConstants;
 import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.IJdtService;
+import org.javalens.core.search.SearchService;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.rewrite.TextEditConverter;
@@ -202,9 +203,9 @@ public class ChangeMethodSignatureTool extends AbstractTool {
             // Map old param index -> new param index (or -1 if removed)
             int[] paramMapping = buildParameterMapping(oldParamNames, newParameters);
 
-            // Get all references to this method
+            // Get all references to this method: every call site must be rewritten
             List<SearchMatch> references = service.getSearchService().findReferences(
-                method, IJavaSearchConstants.REFERENCES, 1000).matches();
+                method, IJavaSearchConstants.REFERENCES, SearchService.ALL_MATCHES).matches();
 
             // Collect all edits
             Map<String, List<Map<String, Object>>> editsByFile = new LinkedHashMap<>();

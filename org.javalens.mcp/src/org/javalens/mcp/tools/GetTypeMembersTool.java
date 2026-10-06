@@ -23,6 +23,7 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.function.Supplier;
 
@@ -33,6 +34,9 @@ import java.util.function.Supplier;
 public class GetTypeMembersTool extends AbstractTool {
 
     private static final Logger log = LoggerFactory.getLogger(GetTypeMembersTool.class);
+
+    /** The accepted {@code memberKind} values, compared case-insensitively. */
+    private static final List<String> MEMBER_KINDS = List.of("method", "field", "type");
 
     public GetTypeMembersTool(Supplier<IJdtService> serviceSupplier) {
         super(serviceSupplier);
@@ -53,7 +57,10 @@ public class GetTypeMembersTool extends AbstractTool {
 
             Options:
             - includeInherited: Also include members from superclasses/interfaces
-            - memberKind: Filter to "method", "field", or "type" only
+            - memberKind: Filter to "method" (constructors included), "field" or "type" only,
+              compared case-insensitively. "field" returns every field, including static
+              final constants and enum constants; each field's kind is field, constant or
+              enumConstant. Any other value is rejected with INVALID_PARAMETER.
 
             Requires load_project to be called first.
             """;
@@ -64,7 +71,8 @@ public class GetTypeMembersTool extends AbstractTool {
         return SchemaBuilder.object()
             .required("typeName", "string", "Fully qualified or simple type name")
             .optional("includeInherited", "boolean", "Include inherited members (default false)")
-            .optional("memberKind", "string", "Filter: 'method', 'field', 'type', or null for all")
+            .optional("memberKind", "string", "Filter, case-insensitive: 'method', 'field' (every field, "
+                + "constants and enum constants included) or 'type'; omit for all")
             .build();
     }
 
@@ -76,7 +84,13 @@ public class GetTypeMembersTool extends AbstractTool {
         }
 
         boolean includeInherited = getBooleanParam(arguments, "includeInherited", false);
-        String memberKind = getStringParam(arguments, "memberKind");
+        String requestedKind = getStringParam(arguments, "memberKind");
+        String memberKind = requestedKind == null ? null : requestedKind.toLowerCase(Locale.ROOT);
+        if (memberKind != null && !MEMBER_KINDS.contains(memberKind)) {
+            return ToolResponse.invalidParameter("memberKind",
+                "Must be one of " + String.join(", ", MEMBER_KINDS) + " (case-insensitive); got: "
+                    + requestedKind);
+        }
 
         try {
             IType type = service.findType(typeName);
