@@ -16,7 +16,7 @@ import java.util.Map;
  */
 public class McpProtocolHandler {
 
-    private static final Logger log = LoggerFactory.getLogger(McpProtocolHandler.class);
+    private final Logger log;
 
     private final ObjectMapper objectMapper;
     private final ToolRegistry toolRegistry;
@@ -25,8 +25,14 @@ public class McpProtocolHandler {
     private String clientVersion;
 
     public McpProtocolHandler(ToolRegistry toolRegistry) {
+        this(toolRegistry, LoggerFactory.getLogger(McpProtocolHandler.class));
+    }
+
+    /** Logs through {@code log}. Package-private for tests. */
+    McpProtocolHandler(ToolRegistry toolRegistry, Logger log) {
         this.objectMapper = new ObjectMapper();
         this.toolRegistry = toolRegistry;
+        this.log = log;
     }
 
     /**
@@ -119,14 +125,15 @@ public class McpProtocolHandler {
         String method = notification.getMethod();
         log.debug("Handling notification: method={}", method);
 
+        // The client-to-server notifications of MCP 2024-11-05, plus the legacy "initialized".
         switch (method) {
+            case "notifications/initialized", "initialized" -> handleInitialized();
             case "notifications/cancelled" -> {
                 // Client cancelled a request - log and ignore
                 log.debug("Request cancelled by client");
             }
-            case "initialized" -> {
-                // Some clients send initialized as notification
-                handleInitialized();
+            case "notifications/progress", "notifications/roots/list_changed" -> {
+                // Recognized; the server has nothing to do for them.
             }
             default -> log.warn("Unknown notification: {}", method);
         }

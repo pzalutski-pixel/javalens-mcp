@@ -13,4 +13,6 @@ Import-Package: org.opentest4j,
  com.fasterxml.jackson.databind.node,
  org.eclipse.jdt.internal.core,
  org.eclipse.jdt.internal.core.index,
- org.eclipse.jdt.internal.core.search.indexing
+ org.eclipse.jdt.internal.core.search.indexing,
+ org.slf4j.event;version="2.0.0",
+ org.slf4j.helpers;version="2.0.0"
