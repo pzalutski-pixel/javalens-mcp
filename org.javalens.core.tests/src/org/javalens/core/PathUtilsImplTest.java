@@ -20,6 +20,9 @@ class PathUtilsImplTest {
     @RegisterExtension
     TestProjectHelper helper = new TestProjectHelper();
 
+    @TempDir
+    Path tempDir;
+
     private Path projectRoot;
     private PathUtilsImpl pathUtils;
 
@@ -136,27 +139,6 @@ class PathUtilsImplTest {
             "Path outside project should not be within project");
     }
 
-    @Test
-    @DisplayName("isWithinProject normalizes a relative path to absolute before the check")
-    void isWithinProject_handlesRelativePaths() {
-        // The source normalizes relative paths via toAbsolutePath(), so the relative
-        // path is resolved against the JVM's working directory. We don't control CWD
-        // in a JUnit run, so we can't pin the boolean result. What WE pin is:
-        //  (a) the call returns without throwing
-        //  (b) the result equals what we'd compute by manually normalizing the path
-        // Previous assertion `assertNotNull(Boolean.valueOf(result))` was tautological —
-        // Boolean.valueOf(boolean) returns a non-null wrapper unconditionally; the
-        // assertion could never fail.
-        Path relativePath = Path.of("some/relative/path.java");
-        Path manuallyNormalized = relativePath.toAbsolutePath().normalize();
-        boolean expected = manuallyNormalized.startsWith(projectRoot);
-        boolean actual = pathUtils.isWithinProject(relativePath);
-        assertEquals(expected, actual,
-            "isWithinProject must equal startsWith on the absolute-normalized path; "
-                + "relativePath=" + relativePath + ", normalized=" + manuallyNormalized
-                + ", projectRoot=" + projectRoot);
-    }
-
     // ========== isWindows Tests ==========
 
     @Test
@@ -248,5 +230,110 @@ class PathUtilsImplTest {
         Path under = projectRoot.resolve("src/main/java/com/example/Calculator.java");
         assertFalse(absolute.formatPath(under).contains("\\"),
             "Even with useAbsolutePaths=true the formatter must produce forward slashes");
+    }
+
+    // ========== Relative inputs are relative to the project root ==========
+    //
+    // The root is <tempDir>/root, a fresh directory that neither is nor contains the working
+    // directory, so resolving a relative input against the working directory names a
+    // different file than resolving it against the root.
+
+    private static final String INSIDE = "src/main/java/p/A.java";
+    private static final String INSIDE_REDUNDANT = "src/./main/../main/java/p/A.java";
+    private static final String INSIDE_VIA_PARENT = "../root/src/main/java/p/A.java";
+    private static final String ESCAPING = "../outside/X.java";
+
+    /** The project root under the temporary directory, checked to be apart from the working directory. */
+    private Path tempRoot() {
+        Path root = tempDir.toAbsolutePath().normalize().resolve("root");
+        Path workingDirectory = Path.of("").toAbsolutePath().normalize();
+        assertFalse(workingDirectory.startsWith(root),
+            "the working directory must lie outside the root; working directory=" + workingDirectory);
+        return root;
+    }
+
+    /** The temporary directory as an absolute normalized path with forward slashes. */
+    private String tempPrefix() {
+        return tempDir.toAbsolutePath().normalize().toString().replace('\\', '/');
+    }
+
+    @Test
+    @DisplayName("formatPath renders a relative input against the project root: inside as root-relative, escaping as absolute")
+    void formatPath_relativeInputIsRelativeToProjectRoot() {
+        Path root = tempRoot();
+        PathUtilsImpl utils = new PathUtilsImpl(root, false);
+        String outside = tempPrefix() + "/outside/X.java";
+
+        assertAll(
+            () -> assertEquals(INSIDE, utils.formatPath(INSIDE), "relative inside, String"),
+            () -> assertEquals(INSIDE, utils.formatPath(Path.of(INSIDE)), "relative inside, Path"),
+            () -> assertEquals(INSIDE, utils.formatPath(INSIDE_REDUNDANT), "relative with redundant segments"),
+            () -> assertEquals(INSIDE, utils.formatPath(INSIDE_VIA_PARENT), "relative leaving and re-entering the root"),
+            () -> assertEquals(outside, utils.formatPath(ESCAPING), "relative escaping the root, String"),
+            () -> assertEquals(outside, utils.formatPath(Path.of(ESCAPING)), "relative escaping the root, Path"),
+            () -> assertEquals(INSIDE, utils.formatPath(root.resolve(INSIDE).toString()), "absolute inside"),
+            () -> assertEquals(outside, utils.formatPath(tempDir.resolve("outside/X.java").toString()),
+                "absolute outside"));
+    }
+
+    @Test
+    @DisplayName("formatPath in absolute-path mode renders a relative input as the absolute path it names under the project root")
+    void formatPath_absoluteMode_relativeInputIsRelativeToProjectRoot() {
+        Path root = tempRoot();
+        PathUtilsImpl utils = new PathUtilsImpl(root, true);
+        String inside = tempPrefix() + "/root/" + INSIDE;
+        String outside = tempPrefix() + "/outside/X.java";
+
+        assertAll(
+            () -> assertEquals(inside, utils.formatPath(INSIDE), "relative inside, String"),
+            () -> assertEquals(inside, utils.formatPath(Path.of(INSIDE)), "relative inside, Path"),
+            () -> assertEquals(inside, utils.formatPath(INSIDE_REDUNDANT), "relative with redundant segments"),
+            () -> assertEquals(inside, utils.formatPath(INSIDE_VIA_PARENT), "relative leaving and re-entering the root"),
+            () -> assertEquals(outside, utils.formatPath(ESCAPING), "relative escaping the root"),
+            () -> assertEquals(inside, utils.formatPath(root.resolve(INSIDE).toString()), "absolute inside"),
+            () -> assertEquals(outside, utils.formatPath(tempDir.resolve("outside/X.java").toString()),
+                "absolute outside"));
+    }
+
+    @Test
+    @DisplayName("isWithinProject judges a relative input against the project root")
+    void isWithinProject_relativeInputIsRelativeToProjectRoot() {
+        Path root = tempRoot();
+        PathUtilsImpl utils = new PathUtilsImpl(root, false);
+
+        assertAll(
+            () -> assertEquals(true, utils.isWithinProject(Path.of(INSIDE)), "relative inside"),
+            () -> assertEquals(true, utils.isWithinProject(Path.of(INSIDE_REDUNDANT)),
+                "relative with redundant segments"),
+            () -> assertEquals(true, utils.isWithinProject(Path.of(INSIDE_VIA_PARENT)),
+                "relative leaving and re-entering the root"),
+            () -> assertEquals(false, utils.isWithinProject(Path.of(ESCAPING)), "relative escaping the root"),
+            () -> assertEquals(false, utils.isWithinProject(Path.of("../rootling/X.java")),
+                "relative into a sibling whose name starts with the root's name"),
+            () -> assertEquals(true, utils.isWithinProject(root.resolve(INSIDE)), "absolute inside"),
+            () -> assertEquals(false, utils.isWithinProject(tempDir.resolve("outside/X.java")), "absolute outside"));
+    }
+
+    @Test
+    @DisplayName("resolve anchors a relative input at the project root, normalized, and keeps an absolute input")
+    void resolve_relativeInputIsRelativeToProjectRoot() {
+        Path root = tempRoot();
+        PathUtilsImpl utils = new PathUtilsImpl(root, false);
+        String inside = tempPrefix() + "/root/" + INSIDE;
+        String outside = tempPrefix() + "/outside/X.java";
+
+        assertAll(
+            () -> assertEquals(inside, slashes(utils.resolve(INSIDE)), "relative inside"),
+            () -> assertEquals(inside, slashes(utils.resolve(INSIDE_REDUNDANT)), "relative with redundant segments"),
+            () -> assertEquals(inside, slashes(utils.resolve(INSIDE_VIA_PARENT)),
+                "relative leaving and re-entering the root"),
+            () -> assertEquals(outside, slashes(utils.resolve(ESCAPING)), "relative escaping the root"),
+            () -> assertEquals(inside, slashes(utils.resolve(root.resolve(INSIDE).toString())), "absolute inside"),
+            () -> assertEquals(outside, slashes(utils.resolve(tempDir.resolve("outside/X.java").toString())),
+                "absolute outside"));
+    }
+
+    private static String slashes(Path path) {
+        return path.toString().replace('\\', '/');
     }
 }

@@ -8,22 +8,26 @@ import java.nio.file.Path;
  *
  * <p>All paths are formatted with forward slashes for consistency.
  * Relative paths are used by default to minimize token usage.
+ *
+ * <p>Every method takes a relative input as relative to the project root, never to the
+ * working directory; an absolute input names itself.
  */
 public interface IPathUtils {
 
     /**
      * Format a path for output.
-     * Returns relative path by default, absolute if JAVALENS_ABSOLUTE_PATHS=true.
+     * Returns the path relative to the project root by default, absolute if
+     * JAVALENS_ABSOLUTE_PATHS=true; a path outside the project root is always absolute.
      *
-     * @param absolutePath The absolute path to format
+     * @param path The path to format, absolute or relative to the project root
      * @return Formatted path string with forward slashes
      */
-    String formatPath(String absolutePath);
+    String formatPath(String path);
 
     /**
-     * Format a Path object for output.
+     * Format a Path object for output, as {@link #formatPath(String)} does.
      *
-     * @param path The path to format
+     * @param path The path to format, absolute or relative to the project root
      * @return Formatted path string with forward slashes
      */
     String formatPath(Path path);
@@ -43,17 +47,17 @@ public interface IPathUtils {
     boolean isUsingAbsolutePaths();
 
     /**
-     * Resolve a path relative to project root.
+     * Resolve a path against the project root.
      *
-     * @param relativePath Path relative to project root
-     * @return Resolved absolute path
+     * @param path Path relative to the project root, or an absolute path
+     * @return Resolved absolute normalized path
      */
-    Path resolve(String relativePath);
+    Path resolve(String path);
 
     /**
      * Check if a path is within the project root.
      *
-     * @param path The path to check
+     * @param path The path to check, absolute or relative to the project root
      * @return true if path is under project root
      */
     boolean isWithinProject(Path path);

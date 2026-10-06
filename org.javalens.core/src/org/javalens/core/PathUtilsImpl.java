@@ -26,13 +26,13 @@ public class PathUtilsImpl implements IPathUtils {
     }
 
     @Override
-    public String formatPath(String absolutePath) {
-        return formatPath(Path.of(absolutePath));
+    public String formatPath(String path) {
+        return formatPath(Path.of(path));
     }
 
     @Override
     public String formatPath(Path path) {
-        Path normalizedPath = path.toAbsolutePath().normalize();
+        Path normalizedPath = resolveAgainstRoot(path);
 
         String result;
         if (useAbsolutePaths) {
@@ -61,14 +61,21 @@ public class PathUtilsImpl implements IPathUtils {
     }
 
     @Override
-    public Path resolve(String relativePath) {
-        return projectRoot.resolve(relativePath).normalize();
+    public Path resolve(String path) {
+        return resolveAgainstRoot(projectRoot.getFileSystem().getPath(path));
     }
 
     @Override
     public boolean isWithinProject(Path path) {
-        Path normalizedPath = path.toAbsolutePath().normalize();
-        return normalizedPath.startsWith(projectRoot);
+        return resolveAgainstRoot(path).startsWith(projectRoot);
+    }
+
+    /**
+     * The normalized path an input names: a relative input is relative to the project root,
+     * never to the working directory; an absolute input names itself.
+     */
+    private Path resolveAgainstRoot(Path path) {
+        return projectRoot.resolve(path).normalize();
     }
 
     /**

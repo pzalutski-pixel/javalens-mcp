@@ -406,4 +406,53 @@ class GetDocumentSymbolsToolTest {
         assertEquals("add(int a, int b): int", addMethod.get("signature").asText(),
             "the exact add signature must survive the envelope");
     }
+
+    // ========== Relative filePath ==========
+
+    @Test
+    @DisplayName("A relative filePath is relative to the project root: file is the root-relative path and the data equals the absolute-path call, at both seams")
+    void relativeFilePath_isRelativeToProjectRoot() {
+        String relative = "src/main/java/com/example/Calculator.java";
+        Map<String, Object> expected = calculatorSymbols(relative);
+
+        ObjectNode absoluteArgs = objectMapper.createObjectNode();
+        absoluteArgs.put("filePath", calculatorPath);
+        ObjectNode relativeArgs = objectMapper.createObjectNode();
+        relativeArgs.put("filePath", relative);
+
+        ToolResponse absolute = tool.execute(absoluteArgs);
+        ToolResponse direct = tool.execute(relativeArgs);
+        JsonNode payload = envelope.assertEnvelopeFidelity("get_document_symbols", relativeArgs);
+
+        assertAll(
+            () -> assertEquals(true, absolute.isSuccess(), "absolute filePath: success"),
+            () -> assertEquals(expected, absolute.getData(), "absolute filePath: data"),
+            () -> assertEquals(true, direct.isSuccess(), "execute(): success"),
+            () -> assertEquals(expected, direct.getData(), "execute(): data"),
+            () -> assertEquals(true, payload.get("success").asBoolean(), "envelope: success"),
+            () -> assertEquals(objectMapper.valueToTree(expected), payload.get("data"), "envelope: data"));
+    }
+
+    /**
+     * The get_document_symbols data of simple-maven's Calculator.java as written: the public
+     * class (line 2, where its Javadoc starts), the private int field lastResult (line 6), and
+     * the public int methods add, subtract, multiply and getLastResult (lines 8, 19, 30 and 41,
+     * where their Javadocs start); six symbols in all.
+     */
+    private static Map<String, Object> calculatorSymbols(String file) {
+        Map<String, Object> calculator = Map.of("name", "Calculator", "kind", "class",
+            "modifiers", List.of("public"), "line", 2, "children", List.of(
+                Map.of("name", "lastResult", "kind", "field", "modifiers", List.of("private"),
+                    "type", "int", "line", 6),
+                publicIntMethod("add", "add(int a, int b): int", 8),
+                publicIntMethod("subtract", "subtract(int a, int b): int", 19),
+                publicIntMethod("multiply", "multiply(int a, int b): int", 30),
+                publicIntMethod("getLastResult", "getLastResult(): int", 41)));
+        return Map.of("file", file, "symbols", List.of(calculator), "totalSymbols", 6);
+    }
+
+    private static Map<String, Object> publicIntMethod(String name, String signature, int line) {
+        return Map.of("name", name, "kind", "method", "modifiers", List.of("public"),
+            "signature", signature, "line", line);
+    }
 }
