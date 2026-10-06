@@ -35,6 +35,9 @@ package org.javalens.core.project.model;
  *       build does not report it as a source root.</li>
  *   <li>{@code COMPLIANCE_LEVEL_MIXED}: modules declare different Java levels; the project
  *       is analyzed at the highest.</li>
+ *   <li>{@code EARLIER_PROJECT_KEPT}: the load completed and is in use, but an earlier
+ *       JavaLens project could not be removed from the workspace; it stays until the next
+ *       load removes it.</li>
  * </ul>
  *
  * @param code stable identifier (see list above)
@@ -143,6 +146,15 @@ public record LoadWarning(String code, String message, String remediation, Strin
      * {@code module} is null.
      */
     public static final String COMPLIANCE_LEVEL_MIXED = "COMPLIANCE_LEVEL_MIXED";
+
+    /**
+     * The load completed and its project is the one in use, but a project an earlier load
+     * created could not be removed from the workspace, for example because a file in its
+     * directory is locked. One warning per such project, after the load's other warnings;
+     * the message names the project and the reason. The project stays in the workspace until
+     * the next load removes it. {@code module} is null.
+     */
+    public static final String EARLIER_PROJECT_KEPT = "EARLIER_PROJECT_KEPT";
 
     public LoadWarning(String code, String message, String remediation) {
         this(code, message, remediation, null);

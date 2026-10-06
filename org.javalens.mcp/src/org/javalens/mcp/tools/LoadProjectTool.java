@@ -13,6 +13,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 /**
  * Load a Java project for analysis.
@@ -24,10 +25,49 @@ public class LoadProjectTool implements Tool {
 
     private static final Logger log = LoggerFactory.getLogger(LoadProjectTool.class);
 
-    private final Consumer<IJdtService> serviceSetter;
+    /** Numbers each load before it starts and installs the service it loads. */
+    public interface LoadRequests {
+        /** Registers a load that is about to start and returns its request number. */
+        long request();
 
+        /** Installs the service loaded for {@code request}. */
+        void install(long request, IJdtService service);
+
+        /** Reports that the load of {@code request} failed with {@code error}. */
+        void fail(long request, String error);
+    }
+
+    private final LoadRequests loadRequests;
+    private final Supplier<JdtServiceImpl> services;
+
+    public LoadProjectTool(LoadRequests loadRequests) {
+        this(loadRequests, JdtServiceImpl::new);
+    }
+
+    /** Loads each project through a service from {@code services}. */
+    public LoadProjectTool(LoadRequests loadRequests, Supplier<JdtServiceImpl> services) {
+        this.loadRequests = loadRequests;
+        this.services = services;
+    }
+
+    /** Installs every loaded service through {@code serviceSetter}. */
     public LoadProjectTool(Consumer<IJdtService> serviceSetter) {
-        this.serviceSetter = serviceSetter;
+        this(new LoadRequests() {
+            @Override
+            public long request() {
+                return 0;
+            }
+
+            @Override
+            public void install(long request, IJdtService service) {
+                serviceSetter.accept(service);
+            }
+
+            @Override
+            public void fail(long request, String error) {
+                // The failure reaches the caller through the tool's error response.
+            }
+        });
     }
 
     @Override
@@ -110,12 +150,18 @@ public class LoadProjectTool implements Tool {
 
             log.info("Loading project: {}", path);
 
-            // Create and initialize the JDT service
-            JdtServiceImpl service = new JdtServiceImpl();
-            service.loadProject(path);
+            // Register the load before it starts, so it supersedes any earlier request
+            long request = loadRequests.request();
+            JdtServiceImpl service = services.get();
+            try {
+                service.loadProject(path);
+            } catch (Exception e) {
+                loadRequests.fail(request, e.getMessage());
+                throw e;
+            }
 
             // Store service for other tools to use
-            serviceSetter.accept(service);
+            loadRequests.install(request, service);
 
             // Build response
             Map<String, Object> result = new LinkedHashMap<>();

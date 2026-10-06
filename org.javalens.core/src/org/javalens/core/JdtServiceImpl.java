@@ -47,6 +47,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.BooleanSupplier;
 import java.util.stream.Stream;
 
 /**
@@ -77,6 +78,8 @@ public class JdtServiceImpl implements IJdtService {
     private List<String> packages;
     private BuildModel buildModel;
     private String analysisLevel;
+    /** EARLIER_PROJECT_KEPT for each earlier project the last load could not remove. */
+    private List<LoadWarning> earlierProjectWarnings = List.of();
 
     private DiskSyncMode diskSyncMode;
 
@@ -86,7 +89,15 @@ public class JdtServiceImpl implements IJdtService {
 
     /** Test seam: load through {@code projectImporter} instead of the default build-system dispatch. */
     public JdtServiceImpl(ProjectImporter projectImporter) {
-        this.workspaceManager = new WorkspaceManager();
+        this(projectImporter, new WorkspaceManager());
+    }
+
+    /**
+     * Test seam: load through {@code projectImporter}, creating and removing workspace
+     * projects through {@code workspaceManager}.
+     */
+    public JdtServiceImpl(ProjectImporter projectImporter, WorkspaceManager workspaceManager) {
+        this.workspaceManager = workspaceManager;
         this.projectImporter = projectImporter;
         this.timeoutSeconds = parseTimeout();
         this.diskSyncMode = DiskSyncMode.fromEnvironment(System.getenv("JAVALENS_DISK_SYNC"));
@@ -113,6 +124,9 @@ public class JdtServiceImpl implements IJdtService {
         }
     }
 
+    /** Loads run one at a time across every instance, so no two loads change the workspace at once. */
+    private static final Object LOAD_LOCK = new Object();
+
     /**
      * Load a project for analysis.
      *
@@ -120,10 +134,37 @@ public class JdtServiceImpl implements IJdtService {
      * @throws CoreException if project loading fails
      */
     public void loadProject(Path path) throws CoreException {
+        loadProject(path, () -> true);
+    }
+
+    /**
+     * Load a project for analysis unless a later load was requested meanwhile. Loads run one
+     * at a time across every instance; when this load's turn comes, {@code stillRequested}
+     * decides whether it runs. A load that is no longer requested leaves the workspace
+     * untouched.
+     *
+     * @param path Path to the project root
+     * @param stillRequested whether this load is still wanted, asked once its turn comes
+     * @return true if the project was loaded, false if the load was no longer requested
+     * @throws CoreException if project loading fails
+     */
+    public boolean loadProject(Path path, BooleanSupplier stillRequested) throws CoreException {
+        synchronized (LOAD_LOCK) {
+            if (!stillRequested.getAsBoolean()) {
+                log.info("Skipping the load of {}: a later load was requested", path);
+                return false;
+            }
+            load(path);
+            return true;
+        }
+    }
+
+    private void load(Path path) throws CoreException {
         log.info("Loading project: {}", path);
 
         this.projectRoot = path.toAbsolutePath().normalize();
         this.pathUtils = new PathUtilsImpl(projectRoot);
+        this.earlierProjectWarnings = List.of();
 
         // Initialize workspace
         workspaceManager.initialize();
@@ -142,6 +183,30 @@ public class JdtServiceImpl implements IJdtService {
         String projectName = "javalens-" + projectRoot.getFileName();
         IProject project = workspaceManager.createLinkedProject(projectName, projectRoot);
 
+        // The new project replaces the earlier loads' projects only once it has loaded: a load
+        // that fails removes its own project and leaves the earlier ones as they were, so the
+        // workspace holds one JavaLens project whenever no load is running.
+        try {
+            configureAndIndex(project, model);
+        } catch (CoreException | RuntimeException | Error e) {
+            try {
+                workspaceManager.removeProject(project);
+            } catch (CoreException cleanup) {
+                e.addSuppressed(cleanup);
+            }
+            throw e;
+        }
+        // The load has completed and is the result even when an earlier project cannot be
+        // removed: each one that stays is reported, and the next load removes it.
+        this.earlierProjectWarnings = workspaceManager.removeCreatedProjectsExcept(project).stream()
+            .map(JdtServiceImpl::earlierProjectKept)
+            .toList();
+
+        this.loadedAt = Instant.now();
+        log.info("Project loaded successfully at {}", loadedAt);
+    }
+
+    private void configureAndIndex(IProject project, BuildModel model) throws CoreException {
         // Configure as Java project with linked source folders
         this.javaProject = projectImporter.configureJavaProject(project, projectRoot, model, workspaceManager);
         // The level configuration applied, after the runtime fallback and the clamp.
@@ -161,9 +226,6 @@ public class JdtServiceImpl implements IJdtService {
         waitForIndexReady();
 
         initializeDiskSync();
-
-        this.loadedAt = Instant.now();
-        log.info("Project loaded successfully at {}", loadedAt);
     }
 
     /**
@@ -351,7 +413,16 @@ public class JdtServiceImpl implements IJdtService {
 
     @Override
     public List<LoadWarning> getWarnings() {
-        return projectImporter.getWarnings();
+        List<LoadWarning> warnings = new ArrayList<>(projectImporter.getWarnings());
+        warnings.addAll(earlierProjectWarnings);
+        return List.copyOf(warnings);
+    }
+
+    private static LoadWarning earlierProjectKept(WorkspaceManager.KeptProject kept) {
+        return new LoadWarning(LoadWarning.EARLIER_PROJECT_KEPT,
+            "The earlier JavaLens project " + kept.name() + " could not be removed: " + kept.reason()
+                + "; it stays in the workspace until the next load removes it",
+            "Reload the project; if the warning persists, restart JavaLens.");
     }
 
     @Override

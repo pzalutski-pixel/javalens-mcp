@@ -88,7 +88,7 @@ class LoadWarningTest {
                 "BAZEL_NOT_BUILT", "COMPLIANCE_LEVEL_UNKNOWN", "COMPLIANCE_LEVEL_UNSUPPORTED",
                 "APT_PROCESSOR_JARS_MISSING", "JRE_REGISTRATION_FAILED",
                 "MODULE_NOT_LOADED", "MODULE_LAYOUT_ASSUMED", "COMPILED_OUTPUT_INCLUDED",
-                "INCLUDED_OUTSIDE_BUILD", "COMPLIANCE_LEVEL_MIXED")) {
+                "INCLUDED_OUTSIDE_BUILD", "COMPLIANCE_LEVEL_MIXED", "EARLIER_PROJECT_KEPT")) {
             expected.put(code, code);
         }
         assertEquals(expected, constants);

@@ -92,6 +92,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
 
 /**
  * OSGi application entry point for JavaLens MCP server.
@@ -108,6 +109,10 @@ public class JavaLensApplication implements IApplication {
     private volatile IJdtService jdtService;
     private volatile ProjectLoadingState loadingState = ProjectLoadingState.NOT_LOADED;
     private volatile String loadingError = null;
+    /** The number of the most recent load request; only that request's load is installed. */
+    private long latestLoadRequest;
+    /** Where load_project gets the service it loads through. Package-private for tests. */
+    Supplier<JdtServiceImpl> loadProjectServices = JdtServiceImpl::new;
     private ToolRegistry toolRegistry;
     private McpProtocolHandler protocolHandler;
 
@@ -147,8 +152,10 @@ public class JavaLensApplication implements IApplication {
 
         // Auto-load project from environment variable asynchronously
         // This allows the MCP server to respond to initialize immediately
-        // while the project loads in the background
-        CompletableFuture.runAsync(this::autoLoadProjectFromEnv);
+        // while the project loads in the background. Its request is registered first, so
+        // any load_project call is a later request.
+        long autoLoadRequest = requestLoad();
+        CompletableFuture.runAsync(() -> autoLoadProjectFromEnv(autoLoadRequest));
 
         // Run the main message loop (starts immediately, doesn't wait for project load)
         runMessageLoop();
@@ -161,8 +168,10 @@ public class JavaLensApplication implements IApplication {
      * Auto-load project from JAVA_PROJECT_PATH environment variable.
      * This runs asynchronously to allow the MCP server to respond immediately.
      * The loading state is tracked and can be queried via health_check.
+     *
+     * @param request the auto-load's request number, registered when the application started
      */
-    private void autoLoadProjectFromEnv() {
+    private void autoLoadProjectFromEnv(long request) {
         String projectPath = System.getenv("JAVA_PROJECT_PATH");
         if (projectPath == null || projectPath.isBlank()) {
             log.debug("JAVA_PROJECT_PATH not set, waiting for load_project call");
@@ -173,32 +182,92 @@ public class JavaLensApplication implements IApplication {
         Path path = Path.of(projectPath).toAbsolutePath().normalize();
         if (!Files.exists(path)) {
             log.warn("JAVA_PROJECT_PATH points to non-existent path: {}", projectPath);
-            loadingState = ProjectLoadingState.FAILED;
-            loadingError = "JAVA_PROJECT_PATH points to non-existent path: " + projectPath;
+            failLoad(request, "JAVA_PROJECT_PATH points to non-existent path: " + projectPath);
             return;
         }
 
         if (!Files.isDirectory(path)) {
             log.warn("JAVA_PROJECT_PATH is not a directory: {}", projectPath);
-            loadingState = ProjectLoadingState.FAILED;
-            loadingError = "JAVA_PROJECT_PATH is not a directory: " + projectPath;
+            failLoad(request, "JAVA_PROJECT_PATH is not a directory: " + projectPath);
             return;
         }
 
+        autoLoad(new JdtServiceImpl(), path, request);
+    }
+
+    /**
+     * Load {@code path} through {@code service} for the auto-load request {@code request}.
+     * The load runs only if no later load was requested by the time its turn comes; its
+     * service is installed through {@link #installLoad} and its failure reported through
+     * {@link #failLoad}, both of which act only while it is still the latest request.
+     * Package-private for tests.
+     */
+    void autoLoad(JdtServiceImpl service, Path path, long request) {
         log.info("Auto-loading project from JAVA_PROJECT_PATH: {}", path);
-        loadingState = ProjectLoadingState.LOADING;
+        startLoad(request);
 
         try {
-            JdtServiceImpl service = new JdtServiceImpl();
-            service.loadProject(path);
-            this.jdtService = service;
-            loadingState = ProjectLoadingState.LOADED;
-            log.info("Project auto-loaded successfully: {} files, {} packages",
-                service.getSourceFileCount(), service.getPackageCount());
+            if (!service.loadProject(path, () -> isLatestLoad(request))) {
+                log.info("Auto-load of {} skipped: a later load was requested", path);
+                return;
+            }
+            if (installLoad(request, service)) {
+                log.info("Project auto-loaded successfully: {} files, {} packages",
+                    service.getSourceFileCount(), service.getPackageCount());
+            } else {
+                log.info("Auto-loaded project {} not installed: a later load was requested", path);
+            }
         } catch (Exception e) {
             log.error("Failed to auto-load project from JAVA_PROJECT_PATH: {}", e.getMessage(), e);
-            loadingState = ProjectLoadingState.FAILED;
-            loadingError = e.getMessage();
+            failLoad(request, e.getMessage());
+        }
+    }
+
+    /**
+     * Register a load that is about to start; it supersedes every earlier request.
+     * Package-private for tests.
+     *
+     * @return the new request's number
+     */
+    synchronized long requestLoad() {
+        return ++latestLoadRequest;
+    }
+
+    private synchronized boolean isLatestLoad(long request) {
+        return request == latestLoadRequest;
+    }
+
+    /** Report LOADING for {@code request} while it is the latest request. */
+    private synchronized void startLoad(long request) {
+        if (request == latestLoadRequest) {
+            loadingState = ProjectLoadingState.LOADING;
+        }
+    }
+
+    /**
+     * Install the service loaded for {@code request} while it is the latest request.
+     *
+     * @return true if the service was installed
+     */
+    private synchronized boolean installLoad(long request, IJdtService service) {
+        if (request != latestLoadRequest) {
+            return false;
+        }
+        this.jdtService = service;
+        this.loadingState = ProjectLoadingState.LOADED;
+        this.loadingError = null;
+        return true;
+    }
+
+    /**
+     * Report the failure of {@code request} while it is the latest request and no earlier
+     * load's service is installed. An installed service stays in use: a failed load leaves
+     * the earlier load's project as it was.
+     */
+    private synchronized void failLoad(long request, String error) {
+        if (request == latestLoadRequest && jdtService == null) {
+            this.loadingState = ProjectLoadingState.FAILED;
+            this.loadingError = error;
         }
     }
 
@@ -212,18 +281,26 @@ public class JavaLensApplication implements IApplication {
             () -> jdtService
         ));
 
-        // Register LoadProjectTool - stores the JdtService AND flips the
-        // loading state to LOADED. The state was previously set only by the
-        // JAVA_PROJECT_PATH auto-load path, so a project loaded via the tool
-        // left health_check reporting "not loaded" though every tool worked
-        // (issue #30 thread). The callback fires only on a successful load.
-        toolRegistry.register(new LoadProjectTool(
-            service -> {
-                this.jdtService = service;
-                this.loadingState = ProjectLoadingState.LOADED;
-                this.loadingError = null;
+        // Register LoadProjectTool - each call registers its load before it starts, which
+        // supersedes a JAVA_PROJECT_PATH auto-load still pending. While it is the latest request,
+        // a successful load installs the JdtService and flips the loading state to LOADED, and a
+        // failed load with no service installed flips it to FAILED with the load's error.
+        toolRegistry.register(new LoadProjectTool(new LoadProjectTool.LoadRequests() {
+            @Override
+            public long request() {
+                return requestLoad();
             }
-        ));
+
+            @Override
+            public void install(long request, IJdtService service) {
+                installLoad(request, service);
+            }
+
+            @Override
+            public void fail(long request, String error) {
+                failLoad(request, error);
+            }
+        }, () -> loadProjectServices.get()));
 
         // Batch 1: Core Navigation Tools
         toolRegistry.register(new SearchSymbolsTool(() -> jdtService));

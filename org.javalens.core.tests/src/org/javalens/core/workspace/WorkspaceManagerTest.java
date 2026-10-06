@@ -2,9 +2,12 @@ package org.javalens.core.workspace;
 
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IProjectDescription;
+import org.eclipse.core.resources.IResource;
 import org.eclipse.core.resources.IWorkspace;
 import org.eclipse.core.resources.IWorkspaceRoot;
 import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.Status;
 import org.eclipse.jdt.core.JavaCore;
 import org.javalens.core.fixtures.TestProjectHelper;
 import org.junit.jupiter.api.BeforeEach;
@@ -12,8 +15,16 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HexFormat;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -125,30 +136,21 @@ class WorkspaceManagerTest {
     }
 
     @Test
-    @DisplayName("createLinkedProject sweeps stale UUID-suffixed projects from prior sessions")
-    void createLinkedProject_sweepsStaleProjectsFromPriorSessions() throws CoreException {
-        // Simulate a prior session that crashed without cleanup by creating
-        // a project with a synthetic UUID suffix.
-        String baseName = "sweep-test";
-        WorkspaceManager priorSession = new WorkspaceManager();
-        priorSession.initialize();
-        IProject priorProject = priorSession.createLinkedProject(baseName, fixturePath);
-        String priorName = priorProject.getName();
-        assertTrue(priorProject.exists(),
-            "Precondition: prior-session project must exist before the sweep test runs");
+    @DisplayName("createLinkedProject leaves every other project in place, whatever its name or creating session")
+    void createLinkedProject_leavesEveryOtherProjectInPlace() throws CoreException {
+        // Earlier projects go only once a load has completed (removeCreatedProjectsExcept),
+        // never when the next project is created.
+        WorkspaceManager earlierSession = new WorkspaceManager();
+        earlierSession.initialize();
+        IProject sameName = earlierSession.createLinkedProject("keep-test", fixturePath);
+        IProject otherName = earlierSession.createLinkedProject("other-base", fixturePath);
 
-        // A NEW session (different UUID) calls createLinkedProject. The prior
-        // project should be swept because it matches the {baseName}-{8-hex}
-        // pattern and isn't the new session's own.
-        WorkspaceManager newSession = new WorkspaceManager();
-        newSession.initialize();
-        IProject newProject = newSession.createLinkedProject(baseName, fixturePath);
-        assertTrue(newProject.exists(), "New session's project must exist");
+        IProject created = workspaceManager.createLinkedProject("keep-test", fixturePath);
 
-        IProject staleHandle = newSession.getRoot().getProject(priorName);
-        assertFalse(staleHandle.exists(),
-            "Stale prior-session project (" + priorName + ") must be swept by the new "
-                + "session's createLinkedProject; got: still exists.");
+        assertAll(
+            () -> assertTrue(created.exists(), "the new project must exist"),
+            () -> assertTrue(sameName.exists(), "an earlier session's project of the same name must stay"),
+            () -> assertTrue(otherName.exists(), "a project of another name must stay"));
     }
 
     @Test
@@ -275,31 +277,6 @@ class WorkspaceManagerTest {
     }
 
     @Test
-    @DisplayName("sweepStaleProjects only matches its own baseName — projects with other base names are preserved")
-    void sweepStaleProjects_scopedToBaseName() throws CoreException {
-        // Create a stale project under baseName "other-base". A subsequent
-        // createLinkedProject call with a DIFFERENT baseName must NOT sweep it
-        // — the regex must be scoped to the requested baseName, not any
-        // UUID-suffixed name.
-        WorkspaceManager priorOther = new WorkspaceManager();
-        priorOther.initialize();
-        IProject otherProject = priorOther.createLinkedProject("other-base", fixturePath);
-        String otherName = otherProject.getName();
-        assertTrue(otherProject.exists(), "Precondition: other-base project must exist");
-
-        // New session calls createLinkedProject with baseName "scope-test".
-        // The other-base-{hex} project must survive because its base name differs.
-        WorkspaceManager newSession = new WorkspaceManager();
-        newSession.initialize();
-        newSession.createLinkedProject("scope-test", fixturePath);
-
-        IProject preservedHandle = newSession.getRoot().getProject(otherName);
-        assertTrue(preservedHandle.exists(),
-            "sweepStaleProjects must scope to its baseName; the other-base project "
-                + "(" + otherName + ") should survive. Got: swept incorrectly.");
-    }
-
-    @Test
     @DisplayName("getProject returns null when called on a non-existent name (defensive guard)")
     void getProject_returnsNullForNonExistent() {
         // Already covered by getProject_returnsNullForMissing, but pin the implementation
@@ -308,5 +285,159 @@ class WorkspaceManagerTest {
         // empty IProject handle instead.
         IProject p = workspaceManager.getProject("never-created");
         assertNull(p);
+    }
+
+    // ========== Removing created projects ==========
+
+    @Test
+    @DisplayName("removeCreatedProjectsExcept deletes a project and its workspace directory while every file under its linked folders and linked file survives byte for byte")
+    void removeCreatedProjectsExcept_linkedSourcesSurviveByteForByte() throws Exception {
+        Path userTree = helper.getTempDirectory().resolve("user-tree");
+        write(userTree.resolve("README.md"), "# user project\n".getBytes(StandardCharsets.UTF_8));
+        write(userTree.resolve("src/main/java/com/acme/App.java"),
+            "package com.acme;\n\nclass App {\n}\n".getBytes(StandardCharsets.UTF_8));
+        write(userTree.resolve("src/main/java/com/acme/util/Strings.java"),
+            "package com.acme.util;\n\nfinal class Strings {\n}\n".getBytes(StandardCharsets.UTF_8));
+        write(userTree.resolve("data/notes.txt"), "kept\n".getBytes(StandardCharsets.UTF_8));
+        write(userTree.resolve("data/blob.bin"), new byte[] {0, 1, 2, (byte) 0xFF});
+        Map<String, String> expectedTree = new TreeMap<>(Map.of(
+            "README.md", hex("# user project\n".getBytes(StandardCharsets.UTF_8)),
+            "data", DIRECTORY,
+            "data/blob.bin", "000102ff",
+            "data/notes.txt", hex("kept\n".getBytes(StandardCharsets.UTF_8)),
+            "src", DIRECTORY,
+            "src/main", DIRECTORY,
+            "src/main/java", DIRECTORY,
+            "src/main/java/com", DIRECTORY,
+            "src/main/java/com/acme", DIRECTORY,
+            "src/main/java/com/acme/App.java", hex("package com.acme;\n\nclass App {\n}\n".getBytes(StandardCharsets.UTF_8))));
+        expectedTree.put("src/main/java/com/acme/util", DIRECTORY);
+        expectedTree.put("src/main/java/com/acme/util/Strings.java",
+            hex("package com.acme.util;\n\nfinal class Strings {\n}\n".getBytes(StandardCharsets.UTF_8)));
+        assertEquals(expectedTree, snapshot(userTree), "precondition: the user tree as written");
+
+        IProject project = workspaceManager.createLinkedProject("removal-test", userTree);
+        workspaceManager.createLinkedFolder(project, "src-0-src-main-java", userTree.resolve("src/main/java"));
+        workspaceManager.createLinkedFolder(project, "data", userTree.resolve("data"));
+        project.getFile("README.md").createLink(
+            org.eclipse.core.runtime.Path.fromOSString(userTree.resolve("README.md").toString()),
+            IResource.NONE, null);
+        Path projectDirectory = Path.of(project.getLocation().toOSString());
+        assertTrue(Files.isDirectory(projectDirectory), "precondition: the project's directory exists");
+        IProject kept = workspaceManager.createLinkedProject("kept-test", fixturePath);
+
+        workspaceManager.removeCreatedProjectsExcept(kept);
+
+        assertAll(
+            () -> assertFalse(project.exists(), "the created project must be removed"),
+            () -> assertFalse(Files.exists(projectDirectory),
+                "no directory for the project may remain under the workspace: " + projectDirectory),
+            () -> assertEquals(expectedTree, snapshot(userTree), "the linked user tree must be unchanged"),
+            () -> assertTrue(kept.exists(), "the excepted project must stay"));
+    }
+
+    @Test
+    @DisplayName("removeCreatedProjectsExcept removes every other project createLinkedProject made, under any name or session, and keeps the excepted project and projects it did not create")
+    void removeCreatedProjectsExcept_removesEveryOtherCreatedProjectOnly() throws Exception {
+        WorkspaceManager earlierSession = new WorkspaceManager();
+        earlierSession.initialize();
+        IProject alpha = earlierSession.createLinkedProject("created-alpha", fixturePath);
+        IProject beta = workspaceManager.createLinkedProject("created-beta", fixturePath);
+        IProject kept = workspaceManager.createLinkedProject("kept-test", fixturePath);
+        IProject other = workspaceManager.getRoot().getProject("not-created-by-javalens");
+        other.create(null);
+        other.open(null);
+        try {
+            workspaceManager.removeCreatedProjectsExcept(kept);
+
+            assertAll(
+                () -> assertFalse(alpha.exists(), "a project created by an earlier session must be removed"),
+                () -> assertFalse(beta.exists(), "a project created by this session must be removed"),
+                () -> assertTrue(kept.exists(), "the excepted project must stay"),
+                () -> assertTrue(other.exists(), "a project createLinkedProject did not create must be kept"));
+        } finally {
+            other.delete(true, true, null);
+        }
+    }
+
+    @Test
+    @DisplayName("removeCreatedProjectsExcept reports a project it could not remove, with the reason, keeps it, and still removes the others")
+    void removeCreatedProjectsExcept_reportsProjectItCouldNotRemove() throws Exception {
+        IProject stuck = workspaceManager.createLinkedProject("stuck-test", fixturePath);
+        IProject removable = workspaceManager.createLinkedProject("removable-test", fixturePath);
+        IProject kept = workspaceManager.createLinkedProject("kept-test", fixturePath);
+        WorkspaceManager refusing = new WorkspaceManager() {
+            @Override
+            public boolean removeProject(IProject project) throws CoreException {
+                if (project.equals(stuck)) {
+                    throw new CoreException(new Status(IStatus.ERROR, "org.javalens.core.tests",
+                        "a file in its directory is locked"));
+                }
+                return super.removeProject(project);
+            }
+        };
+        refusing.initialize();
+        try {
+            List<WorkspaceManager.KeptProject> notRemoved = refusing.removeCreatedProjectsExcept(kept);
+
+            assertAll(
+                () -> assertEquals(List.of(new WorkspaceManager.KeptProject(stuck.getName(),
+                    "a file in its directory is locked")), notRemoved),
+                () -> assertTrue(stuck.exists(), "the project that could not be removed stays"),
+                () -> assertFalse(removable.exists(), "the other created project must still be removed"),
+                () -> assertTrue(kept.exists(), "the excepted project must stay"));
+        } finally {
+            stuck.delete(true, true, null);
+        }
+    }
+
+    @Test
+    @DisplayName("removeCreatedProjectsExcept keeps a created project located outside the workspace directory, with its files")
+    void removeCreatedProjectsExcept_keepsProjectLocatedOutsideWorkspace() throws Exception {
+        Path outside = helper.getTempDirectory().resolve("outside-project");
+        write(outside.resolve("keep.txt"), "outside\n".getBytes(StandardCharsets.UTF_8));
+        IProject project = workspaceManager.getRoot().getProject("outside-location-test");
+        IProjectDescription description = workspaceManager.getWorkspace().newProjectDescription(project.getName());
+        description.setLocation(org.eclipse.core.runtime.Path.fromOSString(outside.toString()));
+        project.create(description, null);
+        project.open(null);
+        project.setPersistentProperty(WorkspaceManager.CREATED_BY_JAVALENS, "earlier-session");
+        Map<String, String> before = snapshot(outside);
+        IProject kept = workspaceManager.createLinkedProject("kept-test", fixturePath);
+        try {
+            workspaceManager.removeCreatedProjectsExcept(kept);
+
+            assertAll(
+                () -> assertTrue(kept.exists(), "the excepted project must stay"),
+                () -> assertTrue(project.exists(), "a project located outside the workspace must be kept"),
+                () -> assertEquals(Set.of(".project", "keep.txt"), before.keySet(), "the project's files"),
+                () -> assertEquals(before, snapshot(outside), "its files must be unchanged"));
+        } finally {
+            project.delete(false, true, null);
+        }
+    }
+
+    private static final String DIRECTORY = "<directory>";
+
+    private static void write(Path file, byte[] content) throws IOException {
+        Files.createDirectories(file.getParent());
+        Files.write(file, content);
+    }
+
+    /** Every path under {@code root}, relative with '/' separators, to its content in hex or {@link #DIRECTORY}. */
+    private static Map<String, String> snapshot(Path root) throws IOException {
+        Map<String, String> tree = new TreeMap<>();
+        try (Stream<Path> paths = Files.walk(root)) {
+            for (Path path : (Iterable<Path>) paths::iterator) {
+                if (path.equals(root)) continue;
+                String relative = root.relativize(path).toString().replace('\\', '/');
+                tree.put(relative, Files.isDirectory(path) ? DIRECTORY : hex(Files.readAllBytes(path)));
+            }
+        }
+        return tree;
+    }
+
+    private static String hex(byte[] bytes) {
+        return HexFormat.of().formatHex(bytes);
     }
 }
