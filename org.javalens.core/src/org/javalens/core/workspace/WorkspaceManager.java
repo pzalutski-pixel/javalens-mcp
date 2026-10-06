@@ -10,6 +10,7 @@ import org.eclipse.core.runtime.IPath;
 import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.core.runtime.Path;
 import org.eclipse.jdt.core.JavaCore;
+import org.eclipse.jdt.internal.core.JavaModelManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -145,6 +146,19 @@ public class WorkspaceManager {
         // Create and open the project (inside workspace)
         project.create(description, new NullProgressMonitor());
         project.open(new NullProgressMonitor());
+
+        // Fill the project's secondary-type cache while its index is empty. JDT indexes a
+        // source file that contains lambdas or method references in two writes: its
+        // declarations and references first, then, after resolving the file without holding
+        // the index lock, the entries of its lambdas. Resolving the first such file of a project
+        // fills this cache with a search of the project's index, and any query of an index
+        // holding 100 or more pending document changes merges those changes to disk. A merge
+        // between the two writes leaves the file with only its lambda entries, so its
+        // declarations drop out of the index. With the cache filled before any source folder
+        // is linked or the classpath is set, no search runs inside an indexing job and every
+        // file keeps its declarations. Pinned by
+        // IndexFidelityTest.indexedBeforeClasspath_aboveMergeThreshold_fullyIndexed.
+        JavaModelManager.getJavaModelManager().secondaryTypes(JavaCore.create(project), false, null);
 
         log.info("Created project in workspace: {} (session: {})", uniqueName, sessionId);
         return project;
