@@ -24,8 +24,11 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalInt;
+import java.util.Set;
 import java.util.stream.Stream;
 
 /**
@@ -123,10 +126,10 @@ public class ProjectImporter {
 
     /**
      * The model of a project whose build model could not be resolved: one module, ".", at
-     * the root, whose source roots come from probing the root directory alone for
-     * conventional and generated-source layouts, and one
-     * {@link LoadWarning#MODULE_LAYOUT_ASSUMED} naming {@code failure}. Module discovery,
-     * which may be what failed, is not run again.
+     * the root, whose source roots and output directories come from probing the root
+     * directory alone for conventional, generated-source and compiled-output layouts, and
+     * one {@link LoadWarning#MODULE_LAYOUT_ASSUMED} naming {@code failure}. Module
+     * discovery, which may be what failed, is not run again.
      */
     private BuildModel assumedLayoutModel(BuildSystem buildSystem, java.nio.file.Path projectRoot,
             RuntimeException failure) {
@@ -134,6 +137,8 @@ public class ProjectImporter {
         linkedFolderConfigurator.addConventionalSourcePaths(projectRoot, sourceRoots);
         List<java.nio.file.Path> generatedRoots = new ArrayList<>();
         linkedFolderConfigurator.addGeneratedSourcePaths(projectRoot, generatedRoots);
+        List<java.nio.file.Path> outputDirs = new ArrayList<>();
+        linkedFolderConfigurator.addConventionalOutputDirs(projectRoot, outputDirs);
 
         LoadWarning warning = new LoadWarning(
             LoadWarning.MODULE_LAYOUT_ASSUMED,
@@ -143,7 +148,7 @@ public class ProjectImporter {
             "Check the project's build files, then reload the project.",
             ".");
         return new BuildModel(buildSystem, Provenance.CONVENTION,
-            List.of(new BuildModule(".", projectRoot, sourceRoots, generatedRoots, List.of(), null, false)),
+            List.of(new BuildModule(".", projectRoot, sourceRoots, generatedRoots, outputDirs, null, false)),
             List.of(), List.of(), null, new BuildInputs(List.of(), List.of()), List.of(warning));
     }
 
@@ -199,21 +204,22 @@ public class ProjectImporter {
                     + "will report BUILDPATH errors."));
         }
 
-        // The importer's warnings follow the JRE check and precede the compliance and
-        // APT warnings added below.
+        // The importer's warnings follow the JRE check and precede the compiled-output,
+        // compliance and APT warnings added below.
         warnings.addAll(model.warnings());
 
         // 2. Add JRE container (provides java.* classes)
         IPath jreContainerPath = JavaRuntime.getDefaultJREContainerEntry().getPath();
         entries.add(JavaCore.newContainerEntry(jreContainerPath));
 
-        // 3. Create linked folders and add source entries, one per model source root in
-        // model order. Linked-folder names carry the index, so the order keeps them stable.
+        // 3. Create linked folders and add source entries, one per distinct model source
+        // root in model order. Linked-folder names carry the index, so the order keeps them
+        // stable.
         linkedFolderConfigurator.addLinkedSourceFolders(
             entries, project, projectPath, sourceRoots(model), workspaceManager,
             model.modules().size() > 1);
 
-        // 4. Add dependency JARs from the model
+        // 4. Add dependency JARs from the model, then the compiled output it keeps
         addDependencyEntries(entries, projectPath, model);
 
         // 5. Add output location
@@ -404,42 +410,96 @@ public class ProjectImporter {
 
     /**
      * Every source root of the model in link order: per module, its source roots, then
-     * its generated source roots.
+     * its generated source roots. A root that appears more than once, in any spelling of
+     * its path, is kept at its first position only, so it is linked, counted and listed
+     * once.
      */
     private static List<java.nio.file.Path> sourceRoots(BuildModel model) {
+        Set<java.nio.file.Path> seen = new HashSet<>();
         List<java.nio.file.Path> roots = new ArrayList<>();
         for (BuildModule module : model.modules()) {
-            roots.addAll(module.sourceRoots());
-            roots.addAll(module.generatedSourceRoots());
+            List<java.nio.file.Path> moduleRoots = new ArrayList<>(module.sourceRoots());
+            moduleRoots.addAll(module.generatedSourceRoots());
+            for (java.nio.file.Path root : moduleRoots) {
+                if (seen.add(identity(root))) {
+                    roots.add(root);
+                }
+            }
         }
         return roots;
     }
 
+    /** The normalized absolute form of {@code path}, which identifies it however it is spelled. */
+    private static java.nio.file.Path identity(java.nio.file.Path path) {
+        return path.toAbsolutePath().normalize();
+    }
+
+    /**
+     * Add the model's existing classpath entries in model order, then the compiled output
+     * that {@link #addCompiledOutputEntries} keeps. Every library is added once: an entry
+     * that repeats an earlier one, in any spelling of its path, is skipped, since JDT
+     * rejects a classpath holding the same library twice.
+     */
     private void addDependencyEntries(List<IClasspathEntry> entries, java.nio.file.Path projectPath,
             BuildModel model) {
+        Set<java.nio.file.Path> libraries = new HashSet<>();
         for (String jar : model.classpath()) {
             java.nio.file.Path jarPath = java.nio.file.Path.of(jar);
-            if (Files.exists(jarPath)) {
+            if (Files.exists(jarPath) && libraries.add(identity(jarPath))) {
                 IPath eclipsePath = new Path(jar);
                 entries.add(JavaCore.newLibraryEntry(eclipsePath, null, null));
             }
         }
 
-        // Add compiled classes directories (Maven)
-        addIfExists(entries, projectPath, "target/classes");
-        addIfExists(entries, projectPath, "target/test-classes");
-        // Add compiled classes directories (Gradle)
-        addIfExists(entries, projectPath, "build/classes/java/main");
-        addIfExists(entries, projectPath, "build/classes/java/test");
+        log.info("Added {} dependency entries from {}", libraries.size(), model.buildSystem());
 
-        log.info("Added {} dependency entries from {}", model.classpath().size(), model.buildSystem());
+        addCompiledOutputEntries(entries, projectPath, model, libraries);
     }
 
-    private void addIfExists(List<IClasspathEntry> entries, java.nio.file.Path projectPath, String relativePath) {
-        java.nio.file.Path fullPath = projectPath.resolve(relativePath);
-        if (Files.exists(fullPath) && Files.isDirectory(fullPath)) {
-            IPath eclipsePath = new Path(fullPath.toString());
-            entries.add(JavaCore.newLibraryEntry(eclipsePath, null, null));
+    /**
+     * The compiled-output rule: each existing output of each module, in module order, goes
+     * on the classpath only when {@link CompiledOutput#sourcelessClassCount} finds classes
+     * in it with no source in any of the model's source roots, or cannot read it, and is
+     * then named by a {@link LoadWarning#COMPILED_OUTPUT_INCLUDED}. Output whose every class
+     * has a linked source would only add compiled duplicates of linked types, so it stays
+     * off. A declared output that does not exist was not built and is skipped. An output
+     * already in {@code libraries} (the model's classpath holds it, or an earlier module
+     * declares it) is not added again and gets no warning.
+     *
+     * @param libraries identities of the library entries added so far; extended here
+     */
+    private void addCompiledOutputEntries(List<IClasspathEntry> entries, java.nio.file.Path projectPath,
+            BuildModel model, Set<java.nio.file.Path> libraries) {
+        List<java.nio.file.Path> sourceRoots = sourceRoots(model);
+        for (BuildModule module : model.modules()) {
+            for (java.nio.file.Path output : module.outputDirs()) {
+                if (!Files.exists(output)) {
+                    continue;
+                }
+                if (libraries.contains(identity(output))) {
+                    log.info("Compiled output {} of module '{}' is already on the classpath", output, module.id());
+                    continue;
+                }
+                OptionalInt sourceless = CompiledOutput.sourcelessClassCount(output, sourceRoots);
+                if (sourceless.isPresent() && sourceless.getAsInt() == 0) {
+                    log.info("Compiled output {} of module '{}' holds only classes with linked sources; "
+                        + "leaving it off the classpath", output, module.id());
+                    continue;
+                }
+                entries.add(JavaCore.newLibraryEntry(new Path(output.toString()), null, null));
+                libraries.add(identity(output));
+                String content = sourceless.isPresent()
+                    ? "holds " + sourceless.getAsInt() + (sourceless.getAsInt() == 1 ? " class" : " classes")
+                        + " with no linked source"
+                    : "could not be read";
+                warnings.add(new LoadWarning(
+                    LoadWarning.COMPILED_OUTPUT_INCLUDED,
+                    "Compiled output " + ProjectPaths.relativeToRoot(projectPath, output) + " " + content
+                        + ", so it is on the classpath; results for module '" + module.id() + "' may include "
+                        + "compiled duplicates of linked sources and reflect the last build",
+                    "Rebuild the project after editing its sources so its compiled classes stay current.",
+                    module.id()));
+            }
         }
     }
 

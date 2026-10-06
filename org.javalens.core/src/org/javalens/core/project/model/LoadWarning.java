@@ -28,6 +28,8 @@ package org.javalens.core.project.model;
  *       its name is not a valid path or its directory does not exist.</li>
  *   <li>{@code MODULE_LAYOUT_ASSUMED}: a module's source roots were assumed from
  *       conventional layouts because the build model did not describe it.</li>
+ *   <li>{@code COMPILED_OUTPUT_INCLUDED}: a module's compiled output is on the classpath
+ *       because it holds classes with no linked source.</li>
  * </ul>
  *
  * @param code stable identifier (see list above)
@@ -104,6 +106,18 @@ public record LoadWarning(String code, String message, String remediation, Strin
      * generated-source layouts, and the message names the failure.
      */
     public static final String MODULE_LAYOUT_ASSUMED = "MODULE_LAYOUT_ASSUMED";
+
+    /**
+     * A module's compiled output (a class directory or jar the build model reports) is on
+     * the classpath because it holds top-level classes with no source in any linked source
+     * root: classes from other JVM languages, bytecode generators, or sources in folders
+     * the build does not declare. Output whose every class has a linked source is left off
+     * the classpath. {@code module} carries the module id; the message names the output,
+     * relative to the project root, and the number of source-less classes, and says that
+     * results for the module may include compiled duplicates of linked sources and reflect
+     * the last build, since class files are not verified against disk per query.
+     */
+    public static final String COMPILED_OUTPUT_INCLUDED = "COMPILED_OUTPUT_INCLUDED";
 
     public LoadWarning(String code, String message, String remediation) {
         this(code, message, remediation, null);

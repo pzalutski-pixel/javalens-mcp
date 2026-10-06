@@ -2,13 +2,11 @@ package org.javalens.core.project;
 
 import org.javalens.core.project.model.LoadWarning;
 
-import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
-import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -54,7 +52,7 @@ final class DeclaredPaths {
 
     private static Optional<Path> moduleDir(Path projectRoot, Path declaringFile, String declared,
             String relativePath, List<LoadWarning> warnings) {
-        String file = relativeToRoot(projectRoot, declaringFile);
+        String file = ProjectPaths.relativeToRoot(projectRoot, declaringFile);
         String name = escapeControlCharacters(declared);
 
         for (int i = 0; i < declared.length(); i++) {
@@ -77,7 +75,7 @@ final class DeclaredPaths {
         if (!Files.isDirectory(dir)) {
             warnings.add(new LoadWarning(LoadWarning.MODULE_NOT_LOADED,
                 file + " declares '" + name + "', but its directory "
-                    + relativeToRoot(projectRoot, dir) + " does not exist",
+                    + ProjectPaths.relativeToRoot(projectRoot, dir) + " does not exist",
                 "Create the directory or remove the declaration from " + file + ".",
                 name));
             return Optional.empty();
@@ -90,18 +88,6 @@ final class DeclaredPaths {
             file + " declares '" + name + "', which is not a valid path: " + reason,
             "Correct the declaration in " + file + ".",
             name);
-    }
-
-    /**
-     * {@code path} relative to the project root with '/' separators. A path on another
-     * root (another drive) stays absolute.
-     */
-    private static String relativeToRoot(Path projectRoot, Path path) {
-        Path normalized = path.normalize();
-        Path shown = Objects.equals(projectRoot.getRoot(), normalized.getRoot())
-            ? projectRoot.normalize().relativize(normalized)
-            : normalized;
-        return shown.toString().replace(File.separatorChar, '/');
     }
 
     private static String escapeControlCharacters(String declared) {

@@ -119,21 +119,82 @@ class BuildModelSeamTest {
     }
 
     @Test
-    @DisplayName("Classpath holds the model's existing entries in model order, then the root output directory")
-    void classpathFollowsModelThenRootOutputDirs() throws Exception {
+    @DisplayName("Classpath holds the model's existing entries in model order and no compiled output the model does not declare")
+    void classpathHoldsModelEntriesAndNoUndeclaredOutput() throws Exception {
         Path root = Files.createDirectories(helper.getTempDirectory().resolve("seam-classpath"));
         Path dependency = writeJar(root.resolve("libs/dependency.jar"), Map.of());
         Path absent = root.resolve("libs/absent.jar");
-        Path rootClasses = Files.createDirectories(root.resolve("target/classes"));
+        Path srcMain = root.resolve("src/main/java");
+        writeSource(srcMain, "p", "P");
+        // Output directories at the root that the model's module does not declare: one
+        // empty, one whose only class has a linked source, one whose class has none.
+        Files.createDirectories(root.resolve("target/classes"));
+        writeFile(root.resolve("build/classes/java/main/p/P.class"), "placeholder\n");
+        writeFile(root.resolve("target/test-classes/t/T.class"), "placeholder\n");
 
-        ModelStub stub = new ModelStub(model(BuildSystem.UNKNOWN, "17", List.of(),
+        ModelStub stub = new ModelStub(model(BuildSystem.UNKNOWN, "17",
+            List.of(module(".", root, List.of(srcMain), List.of())),
             List.of(dependency.toString(), absent.toString()), List.of(), List.of()));
         JdtServiceImpl service = load(root, stub);
         ClasspathSnapshot snapshot = ClasspathSnapshot.capture(service.getJavaProject());
 
         assertAll(
-            () -> assertEquals(List.of(dependency, rootClasses), snapshot.libraries(), "library entries"),
+            () -> assertEquals(List.of(dependency), snapshot.libraries(), "library entries"),
+            () -> assertEquals(List.of(), service.getWarnings(), "warnings"),
             () -> assertEquals(1, stub.resolveCalls, "resolve() calls for the whole load"));
+    }
+
+    @Test
+    @DisplayName("A source root two modules share is linked, counted and listed once, at its first position")
+    void sharedSourceRootLinkedOnce() throws Exception {
+        Path root = Files.createDirectories(helper.getTempDirectory().resolve("seam-shared-root"));
+        Path alphaSrc = root.resolve("alpha/src");
+        Path shared = root.resolve("shared");
+        Path betaSrc = root.resolve("beta/src");
+        writeSource(alphaSrc, "a", "A");
+        writeSource(shared, "s", "S1");
+        writeSource(shared, "s", "S2");
+        writeSource(betaSrc, "b", "B");
+
+        // beta names the shared root through a path that normalizes to it.
+        ModelStub stub = new ModelStub(model(BuildSystem.UNKNOWN, "17",
+            List.of(
+                module("alpha", root.resolve("alpha"), List.of(alphaSrc, shared), List.of()),
+                module("beta", root.resolve("beta"), List.of(root.resolve("beta/../shared"), betaSrc), List.of())),
+            List.of(), List.of(), List.of()));
+        JdtServiceImpl service = load(root, stub);
+        ClasspathSnapshot snapshot = ClasspathSnapshot.capture(service.getJavaProject());
+
+        List<String> linkedFolderNames = Arrays.stream(service.getJavaProject().getRawClasspath())
+            .filter(entry -> entry.getEntryKind() == IClasspathEntry.CPE_SOURCE)
+            .map(entry -> entry.getPath().lastSegment())
+            .toList();
+        assertAll(
+            () -> assertEquals(List.of(alphaSrc, shared, betaSrc), snapshot.sourceFolders(), "linked source folders"),
+            () -> assertEquals(List.of("src-0-alpha-src", "src-1-shared", "src-2-beta-src"), linkedFolderNames,
+                "linked folder names"),
+            () -> assertEquals(4, service.getSourceFileCount(), "source file count"),
+            () -> assertEquals(List.of("a", "s", "b"), service.getPackages(), "packages"),
+            () -> assertEquals(List.of(), service.getWarnings(), "warnings"));
+    }
+
+    @Test
+    @DisplayName("A jar the model's classpath lists twice, in any spelling of its path, is one library entry")
+    void repeatedClasspathEntryAddedOnce() throws Exception {
+        Path root = Files.createDirectories(helper.getTempDirectory().resolve("seam-repeated-jar"));
+        Path dependency = writeJar(root.resolve("libs/dependency.jar"), Map.of());
+        Path other = writeJar(root.resolve("libs/other.jar"), Map.of());
+
+        ModelStub stub = new ModelStub(model(BuildSystem.UNKNOWN, "17", List.of(),
+            List.of(dependency.toString(), other.toString(), dependency.toString(),
+                root.resolve("libs/../libs/dependency.jar").toString()),
+            List.of(), List.of()));
+        JdtServiceImpl service = load(root, stub);
+        ClasspathSnapshot snapshot = ClasspathSnapshot.capture(service.getJavaProject());
+
+        assertAll(
+            () -> assertEquals(List.of(dependency, other), snapshot.libraries(), "library entries"),
+            () -> assertEquals(List.of(), service.getWarnings(), "warnings"));
     }
 
     @Test
@@ -280,6 +341,46 @@ class BuildModelSeamTest {
     }
 
     @Test
+    @DisplayName("Plain Java reports the root's existing compiled-output directories as the root module's, in candidate order")
+    void plainJavaReportsRootOutputDirsInCandidateOrder() throws Exception {
+        Path root = Files.createDirectories(helper.getTempDirectory().resolve("plain-output"));
+        Path srcMain = Files.createDirectories(root.resolve("src/main/java"));
+        // Three of the four candidates exist; target/test-classes does not.
+        Path gradleTest = Files.createDirectories(root.resolve("build/classes/java/test"));
+        Path gradleMain = Files.createDirectories(root.resolve("build/classes/java/main"));
+        Path mavenMain = Files.createDirectories(root.resolve("target/classes"));
+
+        BuildModel expected = new BuildModel(BuildSystem.UNKNOWN, Provenance.CONVENTION,
+            List.of(new BuildModule(".", root, List.of(srcMain), List.of(),
+                List.of(mavenMain, gradleMain, gradleTest), null, false)),
+            List.of(), List.of(), null, new BuildInputs(List.of(), List.of()), List.of());
+
+        assertEquals(expected, BuildSystemImporter.NONE.resolve(root));
+    }
+
+    @Test
+    @DisplayName("Only the first module at the project root reports the root's compiled output; other modules report none")
+    void onlyFirstRootModuleReportsRootOutputDirs() throws Exception {
+        Path root = Files.createDirectories(helper.getTempDirectory().resolve("bazel-root-packages"));
+        Files.writeString(root.resolve("MODULE.bazel"), "module(name = \"out\")\n");
+        // The root and sub are both BUILD packages, so the root is a module twice: once
+        // from the module walk, once as a package.
+        Files.writeString(root.resolve("BUILD"), "# root package\n");
+        Path sub = Files.createDirectories(root.resolve("sub"));
+        Files.writeString(sub.resolve("BUILD"), "# sub package\n");
+        Path rootClasses = Files.createDirectories(root.resolve("target/classes"));
+        Files.createDirectories(sub.resolve("target/classes"));
+
+        BuildModel model = new BazelImporter().resolve(root);
+
+        assertEquals(List.of(
+                new BuildModule(".", root, List.of(), List.of(), List.of(rootClasses), null, false),
+                new BuildModule(".", root, List.of(), List.of(), List.of(), null, false),
+                new BuildModule("sub", sub, List.of(), List.of(), List.of(), null, false)),
+            model.modules(), "modules");
+    }
+
+    @Test
     @DisplayName("Bazel resolves processor jars as the resolved classpath jars that carry the processor SPI descriptor")
     void bazelResolvesProcessorJarsBySpiScan() throws Exception {
         Path root = Files.createDirectories(helper.getTempDirectory().resolve("bazel-spi"));
@@ -357,6 +458,11 @@ class BuildModelSeamTest {
         Path packageDir = Files.createDirectories(sourceRoot.resolve(packageName));
         Files.writeString(packageDir.resolve(className + ".java"),
             "package " + packageName + ";\n\npublic class " + className + " {\n}\n");
+    }
+
+    private static void writeFile(Path file, String content) throws IOException {
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, content);
     }
 
     private static Path writeJar(Path jar, Map<String, String> entries) throws IOException {

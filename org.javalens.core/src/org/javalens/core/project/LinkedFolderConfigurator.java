@@ -27,7 +27,8 @@ import java.util.stream.Stream;
  *       {@code src/main/kotlin}, {@code src/test/kotlin}, fallback {@code src/})
  *       and the generated-source directories written by annotation processors
  *       (Maven {@code target/generated-sources/*}, Gradle
- *       {@code build/generated/sources/<task>/{main,test}/java}).</li>
+ *       {@code build/generated/sources/<task>/{main,test}/java}). The conventional
+ *       compiled-output directories are probed by {@link #addConventionalOutputDirs}.</li>
  *   <li><b>Linked-folder creation</b> via {@link #addLinkedSourceFolders}, used by
  *       the orchestrator: for each source root of the model, create a uniquely-named
  *       linked folder under the workspace project, and append a source
@@ -50,6 +51,11 @@ public class LinkedFolderConfigurator {
         {"src/test/kotlin", "src-test-kotlin"},
         {"src", "src"}
     };
+
+    // Compiled-output directories of the conventional Maven and Gradle Java layouts, in
+    // the order they are reported.
+    private static final List<String> CONVENTIONAL_OUTPUT_DIRS = List.of(
+        "target/classes", "target/test-classes", "build/classes/java/main", "build/classes/java/test");
 
     /**
      * Add source paths discovered in {@code projectPath} to {@code sourcePaths}:
@@ -157,6 +163,21 @@ public class LinkedFolderConfigurator {
                 });
             } catch (IOException e) {
                 log.debug("Failed to scan Gradle generated sources: {}", e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * Add the conventional compiled-output directories that exist in {@code dir}, in
+     * {@link #CONVENTIONAL_OUTPUT_DIRS} order: Maven's {@code target/classes} and
+     * {@code target/test-classes}, then Gradle's {@code build/classes/java/main} and
+     * {@code build/classes/java/test}.
+     */
+    void addConventionalOutputDirs(Path dir, List<Path> outputDirs) {
+        for (String candidate : CONVENTIONAL_OUTPUT_DIRS) {
+            Path outputDir = dir.resolve(candidate);
+            if (Files.isDirectory(outputDir)) {
+                outputDirs.add(outputDir);
             }
         }
     }

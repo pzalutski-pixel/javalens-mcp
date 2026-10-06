@@ -59,6 +59,7 @@ class LoadWarningTest {
         assertEquals("APT_PROCESSOR_JARS_MISSING", LoadWarning.APT_PROCESSOR_JARS_MISSING);
         assertEquals("MODULE_NOT_LOADED", LoadWarning.MODULE_NOT_LOADED);
         assertEquals("MODULE_LAYOUT_ASSUMED", LoadWarning.MODULE_LAYOUT_ASSUMED);
+        assertEquals("COMPILED_OUTPUT_INCLUDED", LoadWarning.COMPILED_OUTPUT_INCLUDED);
     }
 
     @Test
@@ -84,7 +85,7 @@ class LoadWarningTest {
                 "BUILD_TOOL_UNAVAILABLE", "BUILD_TOOL_FAILED", "BUILD_TOOL_TIMEOUT",
                 "BAZEL_NOT_BUILT", "COMPLIANCE_LEVEL_UNKNOWN", "COMPLIANCE_LEVEL_UNSUPPORTED",
                 "APT_PROCESSOR_JARS_MISSING", "JRE_REGISTRATION_FAILED",
-                "MODULE_NOT_LOADED", "MODULE_LAYOUT_ASSUMED")) {
+                "MODULE_NOT_LOADED", "MODULE_LAYOUT_ASSUMED", "COMPILED_OUTPUT_INCLUDED")) {
             expected.put(code, code);
         }
         assertEquals(expected, constants);
@@ -103,7 +104,8 @@ class LoadWarningTest {
             LoadWarning.COMPLIANCE_LEVEL_UNKNOWN,
             LoadWarning.APT_PROCESSOR_JARS_MISSING,
             LoadWarning.MODULE_NOT_LOADED,
-            LoadWarning.MODULE_LAYOUT_ASSUMED
+            LoadWarning.MODULE_LAYOUT_ASSUMED,
+            LoadWarning.COMPILED_OUTPUT_INCLUDED
         };
         for (int i = 0; i < codes.length; i++) {
             for (int j = i + 1; j < codes.length; j++) {

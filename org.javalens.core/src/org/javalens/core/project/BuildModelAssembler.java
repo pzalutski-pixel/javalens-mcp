@@ -8,7 +8,6 @@ import org.javalens.core.project.model.Provenance;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -26,8 +25,10 @@ import java.util.jar.JarFile;
  * <p>Module directories are found as the orchestrator found them before the model
  * existed, whatever the build system: the Maven module walk from the root, then the
  * Gradle subprojects named in {@code settings.gradle}, then for Bazel every BUILD
- * package. Each directory is one {@link BuildModule}, identified by its root-relative
- * path.
+ * package. Each directory is one {@link BuildModule}, identified by its directory as
+ * {@link ProjectPaths#relativeToRoot} renders it. The first module at the project root
+ * reports the root's existing conventional compiled-output directories as its output; no
+ * other module reports output.
  */
 final class BuildModelAssembler {
 
@@ -54,6 +55,7 @@ final class BuildModelAssembler {
             Provenance provenance, Path projectRoot) {
         List<LoadWarning> warnings = new ArrayList<>();
         List<BuildModule> modules = conventionalModules(projectRoot, buildSystem, warnings);
+        reportRootOutputDirs(modules, projectRoot);
 
         List<String> classpath = importer.getDependencies(projectRoot, warnings);
         String level = importer.detectCompilerLevel(projectRoot);
@@ -102,12 +104,32 @@ final class BuildModelAssembler {
                 List<Path> packageDirs = new ArrayList<>();
                 BAZEL.addFallbackSourcePaths(projectRoot, packageDirs);
                 for (Path dir : packageDirs) {
-                    modules.add(new BuildModule(moduleId(projectRoot, dir), dir,
+                    modules.add(new BuildModule(ProjectPaths.relativeToRoot(projectRoot, dir), dir,
                         List.of(dir), List.of(), List.of(), null, false));
                 }
             }
         }
         return modules;
+    }
+
+    /**
+     * Replace the first module whose directory is {@code projectRoot} with a copy whose
+     * output is the root's existing conventional output directories, as
+     * {@link LinkedFolderConfigurator#addConventionalOutputDirs} finds them. A Bazel root
+     * that is itself a BUILD package appears twice in {@code modules}; only the first
+     * reports the output, so no directory is reported twice.
+     */
+    private static void reportRootOutputDirs(List<BuildModule> modules, Path projectRoot) {
+        List<Path> outputDirs = new ArrayList<>();
+        LAYOUT.addConventionalOutputDirs(projectRoot, outputDirs);
+        for (int i = 0; i < modules.size(); i++) {
+            BuildModule module = modules.get(i);
+            if (module.dir().equals(projectRoot)) {
+                modules.set(i, new BuildModule(module.id(), module.dir(), module.sourceRoots(),
+                    module.generatedSourceRoots(), outputDirs, module.declaredLevel(), module.evaluated()));
+                return;
+            }
+        }
     }
 
     /**
@@ -119,22 +141,10 @@ final class BuildModelAssembler {
         LAYOUT.addConventionalSourcePaths(moduleDir, discovered);
         int generatedStart = discovered.size();
         LAYOUT.addGeneratedSourcePaths(moduleDir, discovered);
-        return new BuildModule(moduleId(projectRoot, moduleDir), moduleDir,
+        return new BuildModule(ProjectPaths.relativeToRoot(projectRoot, moduleDir), moduleDir,
             discovered.subList(sourcesStart, generatedStart),
             discovered.subList(generatedStart, discovered.size()),
             List.of(), null, false);
-    }
-
-    /**
-     * Root-relative module directory with '/' separators, "." for the root itself. A
-     * directory that does not lie under the root (another drive) keeps its full path.
-     */
-    private static String moduleId(Path projectRoot, Path moduleDir) {
-        if (!moduleDir.startsWith(projectRoot)) {
-            return moduleDir.toString();
-        }
-        String relative = projectRoot.relativize(moduleDir).toString().replace(File.separatorChar, '/');
-        return relative.isEmpty() ? "." : relative;
     }
 
     /**
