@@ -17,6 +17,36 @@
     <name>JavaLens :: Product</name>
     <description>Standalone JavaLens distribution</description>
 
+    <!-- What the product is assembled from, declared so the build model orders those
+         modules first and -am builds them: the target platform, the two bundles and the
+         launcher jar copied in below. Type pom adds the ordering and nothing else. -->
+    <dependencies>
+        <dependency>
+            <groupId>org.javalens</groupId>
+            <artifactId>org.javalens.target</artifactId>
+            <version>${project.version}</version>
+            <type>pom</type>
+        </dependency>
+        <dependency>
+            <groupId>org.javalens</groupId>
+            <artifactId>org.javalens.core</artifactId>
+            <version>${project.version}</version>
+            <type>pom</type>
+        </dependency>
+        <dependency>
+            <groupId>org.javalens</groupId>
+            <artifactId>org.javalens.mcp</artifactId>
+            <version>${project.version}</version>
+            <type>pom</type>
+        </dependency>
+        <dependency>
+            <groupId>org.javalens</groupId>
+            <artifactId>org.javalens.launcher</artifactId>
+            <version>${project.version}</version>
+            <type>pom</type>
+        </dependency>
+    </dependencies>
+
     <build>
         <plugins>
             <plugin>

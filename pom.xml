@@ -43,6 +43,7 @@
         <module>org.javalens.mcp.tests</module>
         <module>org.javalens.launcher</module>
         <module>org.javalens.product</module>
+        <module>org.javalens.product.tests</module>
     </modules>
 
     <build>

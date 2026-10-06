@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.javalens</groupId>
+        <artifactId>org.javalens.parent</artifactId>
+        <version>1.5.1</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>org.javalens.product.tests</artifactId>
+    <packaging>jar</packaging>
+
+    <name>JavaLens :: Product Tests</name>
+    <description>Launches the materialized product over JSON-RPC and checks what it writes to stdout and stderr</description>
+
+    <dependencies>
+        <!-- The product under test. A real dependency on its artifact, so the build
+             model orders this module after the product and -am builds the product. -->
+        <dependency>
+            <groupId>org.javalens</groupId>
+            <artifactId>org.javalens.product</artifactId>
+            <version>${project.version}</version>
+            <type>zip</type>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.10.2</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>2.16.1</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.11.0</version>
+                <configuration>
+                    <release>21</release>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.5</version>
+                <configuration>
+                    <systemPropertyVariables>
+                        <!-- Where tycho-p2-director materializes the product for each platform. -->
+                        <javalens.products.dir>${project.basedir}/../org.javalens.product/target/products/org.javalens.product</javalens.products.dir>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

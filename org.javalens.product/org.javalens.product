@@ -45,6 +45,7 @@
       <plugin id="org.eclipse.text"/>
       <plugin id="org.apache.felix.scr"/>
       <plugin id="slf4j.simple"/>
+      <plugin id="org.apache.aries.spifly.dynamic.bundle"/>
    </plugins>
 
    <configurations>
@@ -54,6 +55,9 @@
       <plugin id="org.eclipse.core.runtime" autoStart="true" startLevel="0"/>
       <plugin id="org.javalens.mcp" autoStart="true" startLevel="0"/>
       <plugin id="slf4j.simple" autoStart="true" startLevel="1"/>
+      <!-- SLF4J finds slf4j.simple through ServiceLoader, which SPI Fly mediates in OSGi:
+           it must be active before the first logger is created. -->
+      <plugin id="org.apache.aries.spifly.dynamic.bundle" autoStart="true" startLevel="2"/>
       <!-- DO NOT auto-start these - they start lazily when needed -->
    </configurations>
 
