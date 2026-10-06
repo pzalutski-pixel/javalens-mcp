@@ -8,24 +8,19 @@ import org.eclipse.jdt.core.search.IJavaSearchConstants;
 import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.JdtServiceImpl;
 import org.javalens.core.fixtures.ClasspathSnapshot;
-import org.javalens.core.fixtures.TestEnvironment;
+import org.javalens.core.fixtures.GradleBinary;
 import org.javalens.core.fixtures.TestProjectHelper;
-import org.javalens.core.project.model.LoadWarning;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
-import java.io.IOException;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.List;
-import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -43,21 +38,15 @@ class EndToEndGradleIntegrationTest {
     TestProjectHelper helper = new TestProjectHelper();
 
     @Test
-    @DisplayName("realistic Gradle multi-project: every fix exercised in a single load")
+    @DisplayName("realistic Gradle multi-project: classpath, generated sources, level, APT, search and references in a single load")
     void allFixesExercisedInASingleLoad() throws Exception {
-        String gradle = resolveGradleBinary();
-        TestEnvironment.requireOrSkip(gradle, "Gradle binary (end-to-end Gradle load)");
-
-        String previousOverride = System.getProperty("javalens.gradle.binary");
-        System.setProperty("javalens.gradle.binary", gradle);
-        try {
+        try (GradleBinary gradle = GradleBinary.require("end-to-end Gradle load")) {
             Path projectRoot = helper.copyFixture("realistic-multi-project-gradle");
 
-            // Bug B (Gradle side): stage a generated source file under :model the way an
-            // annotationProcessor task would.
-            Path generatedDir = projectRoot.resolve(
-                "model/build/generated/sources/annotationProcessor/main/java/com/example/model");
-            Files.createDirectories(generatedDir);
+            // Stage a generated source file in the directory Gradle reports as :model's
+            // annotation-processor output, as its annotationProcessor configuration would.
+            Path generatedRoot = projectRoot.resolve("model/build/generated/sources/annotationProcessor/java/main");
+            Path generatedDir = Files.createDirectories(generatedRoot.resolve("com/example/model"));
             Files.writeString(generatedDir.resolve("UserMetadata.java"), """
                 package com.example.model;
                 public final class UserMetadata {
@@ -70,39 +59,48 @@ class EndToEndGradleIntegrationTest {
             service.loadProject(projectRoot);
             ClasspathSnapshot snapshot = ClasspathSnapshot.capture(service.getJavaProject());
 
-            // === Bug X: clean Gradle build, no warnings ================================
-            List<LoadWarning> warnings = service.getWarnings();
-            assertTrue(warnings.isEmpty(),
-                "Expected zero warnings on a clean Gradle multi-project build. Got: " + warnings);
+            // === A clean Gradle build loads with no warning ===============================
+            assertEquals(List.of(), service.getWarnings(), "warnings");
 
-            // === Bug D: every subproject's external dep is on the classpath ============
-            assertTrue(snapshot.hasLibraryMatching(".*slf4j-api.*\\.jar"),
-                "Expected slf4j-api (declared in :service). Libraries: " + snapshot.libraries());
-            assertTrue(snapshot.hasLibraryMatching(".*commons-lang3.*\\.jar"),
-                "Expected commons-lang3 (declared in :service). Libraries: " + snapshot.libraries());
-            assertTrue(snapshot.hasLibraryMatching(".*spring-core.*\\.jar"),
-                "Expected spring-core (declared in :web). Libraries: " + snapshot.libraries());
-            assertTrue(snapshot.hasLibraryMatching(".*lombok.*\\.jar"),
-                "Expected lombok on :model's annotationProcessor configuration. Libraries: " + snapshot.libraries());
+            // === The classpath is every subproject's external jars, no project jar ======
+            // :model declares compileOnly lombok, :service slf4j-api and commons-lang3, :web
+            // spring-core, which depends on spring-jcl.
+            List<String> libraryNames = snapshot.libraries().stream()
+                .map(library -> library.getFileName().toString())
+                .sorted()
+                .toList();
+            assertEquals(List.of("commons-lang3-3.13.0.jar", "lombok-1.18.30.jar", "slf4j-api-2.0.9.jar",
+                    "spring-core-6.0.13.jar", "spring-jcl-6.0.13.jar"),
+                libraryNames, "library file names");
 
-            // === Bug B (Gradle): build/generated/sources/* discovered as source folder ==
-            assertTrue(
-                snapshot.sourceFolders().stream().anyMatch(p -> p.toString().replace('\\', '/')
-                    .endsWith("build/generated/sources/annotationProcessor/main/java")),
-                "Expected build/generated/sources/annotationProcessor/main/java among source folders. " +
-                "Got: " + snapshot.sourceFolders());
+            // === The processor jars are :model's annotationProcessor configuration ======
+            List<String> processorNames = service.getBuildModel().processorJars().stream()
+                .map(jar -> jar.getFileName().toString())
+                .toList();
+            assertEquals(List.of("lombok-1.18.30.jar"), processorNames, "processor jar file names");
 
-            // === Bug G (Gradle): declared sourceCompatibility applied ==================
+            // === Source folders: each subproject's sources, :model's generated sources ==
+            // With processors wired, JDT's APT adds its own generated-source folder,
+            // .apt_generated in the workspace project, after the linked ones.
+            Path workspaceProject = Path.of(service.getJavaProject().getProject().getLocation().toOSString());
+            assertEquals(List.of(
+                    projectRoot.resolve("model/src/main/java"),
+                    generatedRoot,
+                    projectRoot.resolve("service/src/main/java"),
+                    projectRoot.resolve("web/src/main/java"),
+                    workspaceProject.resolve(".apt_generated")),
+                snapshot.sourceFolders(), "source folders");
+
+            // === The declared sourceCompatibility is applied ===========================
             assertEquals("17", snapshot.compilerSource(),
                 "Expected COMPILER_SOURCE=17 from sourceCompatibility = JavaVersion.VERSION_17");
             assertEquals("17", snapshot.compilerCompliance(),
                 "Expected COMPILER_COMPLIANCE=17 from sourceCompatibility = JavaVersion.VERSION_17");
 
-            // === Bug H (Gradle): APT enabled + factory path actually contains lombok ===
-            // isEnabled alone is insufficient — the silent-degradation path (every candidate
-            // jar fails Files.isRegularFile → APT enabled, factory path empty) would pass an
-            // isEnabled-only check. Replicating the strict check that
-            // AnnotationProcessingTest applies to the Maven path.
+            // === APT is enabled and its factory path holds the lombok jar ===============
+            // isEnabled alone is insufficient: when every candidate jar is missing, APT is
+            // enabled with an empty factory path. This is the check AnnotationProcessingTest
+            // applies to the Maven path.
             IJavaProject javaProject = service.getJavaProject();
             assertTrue(AptConfig.isEnabled(javaProject),
                 "Expected APT to be enabled because :model declares annotationProcessor 'org.projectlombok:lombok'");
@@ -112,22 +110,17 @@ class EndToEndGradleIntegrationTest {
                     .anyMatch(id -> id != null && id.toLowerCase().contains("lombok")),
                 "Factory path must include the lombok processor jar; container ids: "
                     + factoryPathContainerIds(AptConfig.getFactoryPath(javaProject)));
-            assertFalse(service.getWarnings().stream()
-                    .anyMatch(w -> LoadWarning.APT_PROCESSOR_JARS_MISSING.equals(w.code())),
-                "APT_PROCESSOR_JARS_MISSING must not fire on a clean Gradle build with the "
-                    + "lombok jar present in Gradle's cache; warnings: " + service.getWarnings());
 
-            // === Bug F: search works synchronously after loadProject ===================
+            // === Types resolve from their files right after loadProject ================
             IType user = service.findType("com.example.model.User");
-            assertNotNull(user, "Expected to resolve com.example.model.User immediately after load");
-            IType userService = service.findType("com.example.service.UserService");
-            assertNotNull(userService, "Expected to resolve com.example.service.UserService");
-            IType controller = service.findType("com.example.web.UserController");
-            assertNotNull(controller, "Expected to resolve com.example.web.UserController");
-
-            // === Generated type resolves =================================================
-            IType generated = service.findType("com.example.model.UserMetadata");
-            assertNotNull(generated, "Expected to resolve generated UserMetadata");
+            assertEquals(projectRoot.resolve("model/src/main/java/com/example/model/User.java"),
+                location(user), "User");
+            assertEquals(projectRoot.resolve("service/src/main/java/com/example/service/UserService.java"),
+                location(service.findType("com.example.service.UserService")), "UserService");
+            assertEquals(projectRoot.resolve("web/src/main/java/com/example/web/UserController.java"),
+                location(service.findType("com.example.web.UserController")), "UserController");
+            assertEquals(generatedDir.resolve("UserMetadata.java"),
+                location(service.findType("com.example.model.UserMetadata")), "generated UserMetadata");
 
             // === Cross-subproject find_references =======================================
             // The fixture has 3 type references to User per caller file: the import
@@ -154,10 +147,15 @@ class EndToEndGradleIntegrationTest {
             assertEquals(3, inUserController,
                 "Expected 3 User refs in UserController.java; got " + inUserController + ": "
                     + userRefFiles);
-        } finally {
-            if (previousOverride == null) System.clearProperty("javalens.gradle.binary");
-            else System.setProperty("javalens.gradle.binary", previousOverride);
         }
+    }
+
+    /** The file {@code type} was read from, or null when the type did not resolve. */
+    private static Path location(IType type) {
+        if (type == null) {
+            return null;
+        }
+        return Path.of(type.getResource().getLocation().toOSString());
     }
 
     /**
@@ -187,50 +185,4 @@ class EndToEndGradleIntegrationTest {
         }
     }
 
-    private static String resolveGradleBinary() {
-        boolean isWindows = System.getProperty("os.name").toLowerCase().contains("win");
-        String binaryName = isWindows ? "gradle.bat" : "gradle";
-
-        String envHome = System.getenv("JAVALENS_TEST_GRADLE_HOME");
-        if (envHome != null && !envHome.isBlank()) {
-            Path bin = Path.of(envHome).resolve("bin").resolve(binaryName);
-            if (Files.isRegularFile(bin)) return bin.toString();
-        }
-
-        try {
-            Process p = new ProcessBuilder(binaryName, "-v").redirectErrorStream(true).start();
-            try (var r = new java.io.BufferedReader(new java.io.InputStreamReader(p.getInputStream()))) {
-                while (r.readLine() != null) { /* drain */ }
-            }
-            p.waitFor();
-            if (p.exitValue() == 0) return binaryName;
-        } catch (IOException | InterruptedException ignored) {
-            if (Thread.interrupted()) Thread.currentThread().interrupt();
-        }
-
-        Path tools = Path.of(System.getProperty("user.home"), "javalens-tools");
-        if (Files.isDirectory(tools)) {
-            try (Stream<Path> entries = Files.list(tools)) {
-                for (Path entry : entries.toList()) {
-                    Path bin = entry.resolve("bin").resolve(binaryName);
-                    if (Files.isRegularFile(bin)) return bin.toString();
-                }
-            } catch (IOException ignored) {}
-        }
-
-        Path wrapperDists = Path.of(System.getProperty("user.home"), ".gradle", "wrapper", "dists");
-        if (Files.isDirectory(wrapperDists)) {
-            try (Stream<Path> distros = Files.walk(wrapperDists, 4)) {
-                return distros.filter(p -> p.getFileName() != null
-                            && binaryName.equals(p.getFileName().toString()))
-                        .filter(p -> p.getParent() != null
-                            && "bin".equals(p.getParent().getFileName().toString()))
-                        .map(Path::toString)
-                        .findFirst()
-                        .orElse(null);
-            } catch (IOException ignored) {}
-        }
-
-        return null;
-    }
 }

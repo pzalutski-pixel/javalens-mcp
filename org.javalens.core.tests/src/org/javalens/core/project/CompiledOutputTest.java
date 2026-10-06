@@ -1,14 +1,10 @@
 package org.javalens.core.project;
 
 import org.eclipse.core.runtime.CoreException;
-import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IJavaProject;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.compiler.IProblem;
-import org.eclipse.jdt.core.dom.AST;
-import org.eclipse.jdt.core.dom.ASTParser;
-import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.search.IJavaSearchConstants;
 import org.eclipse.jdt.core.search.SearchEngine;
 import org.eclipse.jdt.core.search.SearchPattern;
@@ -16,6 +12,8 @@ import org.eclipse.jdt.core.search.TypeNameMatch;
 import org.eclipse.jdt.core.search.TypeNameMatchRequestor;
 import org.javalens.core.JdtServiceImpl;
 import org.javalens.core.fixtures.ClasspathSnapshot;
+import org.javalens.core.fixtures.CompilationProblems;
+import org.javalens.core.fixtures.GradleBinary;
 import org.javalens.core.fixtures.TestProjectHelper;
 import org.javalens.core.project.model.BuildInputs;
 import org.javalens.core.project.model.BuildModel;
@@ -36,7 +34,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.OptionalInt;
@@ -202,13 +199,62 @@ class CompiledOutputTest {
             () -> assertEquals(true, lib.isBinary(), "q.Lib is binary"),
             () -> assertEquals(classes, Path.of(lib.getPackageFragment().getParent().getPath().toOSString()),
                 "package fragment root holding q.Lib"),
-            () -> assertEquals(List.of(), problemIds(service.getCompilationUnit(userSource)),
+            () -> assertEquals(List.of(), CompilationProblems.ids(service.getCompilationUnit(userSource)),
                 "problems in User.java"),
-            () -> assertEquals(List.of(IProblem.ImportNotFound), problemIds(service.getCompilationUnit(brokenSource)),
+            () -> assertEquals(List.of(IProblem.ImportNotFound),
+                CompilationProblems.ids(service.getCompilationUnit(brokenSource)),
                 "problems in Broken.java"),
             // The kept output also holds p.A, which the load names as a possible duplicate.
             () -> assertEquals(List.of("p.A binary", "p.A source"), typeMatches(service.getJavaProject(), "p", "A"),
                 "every type named p.A the search engine finds"));
+    }
+
+    @Test
+    @DisplayName("Gradle reports one classes directory per language: the Java one, whose classes all have linked sources, stays off; the Groovy one, holding a class with no linked source, stays on with COMPILED_OUTPUT_INCLUDED")
+    void gradleGroovyOutputStaysAndJavaOutputIsDropped() throws Exception {
+        try (GradleBinary gradle = GradleBinary.require("Gradle per-language classes directories")) {
+            Path root = Files.createDirectories(helper.getTempDirectory().resolve("groovy-output"));
+            writeFile(root.resolve("settings.gradle"), "rootProject.name = 'groovy-output'\n");
+            writeFile(root.resolve("build.gradle"), "plugins {\n    id 'groovy'\n}\n\n"
+                + "java {\n    sourceCompatibility = JavaVersion.VERSION_17\n}\n");
+            Path srcMain = root.resolve("src/main/java");
+            Path linkedSource = writeFile(srcMain.resolve("p/Linked.java"), "package p;\n\npublic class Linked {\n}\n");
+            Path userSource = writeFile(srcMain.resolve("p/User.java"),
+                "package p;\n\npublic class User {\n"
+                    + "    public int use() {\n        return new FromGroovy().value();\n    }\n}\n");
+            // Stands in for what groovyc writes: a class whose source no linked root holds.
+            Path groovySource = writeFile(root.resolve("elsewhere/p/FromGroovy.java"),
+                "package p;\n\npublic class FromGroovy {\n    public int value() {\n        return 1;\n    }\n}\n");
+            Path javaClasses = root.resolve("build/classes/java/main");
+            Path groovyClasses = root.resolve("build/classes/groovy/main");
+            compile(javaClasses, linkedSource);
+            compile(groovyClasses, groovySource);
+
+            JdtServiceImpl service = new JdtServiceImpl();
+            service.loadProject(root);
+            ClasspathSnapshot snapshot = ClasspathSnapshot.capture(service.getJavaProject());
+            IType fromGroovy = service.findType("p.FromGroovy");
+
+            assertAll(
+                () -> assertEquals(List.of(javaClasses, groovyClasses, root.resolve("build/classes/java/test"),
+                        root.resolve("build/classes/groovy/test")),
+                    service.getBuildModel().modules().get(0).outputDirs(), "classes directories Gradle reports"),
+                () -> assertEquals(List.of(groovyClasses), snapshot.libraries(), "library entries"),
+                () -> assertEquals(List.of(new LoadWarning(LoadWarning.COMPILED_OUTPUT_INCLUDED,
+                        "Compiled output build/classes/groovy/main holds 1 class with no linked source, so it is "
+                            + "on the classpath; results for module ':' may include compiled duplicates of linked "
+                            + "sources and reflect the last build",
+                        REMEDIATION, ":")),
+                    service.getWarnings(), "warnings"),
+                () -> assertEquals(true, fromGroovy.isBinary(), "p.FromGroovy is binary"),
+                () -> assertEquals(groovyClasses,
+                    Path.of(fromGroovy.getPackageFragment().getParent().getPath().toOSString()),
+                    "package fragment root holding p.FromGroovy"),
+                () -> assertEquals(List.of(), CompilationProblems.ids(service.getCompilationUnit(userSource)),
+                    "problems in User.java"),
+                () -> assertEquals(List.of("p.Linked source"), typeMatches(service.getJavaProject(), "p", "Linked"),
+                    "every type named p.Linked the search engine finds"));
+        }
     }
 
     @Test
@@ -445,15 +491,6 @@ class CompiledOutputTest {
             IJavaSearchConstants.WAIT_UNTIL_READY_TO_SEARCH, null);
         matches.sort(null);
         return matches;
-    }
-
-    /** The IDs of every problem JDT reports for the unit, parsed with bindings. */
-    private static List<Integer> problemIds(ICompilationUnit unit) {
-        ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
-        parser.setSource(unit);
-        parser.setResolveBindings(true);
-        CompilationUnit ast = (CompilationUnit) parser.createAST(null);
-        return Arrays.stream(ast.getProblems()).map(IProblem::getID).toList();
     }
 
     /** Compile {@code sources} with the JDK compiler into {@code outputDir}. */

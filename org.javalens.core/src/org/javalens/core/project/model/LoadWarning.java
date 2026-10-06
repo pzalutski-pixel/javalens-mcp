@@ -13,8 +13,9 @@ package org.javalens.core.project.model;
  *   <li>{@code BUILD_TOOL_UNAVAILABLE}: the build tool (Maven, Gradle) could not be
  *       started, or no binary for it exists.</li>
  *   <li>{@code BUILD_TOOL_FAILED}: the build tool ran and failed: it exited non-zero,
- *       Maven exited 0 without writing a classpath file, the load was interrupted while
- *       it ran, or invoking it threw an unexpected error.</li>
+ *       Maven exited 0 without writing a classpath file, Gradle exited 0 without a
+ *       readable project model, the load was interrupted while it ran, its run could not
+ *       be prepared, or invoking it threw an unexpected error.</li>
  *   <li>{@code BUILD_TOOL_TIMEOUT}: the build tool did not finish within its time limit
  *       and was stopped.</li>
  *   <li>{@code BAZEL_NOT_BUILT} — {@code bazel-bin/}/{@code bazel-out/} not populated; user
@@ -30,6 +31,10 @@ package org.javalens.core.project.model;
  *       conventional layouts because the build model did not describe it.</li>
  *   <li>{@code COMPILED_OUTPUT_INCLUDED}: a module's compiled output is on the classpath
  *       because it holds classes with no linked source.</li>
+ *   <li>{@code INCLUDED_OUTSIDE_BUILD}: a conventional source folder is linked although the
+ *       build does not report it as a source root.</li>
+ *   <li>{@code COMPLIANCE_LEVEL_MIXED}: modules declare different Java levels; the project
+ *       is analyzed at the highest.</li>
  * </ul>
  *
  * @param code stable identifier (see list above)
@@ -48,10 +53,11 @@ public record LoadWarning(String code, String message, String remediation, Strin
 
     /**
      * The build tool ran and failed: it exited non-zero, Maven exited 0 without writing a
-     * classpath file, the load was interrupted while it ran (it was then stopped together
-     * with every process it started), or invoking it threw an unexpected error. The message
-     * names the tool and, when the tool exited after writing output, ends with its last
-     * lines.
+     * classpath file, Gradle exited 0 without a readable project model, the load was
+     * interrupted while it ran (it was then stopped together with every process it
+     * started), the files its run needs could not be written, or invoking it threw an
+     * unexpected error. The message names the tool and, when the tool exited after writing
+     * output, ends with its last lines.
      */
     public static final String BUILD_TOOL_FAILED = "BUILD_TOOL_FAILED";
 
@@ -118,6 +124,25 @@ public record LoadWarning(String code, String message, String remediation, Strin
      * the last build, since class files are not verified against disk per query.
      */
     public static final String COMPILED_OUTPUT_INCLUDED = "COMPILED_OUTPUT_INCLUDED";
+
+    /**
+     * A source folder that a conventional layout probe finds in a loaded module's directory
+     * ({@code src/main/java}, {@code src/test/java}, {@code src/main/kotlin},
+     * {@code src/test/kotlin}, the {@code src/} fallback of a module that reports no source
+     * or generated root under its directory, or a generated-source directory) is linked
+     * although no module of the build as evaluated reports it as a source root. It stays
+     * linked, after the module's reported roots, so its types stay visible. {@code module}
+     * carries the module id; the message names the folder relative to the project root.
+     */
+    public static final String INCLUDED_OUTSIDE_BUILD = "INCLUDED_OUTSIDE_BUILD";
+
+    /**
+     * Modules declare different Java levels. All modules are analyzed as one project, at the
+     * highest declared level, so a module's own lower level is not enforced. The message
+     * lists each module that declares a level, with its id and level, in module order;
+     * {@code module} is null.
+     */
+    public static final String COMPLIANCE_LEVEL_MIXED = "COMPLIANCE_LEVEL_MIXED";
 
     public LoadWarning(String code, String message, String remediation) {
         this(code, message, remediation, null);

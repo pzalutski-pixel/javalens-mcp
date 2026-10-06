@@ -1,5 +1,6 @@
 package org.javalens.core.project;
 
+import org.javalens.core.project.model.BuildModel;
 import org.javalens.core.project.model.LoadWarning;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -8,6 +9,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -63,13 +65,28 @@ class BuildSystemImporterTest {
     }
 
     @Test
-    @DisplayName("A custom implementer that only overrides the two abstract methods inherits the empty defaults")
+    @DisplayName("An implementer that overrides only resolve inherits a null level and empty dependencies, processors and classpath jars")
+    void resolveOnlyImpl_inheritsEveryPerConcernDefault() {
+        // An importer that reads its build tool's model implements resolve alone.
+        BuildSystemImporter resolveOnly = new BuildSystemImporter() {
+            @Override public BuildModel resolve(Path projectRoot) {
+                throw new UnsupportedOperationException("not called");
+            }
+        };
+        List<LoadWarning> warnings = new ArrayList<>();
+
+        assertNull(resolveOnly.detectCompilerLevel(Path.of("/x")), "compiler level");
+        assertEquals(List.of(), resolveOnly.getDependencies(Path.of("/x"), warnings), "dependencies");
+        assertEquals(List.of(), resolveOnly.detectAnnotationProcessors(Path.of("/x")), "processors");
+        assertEquals(List.of(), resolveOnly.getResolvedClasspathJars(Path.of("/x"), warnings), "classpath jars");
+        assertEquals(List.of(), warnings, "warnings");
+    }
+
+    @Test
+    @DisplayName("A custom implementer that overrides detectCompilerLevel and getDependencies inherits the other empty defaults")
     void customImpl_inheritsEmptyDefaults() {
-        // Document the SPI: minimal implementer overrides just detectCompilerLevel +
-        // getDependencies; detectAnnotationProcessors + getResolvedClasspathJars
-        // inherit the empty defaults from the interface. This catches a regression
-        // where someone makes the defaults abstract by mistake — that change would
-        // break the minimal Bazel/Gradle/Maven impl pattern.
+        // An implementer that overrides some per-concern methods inherits the empty
+        // defaults of the others.
         BuildSystemImporter minimal = new BuildSystemImporter() {
             @Override public String detectCompilerLevel(Path projectPath) { return "17"; }
             @Override public List<String> getDependencies(Path projectPath, List<LoadWarning> warnings) {

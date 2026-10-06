@@ -21,14 +21,19 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.OptionalInt;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.stream.Stream;
 
 /**
@@ -214,9 +219,10 @@ public class ProjectImporter {
 
         // 3. Create linked folders and add source entries, one per distinct model source
         // root in model order. Linked-folder names carry the index, so the order keeps them
-        // stable.
+        // stable. A root that holds other roots excludes them, so each file is in one root.
+        List<java.nio.file.Path> sourceRoots = sourceRoots(model);
         linkedFolderConfigurator.addLinkedSourceFolders(
-            entries, project, projectPath, sourceRoots(model), workspaceManager,
+            entries, project, projectPath, sourceRoots, exclusionPatterns(sourceRoots), workspaceManager,
             model.modules().size() > 1);
 
         // 4. Add dependency JARs from the model, then the compiled output it keeps
@@ -368,16 +374,11 @@ public class ProjectImporter {
      * back to the floor - a wrong-but-working level beats silent no-analysis.
      */
     static String clampToSupportedRange(String level) {
-        int feature;
-        try {
-            String normalized = level.trim();
-            if (normalized.startsWith("1.")) {
-                normalized = normalized.substring(2);
-            }
-            feature = (int) Double.parseDouble(normalized);
-        } catch (NumberFormatException e) {
+        OptionalInt parsed = DeclaredLevels.featureNumber(level);
+        if (parsed.isEmpty()) {
             return "1.8";
         }
+        int feature = parsed.getAsInt();
         if (feature < 8) {
             return "1.8";
         }
@@ -421,7 +422,7 @@ public class ProjectImporter {
             List<java.nio.file.Path> moduleRoots = new ArrayList<>(module.sourceRoots());
             moduleRoots.addAll(module.generatedSourceRoots());
             for (java.nio.file.Path root : moduleRoots) {
-                if (seen.add(identity(root))) {
+                if (seen.add(ProjectPaths.identity(root))) {
                     roots.add(root);
                 }
             }
@@ -429,9 +430,65 @@ public class ProjectImporter {
         return roots;
     }
 
-    /** The normalized absolute form of {@code path}, which identifies it however it is spelled. */
-    private static java.nio.file.Path identity(java.nio.file.Path path) {
-        return path.toAbsolutePath().normalize();
+    /**
+     * The other roots of {@code roots} that lie inside {@code root}, compared by
+     * {@link ProjectPaths#identity}, as identities, in the order of {@code roots}.
+     */
+    private static List<java.nio.file.Path> nestedRoots(java.nio.file.Path root, List<java.nio.file.Path> roots) {
+        java.nio.file.Path outer = ProjectPaths.identity(root);
+        List<java.nio.file.Path> nested = new ArrayList<>();
+        for (java.nio.file.Path other : roots) {
+            java.nio.file.Path inner = ProjectPaths.identity(other);
+            if (!inner.equals(outer) && inner.startsWith(outer)) {
+                nested.add(inner);
+            }
+        }
+        return nested;
+    }
+
+    /**
+     * For each root of {@code roots} that holds other roots, the paths its source entry
+     * excludes: each such root relative to it, with '/' separators and a trailing '/'. A
+     * root holding none is not in the map.
+     */
+    private static Map<java.nio.file.Path, List<String>> exclusionPatterns(List<java.nio.file.Path> roots) {
+        Map<java.nio.file.Path, List<String>> patterns = new HashMap<>();
+        for (java.nio.file.Path root : roots) {
+            java.nio.file.Path outer = ProjectPaths.identity(root);
+            List<String> rootPatterns = nestedRoots(root, roots).stream()
+                .map(inner -> outer.relativize(inner).toString().replace(File.separatorChar, '/') + "/")
+                .toList();
+            if (!rootPatterns.isEmpty()) {
+                patterns.put(root, rootPatterns);
+            }
+        }
+        return patterns;
+    }
+
+    /**
+     * Walk {@code root} as {@link Files#walkFileTree} does, skipping the subtrees of
+     * {@code nested}, the roots inside it, so each file is visited under the innermost root
+     * that holds it. {@code directories} receives every directory visited, {@code root}
+     * first, and {@code files} every file.
+     */
+    private static void walkOwnTree(java.nio.file.Path root, List<java.nio.file.Path> nested,
+            Consumer<java.nio.file.Path> directories, Consumer<java.nio.file.Path> files) throws IOException {
+        Files.walkFileTree(root, new SimpleFileVisitor<>() {
+            @Override
+            public FileVisitResult preVisitDirectory(java.nio.file.Path dir, BasicFileAttributes attrs) {
+                if (nested.contains(ProjectPaths.identity(dir))) {
+                    return FileVisitResult.SKIP_SUBTREE;
+                }
+                directories.accept(dir);
+                return FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult visitFile(java.nio.file.Path file, BasicFileAttributes attrs) {
+                files.accept(file);
+                return FileVisitResult.CONTINUE;
+            }
+        });
     }
 
     /**
@@ -445,7 +502,7 @@ public class ProjectImporter {
         Set<java.nio.file.Path> libraries = new HashSet<>();
         for (String jar : model.classpath()) {
             java.nio.file.Path jarPath = java.nio.file.Path.of(jar);
-            if (Files.exists(jarPath) && libraries.add(identity(jarPath))) {
+            if (Files.exists(jarPath) && libraries.add(ProjectPaths.identity(jarPath))) {
                 IPath eclipsePath = new Path(jar);
                 entries.add(JavaCore.newLibraryEntry(eclipsePath, null, null));
             }
@@ -476,7 +533,7 @@ public class ProjectImporter {
                 if (!Files.exists(output)) {
                     continue;
                 }
-                if (libraries.contains(identity(output))) {
+                if (libraries.contains(ProjectPaths.identity(output))) {
                     log.info("Compiled output {} of module '{}' is already on the classpath", output, module.id());
                     continue;
                 }
@@ -487,7 +544,7 @@ public class ProjectImporter {
                     continue;
                 }
                 entries.add(JavaCore.newLibraryEntry(new Path(output.toString()), null, null));
-                libraries.add(identity(output));
+                libraries.add(ProjectPaths.identity(output));
                 String content = sourceless.isPresent()
                     ? "holds " + sourceless.getAsInt() + (sourceless.getAsInt() == 1 ? " class" : " classes")
                         + " with no linked source"
@@ -514,17 +571,24 @@ public class ProjectImporter {
 
     /**
      * Count the Java source files under the model's source roots, generated roots included.
+     * A file under a root that lies inside another root is counted under the inner root
+     * only.
      */
     public int countSourceFiles(BuildModel model) {
-        int count = 0;
-        for (java.nio.file.Path srcPath : sourceRoots(model)) {
-            try (Stream<java.nio.file.Path> stream = Files.walk(srcPath)) {
-                count += (int) stream.filter(p -> p.toString().endsWith(".java")).count();
+        List<java.nio.file.Path> roots = sourceRoots(model);
+        int[] count = {0};
+        for (java.nio.file.Path srcPath : roots) {
+            try {
+                walkOwnTree(srcPath, nestedRoots(srcPath, roots), directory -> { }, file -> {
+                    if (file.toString().endsWith(".java")) {
+                        count[0]++;
+                    }
+                });
             } catch (IOException e) {
                 log.warn("Failed to count files in {}", srcPath, e);
             }
         }
-        return count;
+        return count[0];
     }
 
     /**
@@ -537,19 +601,20 @@ public class ProjectImporter {
 
     /**
      * List the packages that hold Java files under the model's source roots, in
-     * first-seen order without duplicates.
+     * first-seen order without duplicates. A directory under a root that lies inside
+     * another root is read as a package of the inner root only.
      */
     public List<String> findPackages(BuildModel model) {
+        List<java.nio.file.Path> roots = sourceRoots(model);
         List<String> packages = new ArrayList<>();
-        for (java.nio.file.Path srcPath : sourceRoots(model)) {
-            try (Stream<java.nio.file.Path> stream = Files.walk(srcPath)) {
-                stream.filter(Files::isDirectory)
-                      .filter(this::containsJavaFiles)
-                      .map(p -> srcPath.relativize(p).toString())
-                      .map(s -> s.replace(File.separator, "."))
-                      .filter(s -> !s.isEmpty())
-                      .filter(s -> !packages.contains(s))  // Avoid duplicates
-                      .forEach(packages::add);
+        for (java.nio.file.Path srcPath : roots) {
+            try {
+                walkOwnTree(srcPath, nestedRoots(srcPath, roots), directory -> {
+                    String packageName = srcPath.relativize(directory).toString().replace(File.separator, ".");
+                    if (!packageName.isEmpty() && !packages.contains(packageName) && containsJavaFiles(directory)) {
+                        packages.add(packageName);
+                    }
+                }, file -> { });
             } catch (IOException e) {
                 log.warn("Failed to find packages in {}", srcPath, e);
             }

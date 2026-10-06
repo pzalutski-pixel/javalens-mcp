@@ -18,9 +18,10 @@ import java.util.jar.JarFile;
 
 /**
  * Assembles a {@link BuildModel} from an importer's per-concern methods and conventional
- * layout probing of the project's module directories. Each importer's
+ * layout probing of the project's module directories. An importer's
  * {@link BuildSystemImporter#resolve} delegates here until it reads its build tool's
- * model.
+ * model; {@link GradleImporter}, which reads Gradle's, delegates here for the structure it
+ * falls back to when Gradle does not report the model.
  *
  * <p>Module directories are found as the orchestrator found them before the model
  * existed, whatever the build system: the Maven module walk from the root, then the
@@ -44,9 +45,9 @@ final class BuildModelAssembler {
 
     /**
      * Resolve {@code importer}'s model for {@code projectRoot}. Source layouts are probed
-     * before the importer runs its build tool, and {@link BuildSystemImporter#getDependencies}
-     * runs before the level and processor lookups, because {@link GradleImporter} answers
-     * those from what its Gradle run wrote.
+     * before the importer runs its build tool through
+     * {@link BuildSystemImporter#getDependencies}, which runs before the level and processor
+     * lookups.
      *
      * <p>The model's warnings are module discovery's, in discovery order, followed by the
      * importer's.

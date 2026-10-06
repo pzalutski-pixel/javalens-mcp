@@ -9,6 +9,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -101,23 +102,42 @@ class LinkedFolderConfiguratorTest {
     }
 
     @Test
-    @DisplayName("Gradle build/generated/sources/<task>/{main,test}/java is discovered per task")
-    void addSourcePaths_gradleGeneratedSources(@TempDir Path projectRoot) throws IOException {
-        // Gradle layout: each processor task gets a subdir; each task has main/java
-        // and optionally test/java leaves.
-        Files.createDirectories(projectRoot.resolve("build/generated/sources/annotationProcessor/main/java/com"));
-        Files.createDirectories(projectRoot.resolve("build/generated/sources/annotationProcessor/test/java/com"));
-        Files.createDirectories(projectRoot.resolve("build/generated/sources/other/main/java/com"));
+    @DisplayName("Gradle generated sources: per task, <task>/{main,test}/java and Gradle's own <task>/java/{main,test} are discovered, in that order")
+    void addSourcePaths_gradleGeneratedSourcesBothLayouts(@TempDir Path projectRoot) throws IOException {
+        Path task = projectRoot.resolve("build/generated/sources/annotationProcessor");
+        Files.createDirectories(task.resolve("main/java/com"));
+        Files.createDirectories(task.resolve("test/java/com"));
+        Files.createDirectories(task.resolve("java/main/com"));
+        Files.createDirectories(task.resolve("java/test/com"));
+        // Neither layout: a Kotlin leaf is not probed.
+        Files.createDirectories(task.resolve("kotlin/main/com"));
 
         List<Path> sources = new ArrayList<>();
         configurator.addSourcePathsFromDirectory(projectRoot, sources);
 
-        assertTrue(sources.contains(projectRoot.resolve("build/generated/sources/annotationProcessor/main/java")),
-            "Gradle annotationProcessor/main/java must be discovered; got: " + sources);
-        assertTrue(sources.contains(projectRoot.resolve("build/generated/sources/annotationProcessor/test/java")),
-            "Gradle annotationProcessor/test/java must be discovered; got: " + sources);
-        assertTrue(sources.contains(projectRoot.resolve("build/generated/sources/other/main/java")),
-            "Gradle other/main/java must be discovered; got: " + sources);
+        assertEquals(List.of(
+                task.resolve("main/java"),
+                task.resolve("test/java"),
+                task.resolve("java/main"),
+                task.resolve("java/test")),
+            sources);
+    }
+
+    @Test
+    @DisplayName("Gradle generated sources: every <task> directory is probed, whichever layout it uses")
+    void addSourcePaths_gradleGeneratedSourcesEveryTask(@TempDir Path projectRoot) throws IOException {
+        Path generated = projectRoot.resolve("build/generated/sources");
+        Files.createDirectories(generated.resolve("annotationProcessor/java/main/com"));
+        Files.createDirectories(generated.resolve("other/main/java/com"));
+
+        List<Path> sources = new ArrayList<>();
+        configurator.addSourcePathsFromDirectory(projectRoot, sources);
+
+        // Task directories are visited in the order the file system lists them, which no
+        // API fixes, so the two tasks' roots are compared as a set, with the count pinned.
+        assertEquals(2, sources.size(), () -> "sources: " + sources);
+        assertEquals(Set.of(generated.resolve("annotationProcessor/java/main"), generated.resolve("other/main/java")),
+            Set.copyOf(sources));
     }
 
     @Test

@@ -6,11 +6,17 @@ import java.util.Objects;
 
 /**
  * Renders paths relative to the project root for module ids and load warnings, so every
- * path the build model reports reads the same way.
+ * path the build model reports reads the same way, and identifies paths however they are
+ * spelled.
  */
 final class ProjectPaths {
 
     private ProjectPaths() {
+    }
+
+    /** The normalized absolute form of {@code path}, which identifies it however it is spelled. */
+    static Path identity(Path path) {
+        return path.toAbsolutePath().normalize();
     }
 
     /**

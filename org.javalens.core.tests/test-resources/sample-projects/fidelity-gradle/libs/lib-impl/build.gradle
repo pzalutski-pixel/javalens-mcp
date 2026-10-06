@@ -1,0 +1,13 @@
+plugins {
+    id 'java-library'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+}
+
+// Stands in for what the Kotlin Gradle plugin registers on each source set: a
+// SourceDirectorySet extension named 'kotlin', here holding src/main/kotlin.
+def kotlinSources = objects.sourceDirectorySet('kotlin', 'kotlin')
+kotlinSources.srcDir('src/main/kotlin')
+sourceSets.main.extensions.add(SourceDirectorySet, 'kotlin', kotlinSources)

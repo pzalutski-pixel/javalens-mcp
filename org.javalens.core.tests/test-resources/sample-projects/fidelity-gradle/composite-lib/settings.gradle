@@ -1,0 +1,2 @@
+rootProject.name = 'composite-lib'
+include 'core'

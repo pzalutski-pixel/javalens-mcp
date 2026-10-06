@@ -1,0 +1,21 @@
+plugins {
+    id 'java'
+}
+
+repositories {
+    mavenCentral()
+}
+
+sourceSets.main.java.srcDirs = ['src/java']
+
+dependencies {
+    implementation project(':lib')
+    // composite-lib's :core, which Gradle substitutes with the included build's project.
+    implementation 'org.fidelity:core:1.0'
+    implementation 'org.slf4j:slf4j-api:2.0.9'
+    implementation files('libs/local.jar')
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+}

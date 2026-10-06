@@ -6,121 +6,161 @@ import org.javalens.core.project.model.Provenance;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.File;
 import java.io.IOException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
+import java.util.Comparator;
 import java.util.List;
-import java.util.Set;
+import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /**
- * Gradle {@link BuildSystemImporter} implementation. Owns:
- * <ul>
- *   <li>Subproject discovery from {@code settings.gradle}{@code .kts}.</li>
- *   <li>Dependency assembly via a Gradle init script that registers a
- *       {@code javalensWriteClasspath} task in every Java subproject; we run it via
- *       the project's Gradle Wrapper (preferred) or {@code gradle} on PATH, then walk
- *       the tree for the per-subproject aux files it writes.</li>
- *   <li>Compiler-level and annotation-processor extraction from the aux files written
- *       by that same init script.</li>
- * </ul>
+ * Gradle {@link BuildSystemImporter}: the project model is the one Gradle reports.
  *
- * <p>State: {@link #getDependencies} populates the compiler-level and processor-jar
- * caches as a side effect; {@link #detectCompilerLevel} and
- * {@link #detectAnnotationProcessors} read them (ignoring the {@code projectPath}
- * argument required by the {@link BuildSystemImporter} contract). The caches are
- * reset at the start of every {@link #getDependencies} invocation so stale state
- * from a prior import does not leak.
+ * <p>{@link #resolve} runs Gradle once, through {@link BuildToolRunner}, with a generated
+ * init script and the {@value #MODEL_TASK} task the script registers. The script, the files
+ * it writes and Gradle's project cache all live in one scratch directory created for the
+ * run and deleted once the model is read, so nothing is written into the project tree.
+ * {@link GradleModelReader} builds the model from those files, with provenance
+ * {@link Provenance#BUILD_TOOL}.
+ *
+ * <p>When the run does not produce the model, the model is the structure read statically
+ * from {@code settings.gradle} ({@link #getSubprojects}) and laid out by convention, with
+ * no classpath, processors or level, provenance {@link Provenance#STATIC_READ}, and one
+ * build-tool warning saying why. Gradle is not run again.
  */
 public class GradleImporter implements BuildSystemImporter {
 
     private static final Logger log = LoggerFactory.getLogger(GradleImporter.class);
 
     /**
-     * Init script that registers a {@code javalensWriteClasspath} task in every Java
-     * subproject. The task writes three files under each subproject's {@code build/}:
-     * <ul>
-     *   <li>{@code javalens-classpath.txt} — testRuntime/runtime/compile classpath jars.</li>
-     *   <li>{@code javalens-compliance.txt} — declared {@code sourceCompatibility} (Bug G).</li>
-     *   <li>{@code javalens-processors.txt} — annotationProcessor configuration jars (Bug H).</li>
-     * </ul>
-     * GradleImporter reads all three after Gradle exits.
+     * The task the init script registers in every build's root project. It depends on every
+     * project's model task and on each included build's {@value}, so running it in the root
+     * build writes the whole composite's model.
      */
-    private static final String GRADLE_INIT_SCRIPT = """
-        allprojects { proj ->
-            proj.afterEvaluate {
-                if (proj.plugins.hasPlugin('java-base')) {
-                    proj.tasks.register('javalensWriteClasspath') {
-                        doLast {
-                            def buildDir = proj.buildDir
-                            buildDir.mkdirs()
+    private static final String MODEL_TASK = "javalensModel";
 
-                            // Union compileClasspath (includes compileOnly deps like Lombok),
-                            // testRuntimeClasspath (includes test deps), and runtimeClasspath
-                            // (the actual runtime). Picking just one drops compileOnly deps,
-                            // which JDT needs for code that references compile-time annotations.
-                            def cps = [] as Set
-                            ['compileClasspath', 'testCompileClasspath',
-                             'runtimeClasspath', 'testRuntimeClasspath'].each { cfgName ->
-                                proj.configurations.findByName(cfgName)?.resolve()?.each { cps << it.absolutePath }
-                            }
-                            new File(buildDir, 'javalens-classpath.txt').text =
-                                cps.join(System.getProperty('path.separator'))
+    /** Replaced in {@link #INIT_SCRIPT} by the URL-encoded directory the script writes into. */
+    private static final String MODEL_DIR_PLACEHOLDER = "@MODEL_DIR@";
 
-                            def srcCompat = ''
-                            try {
-                                if (proj.hasProperty('java') && proj.java.sourceCompatibility) {
-                                    srcCompat = proj.java.sourceCompatibility.toString()
-                                } else if (proj.hasProperty('sourceCompatibility') && proj.sourceCompatibility) {
-                                    srcCompat = proj.sourceCompatibility.toString()
+    /** The prefix of the scratch directory each run creates in the system temporary directory. */
+    private static final String SCRATCH_PREFIX = "javalens-gradle-model-";
+
+    /**
+     * Init script that reports the project model. Every build of the invocation applies it,
+     * the root build and each included build. When a build's projects are loaded, before any
+     * build script is evaluated, it writes the build's structure; each project's
+     * {@code javalensProjectModel} task writes the project's details. {@link GradleModelReader}
+     * documents the files and their records.
+     */
+    private static final String INIT_SCRIPT = """
+        import org.gradle.api.artifacts.component.ProjectComponentIdentifier
+        import org.gradle.api.file.SourceDirectorySet
+
+        def javalensOut = new File(URLDecoder.decode('@MODEL_DIR@', 'UTF-8'))
+
+        // One record per line: its fields URL-encoded, separated by single spaces.
+        def javalensWrite = { String kind, List records ->
+            new File(javalensOut, kind + '-' + UUID.randomUUID() + '.txt').withWriter('UTF-8') { writer ->
+                records.each { record ->
+                    writer.write(record.collect { URLEncoder.encode(String.valueOf(it), 'UTF-8') }.join(' '))
+                    writer.newLine()
+                }
+            }
+        }
+
+        def javalensSettingsFile = null
+        gradle.settingsEvaluated { settings ->
+            javalensSettingsFile = settings.buildscript.sourceFile
+        }
+
+        gradle.projectsLoaded { g ->
+            def structure = [['build', g.rootProject.projectDir.canonicalPath, g.parent == null]]
+            if (javalensSettingsFile != null) {
+                structure << ['settings', javalensSettingsFile.canonicalPath]
+            }
+            g.rootProject.allprojects.each { p ->
+                structure << ['project', p.path, p.projectDir.canonicalPath, p.buildFile.canonicalPath]
+            }
+            g.includedBuilds.each { b ->
+                structure << ['included', b.name, b.projectDir.canonicalPath]
+            }
+            javalensWrite('build', structure)
+
+            g.rootProject.allprojects { p ->
+                p.tasks.register('javalensProjectModel') { task ->
+                    task.doLast {
+                        def details = [['project', p.rootDir.canonicalPath, p.path]]
+                        if (p.plugins.hasPlugin('java-base')) {
+                            details << ['level', p.java.sourceCompatibility]
+                            p.sourceSets.each { sourceSet ->
+                                sourceSet.java.srcDirs.each { details << ['source', it.canonicalPath] }
+                                def kotlin = sourceSet.extensions.findByName('kotlin')
+                                if (kotlin instanceof SourceDirectorySet) {
+                                    kotlin.srcDirs.each { details << ['source', it.canonicalPath] }
                                 }
-                            } catch (Exception ignored) {}
-                            if (srcCompat) {
-                                new File(buildDir, 'javalens-compliance.txt').text = srcCompat
+                                sourceSet.output.generatedSourcesDirs.files.each { details << ['generated', it.canonicalPath] }
+                                sourceSet.output.classesDirs.files.each { details << ['classes', it.canonicalPath] }
                             }
-
-                            def procs = [] as Set
-                            proj.configurations.findByName('annotationProcessor')?.resolve()?.each { procs << it.absolutePath }
-                            if (procs) {
-                                new File(buildDir, 'javalens-processors.txt').text =
-                                    procs.join(System.getProperty('path.separator'))
+                            p.configurations.findByName('annotationProcessor')?.resolve()?.each {
+                                details << ['processor', it.absolutePath]
+                            }
+                            // External artifacts only: a project dependency, on this build or an
+                            // included one, is a project whose sources are linked.
+                            ['compileClasspath', 'testCompileClasspath', 'runtimeClasspath', 'testRuntimeClasspath'].each { name ->
+                                def configuration = p.configurations.findByName(name)
+                                if (configuration != null && configuration.canBeResolved) {
+                                    configuration.incoming.artifactView { view ->
+                                        view.componentFilter { id -> !(id instanceof ProjectComponentIdentifier) }
+                                    }.files.each { details << ['classpath', it.absolutePath] }
+                                }
                             }
                         }
+                        javalensWrite('project', details)
                     }
                 }
+            }
+
+            g.rootProject.tasks.register('javalensModel') { task ->
+                task.dependsOn(g.rootProject.allprojects.collect { it.absoluteProjectPath('javalensProjectModel') })
+                task.dependsOn(g.includedBuilds.collect { it.task(':javalensModel') })
             }
         }
         """;
 
-    private static final String GRADLE_CP_FILENAME = "javalens-classpath.txt";
-    private static final String GRADLE_COMPLIANCE_FILENAME = "javalens-compliance.txt";
-    private static final String GRADLE_PROCESSORS_FILENAME = "javalens-processors.txt";
-
     /**
-     * How long the Gradle build may run before it is stopped. The Gradle Wrapper sometimes
+     * How long the Gradle run may take before it is stopped. The Gradle Wrapper sometimes
      * downloads a distribution on first run, hence a generous limit; later runs hit the
      * cache.
      */
     private static final Duration GRADLE_TIMEOUT = Duration.ofMinutes(10);
 
-    private String cachedCompilerLevel;
-    private final List<Path> cachedProcessorJars = new ArrayList<>();
+    private final Duration timeout;
+
+    public GradleImporter() {
+        this(GRADLE_TIMEOUT);
+    }
+
+    /** Test seam: stop the Gradle run after {@code timeout}. */
+    GradleImporter(Duration timeout) {
+        this.timeout = timeout;
+    }
 
     /**
-     * Compose the subproject read with {@link #getDependencies}, then the
-     * {@link #detectCompilerLevel} and {@link #detectAnnotationProcessors} answers that
-     * run caches. Subprojects come from a regex read of {@code settings.gradle}, so the
-     * model is {@link Provenance#STATIC_READ}.
+     * The model Gradle reports, or, when the Gradle run does not produce it, the structure
+     * read statically from {@code settings.gradle} followed by one build-tool warning.
      */
     @Override
     public BuildModel resolve(Path projectRoot) {
-        return BuildModelAssembler.assemble(this, BuildSystem.GRADLE, Provenance.STATIC_READ, projectRoot);
+        List<LoadWarning> failure = new ArrayList<>();
+        Optional<BuildModel> reported = reportedModel(projectRoot, failure);
+        return reported.isPresent() ? reported.get() : staticModel(projectRoot, failure);
     }
 
     /**
@@ -161,138 +201,174 @@ public class GradleImporter implements BuildSystemImporter {
     }
 
     /**
-     * Run the project's Gradle build with our init script, harvest the per-subproject
-     * classpath/compliance/processor aux files, populate the compiler-level and
-     * processor-jar caches as a side effect, and return the union of classpath jars.
-     *
-     * <p>Bug D fix: the original implementation was a stub returning {@code List.of()},
-     * leaving Gradle projects with empty classpaths. We now ship a Gradle init script
-     * that registers a {@code javalensWriteClasspath} task in every subproject and run
-     * it via the project's Gradle Wrapper (preferred) or {@code gradle} on PATH.
-     * Per-subproject classpath files land at
-     * {@code <subproject>/build/javalens-classpath.txt}; we walk the tree and union them.
+     * Run Gradle in a scratch directory of its own and read the model it reports, deleting
+     * the scratch directory afterwards. Empty, with the reason appended to
+     * {@code warnings}, when the run does not produce the model.
      */
-    public List<String> getDependencies(Path projectPath, List<LoadWarning> warnings) {
-        // Reset cache state for every invocation so a stale value from a prior import
-        // can never leak into the next.
-        cachedCompilerLevel = null;
-        cachedProcessorJars.clear();
+    private Optional<BuildModel> reportedModel(Path projectRoot, List<LoadWarning> warnings) {
+        Path scratch;
+        try {
+            scratch = Files.createTempDirectory(SCRATCH_PREFIX);
+        } catch (IOException e) {
+            warnings.add(preparationFailure(e));
+            return Optional.empty();
+        }
+        try {
+            return runGradle(projectRoot, scratch, warnings);
+        } finally {
+            deleteScratch(scratch);
+        }
+    }
 
-        LinkedHashSet<String> jars = new LinkedHashSet<>();
-
-        String gradleBinary = resolveGradleBinary(projectPath);
-        if (gradleBinary == null) {
-            warnings.add(new LoadWarning(
-                LoadWarning.BUILD_TOOL_UNAVAILABLE,
-                "No Gradle binary available: neither the project's Gradle Wrapper nor a 'gradle' on PATH",
-                "Commit a Gradle Wrapper (./gradlew) into the project, or install Gradle and ensure 'gradle' is on PATH for the process that launches JavaLens."));
-            return new ArrayList<>(jars);
+    /**
+     * Write the init script into {@code scratch}, run Gradle with it, its model directory
+     * and its project cache in {@code scratch}, and read the model it wrote.
+     */
+    private Optional<BuildModel> runGradle(Path projectRoot, Path scratch, List<LoadWarning> warnings) {
+        Path modelDir = scratch.resolve("model");
+        Path initScript = scratch.resolve("javalens-model.gradle");
+        try {
+            Files.createDirectory(modelDir);
+            Files.writeString(initScript, INIT_SCRIPT.replace(MODEL_DIR_PLACEHOLDER,
+                URLEncoder.encode(modelDir.toString(), StandardCharsets.UTF_8)));
+        } catch (IOException e) {
+            warnings.add(preparationFailure(e));
+            return Optional.empty();
         }
 
-        Path initScript = null;
+        String gradleBinary = resolveGradleBinary(projectRoot);
+        List<String> command = List.of(
+            gradleBinary,
+            "--init-script", initScript.toString(),
+            MODEL_TASK,
+            "-q",
+            "--console=plain",
+            "--no-configuration-cache",
+            // Gradle keeps its per-build state here instead of in each build's .gradle
+            // directory, so the run writes nothing into the project tree.
+            "--project-cache-dir", scratch.resolve("project-cache").toString());
+
+        log.info("Running Gradle to read the project model of {}", projectRoot);
+        BuildToolRunner.Result result = BuildToolRunner.run(command, projectRoot, timeout);
+        Optional<LoadWarning> failure = runFailure(result, gradleBinary, projectRoot);
+        if (failure.isPresent()) {
+            warnings.add(failure.get());
+            return Optional.empty();
+        }
+
         try {
-            initScript = Files.createTempFile("javalens-gradle-init-", ".gradle");
-            Files.writeString(initScript, GRADLE_INIT_SCRIPT);
+            BuildModel model = GradleModelReader.read(projectRoot, modelDir);
+            log.info("Gradle reported {} projects, {} classpath entries, {} processor jars, level {}",
+                model.modules().size(), model.classpath().size(), model.processorJars().size(),
+                model.analysisLevel());
+            return Optional.of(model);
+        } catch (IOException e) {
+            log.warn("Gradle's project model could not be read", e);
+            warnings.add(new LoadWarning(
+                LoadWarning.BUILD_TOOL_FAILED,
+                "Gradle exited with code 0, but the project model could not be read: " + e.getMessage()
+                    + lastOutput(result),
+                "Run './gradlew help' manually in " + projectRoot + " to see the full error."));
+            return Optional.empty();
+        }
+    }
 
-            List<String> command = List.of(
-                gradleBinary,
-                "--init-script", initScript.toAbsolutePath().toString(),
-                "javalensWriteClasspath",
-                "-q",
-                "--console=plain"
-            );
-
-            log.info("Running Gradle to get classpath...");
-            BuildToolRunner.Result result = BuildToolRunner.run(command, projectPath, GRADLE_TIMEOUT);
-
-            if (result.outcome() == BuildToolRunner.Outcome.UNAVAILABLE) {
-                log.warn("Cannot start Gradle subprocess: {}", result.startFailure());
-                warnings.add(new LoadWarning(
+    /**
+     * The warning for a run that did not exit 0: one that could not start, ran past
+     * {@link #timeout}, was interrupted, or exited non-zero. Empty for a run that exited 0.
+     */
+    private Optional<LoadWarning> runFailure(BuildToolRunner.Result result, String gradleBinary, Path projectRoot) {
+        return switch (result.outcome()) {
+            case UNAVAILABLE -> {
+                log.warn("Cannot start Gradle: {}", result.startFailure());
+                yield Optional.of(new LoadWarning(
                     LoadWarning.BUILD_TOOL_UNAVAILABLE,
                     "Could not start '" + gradleBinary + "': " + result.startFailure(),
                     "Verify the Gradle Wrapper is intact, or install Gradle and ensure 'gradle' is on PATH."));
-                return new ArrayList<>(jars);
             }
-
-            if (result.outcome() == BuildToolRunner.Outcome.TIMED_OUT) {
-                log.warn("Gradle classpath command timed out");
-                warnings.add(new LoadWarning(
+            case TIMED_OUT -> {
+                log.warn("Gradle did not finish within {}", timeout);
+                yield Optional.of(new LoadWarning(
                     LoadWarning.BUILD_TOOL_TIMEOUT,
-                    "Gradle javalensWriteClasspath did not finish within " + GRADLE_TIMEOUT.toMinutes() + " minutes",
-                    "Check that the project's build.gradle resolves correctly. Try running './gradlew help' manually in " + projectPath));
-                return new ArrayList<>(jars);
+                    "Gradle did not finish building the project model within " + describe(timeout),
+                    "Check that the project's build.gradle resolves correctly. Try running './gradlew help' manually in "
+                        + projectRoot));
             }
-
-            if (result.outcome() == BuildToolRunner.Outcome.INTERRUPTED) {
-                log.warn("Gradle classpath command was interrupted");
-                warnings.add(new LoadWarning(
+            case INTERRUPTED -> {
+                log.warn("Gradle was interrupted");
+                yield Optional.of(new LoadWarning(
                     LoadWarning.BUILD_TOOL_FAILED,
-                    "Gradle javalensWriteClasspath was interrupted before it finished",
+                    "Gradle was interrupted before it finished building the project model",
                     "Reload the project to run the build tool again."));
-                return new ArrayList<>(jars);
             }
-
-            if (result.exitCode() == 0) {
-                aggregateGradleClasspathFiles(projectPath, jars);
-                // Harvest compliance + processor jars while their aux files still exist.
-                // The cleanup in finally below removes them; resolve() then reads level
-                // and processors from the cache populated here.
-                cachedCompilerLevel = readFirstGradleAuxFile(projectPath, GRADLE_COMPLIANCE_FILENAME);
-                cachedProcessorJars.addAll(readGradleProcessorJars(projectPath));
-                log.info("Got {} classpath entries from Gradle (compliance={}, {} processor jars)",
-                    jars.size(), cachedCompilerLevel, cachedProcessorJars.size());
-            } else {
-                int exitCode = result.exitCode();
-                log.warn("Gradle classpath command failed with exit code: {}", exitCode);
-                String snippet = result.lastLines();
-                warnings.add(new LoadWarning(
+            case EXITED -> {
+                if (result.exitCode() == 0) {
+                    yield Optional.empty();
+                }
+                log.warn("Gradle exited with code {}", result.exitCode());
+                yield Optional.of(new LoadWarning(
                     LoadWarning.BUILD_TOOL_FAILED,
-                    "Gradle javalensWriteClasspath exited with code " + exitCode +
-                        (snippet.isEmpty() ? "" : ". Last output: " + snippet),
-                    "Run './gradlew help' manually in " + projectPath + " to see the full error."));
+                    "Gradle exited with code " + result.exitCode() + " while building the project model"
+                        + lastOutput(result),
+                    "Run './gradlew help' manually in " + projectRoot + " to see the full error."));
             }
-        } catch (Exception e) {
-            log.error("Failed to get Gradle classpath", e);
-            warnings.add(new LoadWarning(
-                LoadWarning.BUILD_TOOL_FAILED,
-                "Gradle invocation threw an unexpected error: " + e.getClass().getSimpleName() + ": " + e.getMessage(),
-                "Run './gradlew help' manually in " + projectPath + " to reproduce."));
-        } finally {
-            if (initScript != null) {
-                try { Files.deleteIfExists(initScript); }
-                catch (IOException e) { log.trace("Could not delete init script: {}", e.getMessage()); }
-            }
-            cleanupGradleClasspathFiles(projectPath);
+        };
+    }
+
+    /** The warning for a scratch directory or init script that could not be written. */
+    private static LoadWarning preparationFailure(IOException e) {
+        log.warn("Could not prepare the Gradle run", e);
+        return new LoadWarning(
+            LoadWarning.BUILD_TOOL_FAILED,
+            "Could not prepare the Gradle run that reads the project model: "
+                + e.getClass().getSimpleName() + ": " + e.getMessage(),
+            "Check that the system temporary directory " + System.getProperty("java.io.tmpdir")
+                + " is writable, then reload the project.");
+    }
+
+    /** {@code ". Last output: "} and the run's last lines, or empty when it wrote none. */
+    private static String lastOutput(BuildToolRunner.Result result) {
+        String snippet = result.lastLines();
+        return snippet.isEmpty() ? "" : ". Last output: " + snippet;
+    }
+
+    /** {@code limit} in minutes when it is a whole number of minutes, otherwise in seconds. */
+    private static String describe(Duration limit) {
+        if (!limit.isZero() && limit.equals(Duration.ofMinutes(limit.toMinutes()))) {
+            return limit.toMinutes() + " minutes";
         }
-
-        return new ArrayList<>(jars);
+        return limit.toSeconds() + " seconds";
     }
 
     /**
-     * Cached during {@link #getDependencies}; null when no Gradle build ran. The
-     * {@code projectPath} parameter is required by the {@link BuildSystemImporter}
-     * contract but ignored — the cache is populated once per import and the path was
-     * already provided to {@code getDependencies}.
+     * The structure read statically from {@code settings.gradle}, laid out by convention by
+     * {@link BuildModelAssembler}, followed by {@code failure}. This importer implements none
+     * of the per-concern methods the assembler composes, so the model has no classpath,
+     * processors or level, and Gradle is not run again.
      */
-    @Override
-    public String detectCompilerLevel(Path projectPath) {
-        return cachedCompilerLevel;
+    private BuildModel staticModel(Path projectRoot, List<LoadWarning> failure) {
+        BuildModel read = BuildModelAssembler.assemble(this, BuildSystem.GRADLE, Provenance.STATIC_READ, projectRoot);
+        List<LoadWarning> warnings = new ArrayList<>(read.warnings());
+        warnings.addAll(failure);
+        return new BuildModel(read.buildSystem(), read.provenance(), read.modules(), read.classpath(),
+            read.processorJars(), read.analysisLevel(), read.inputs(), warnings);
     }
 
-    /**
-     * Cached during {@link #getDependencies}; empty when no Gradle build ran. The
-     * {@code projectPath} parameter is ignored (see {@link #detectCompilerLevel}).
-     */
-    @Override
-    public List<Path> detectAnnotationProcessors(Path projectPath) {
-        return new ArrayList<>(cachedProcessorJars);
+    /** Delete {@code scratch} and everything in it; a failure is logged at warn. */
+    private static void deleteScratch(Path scratch) {
+        try (Stream<Path> walk = Files.walk(scratch)) {
+            for (Path path : walk.sorted(Comparator.reverseOrder()).toList()) {
+                Files.delete(path);
+            }
+        } catch (IOException e) {
+            log.warn("Could not delete the Gradle scratch directory {}: {}", scratch, e.getMessage());
+        }
     }
 
     /**
      * Locate a Gradle binary to invoke. Prefers the project's Gradle Wrapper
-     * ({@code ./gradlew}), then {@code gradle} on PATH; returns {@code null} if neither
-     * is available. Test runs can override via the {@code javalens.gradle.binary} system
-     * property.
+     * ({@code ./gradlew}), then {@code gradle} on PATH. Test runs can override via the
+     * {@code javalens.gradle.binary} system property.
      */
     private String resolveGradleBinary(Path projectPath) {
         String override = System.getProperty("javalens.gradle.binary");
@@ -303,107 +379,6 @@ public class GradleImporter implements BuildSystemImporter {
         if (Files.isRegularFile(wrapper)) return wrapper.toAbsolutePath().toString();
 
         return isWindows() ? "gradle.bat" : "gradle";
-    }
-
-    private void aggregateGradleClasspathFiles(Path projectPath, Set<String> jars) {
-        try (Stream<Path> stream = Files.walk(projectPath)) {
-            stream.filter(p -> p.getFileName() != null
-                        && GRADLE_CP_FILENAME.equals(p.getFileName().toString()))
-                  .filter(p -> p.getParent() != null
-                        && p.getParent().getFileName() != null
-                        && "build".equals(p.getParent().getFileName().toString()))
-                  .forEach(cpFile -> {
-                      try {
-                          String content = Files.readString(cpFile).trim();
-                          if (!content.isEmpty()) {
-                              for (String entry : content.split(File.pathSeparator)) {
-                                  if (!entry.isBlank()) jars.add(entry);
-                              }
-                          }
-                      } catch (IOException e) {
-                          log.warn("Could not read Gradle classpath file {}: {}", cpFile, e.getMessage());
-                      }
-                  });
-        } catch (IOException e) {
-            log.warn("Failed to walk {} for Gradle classpath files: {}", projectPath, e.getMessage());
-        }
-    }
-
-    private void cleanupGradleClasspathFiles(Path projectPath) {
-        // Cleanup all three aux files written by the init script. Compliance + processor
-        // files were already harvested into the caches, so nothing reads them afterwards.
-        Set<String> auxFiles = Set.of(
-            GRADLE_CP_FILENAME, GRADLE_COMPLIANCE_FILENAME, GRADLE_PROCESSORS_FILENAME);
-        try (Stream<Path> stream = Files.walk(projectPath)) {
-            stream.filter(p -> p.getFileName() != null
-                        && auxFiles.contains(p.getFileName().toString()))
-                  .filter(p -> p.getParent() != null
-                        && p.getParent().getFileName() != null
-                        && "build".equals(p.getParent().getFileName().toString()))
-                  .forEach(p -> {
-                      try { Files.deleteIfExists(p); }
-                      catch (IOException e) { log.trace("Could not delete {}: {}", p, e.getMessage()); }
-                  });
-        } catch (IOException e) {
-            log.trace("Cleanup walk failed for {}: {}", projectPath, e.getMessage());
-        }
-    }
-
-    /**
-     * Read the first {@code build/<filename>} aux file the init script wrote. In a
-     * multi-project build every Java subproject writes its own; we use the first one as
-     * a representative value (compliance levels are typically uniform).
-     */
-    private String readFirstGradleAuxFile(Path projectPath, String filename) {
-        try (Stream<Path> stream = Files.walk(projectPath)) {
-            return stream.filter(p -> p.getFileName() != null
-                        && filename.equals(p.getFileName().toString()))
-                    .filter(p -> p.getParent() != null
-                        && p.getParent().getFileName() != null
-                        && "build".equals(p.getParent().getFileName().toString()))
-                    .map(p -> {
-                        try { return Files.readString(p).trim(); }
-                        catch (IOException e) { return ""; }
-                    })
-                    .filter(s -> !s.isEmpty())
-                    .findFirst()
-                    .orElse(null);
-        } catch (IOException e) {
-            log.debug("Failed to walk for Gradle {} files: {}", filename, e.getMessage());
-            return null;
-        }
-    }
-
-    /**
-     * Walk for {@code build/javalens-processors.txt} files and union their entries into
-     * a list of processor jar paths.
-     */
-    private List<Path> readGradleProcessorJars(Path projectPath) {
-        LinkedHashSet<Path> jars = new LinkedHashSet<>();
-        try (Stream<Path> stream = Files.walk(projectPath)) {
-            stream.filter(p -> p.getFileName() != null
-                        && GRADLE_PROCESSORS_FILENAME.equals(p.getFileName().toString()))
-                  .filter(p -> p.getParent() != null
-                        && p.getParent().getFileName() != null
-                        && "build".equals(p.getParent().getFileName().toString()))
-                  .forEach(file -> {
-                      try {
-                          String content = Files.readString(file).trim();
-                          if (content.isEmpty()) return;
-                          for (String entry : content.split(File.pathSeparator)) {
-                              String trimmed = entry.trim();
-                              if (trimmed.isEmpty()) continue;
-                              Path jar = Path.of(trimmed);
-                              if (Files.isRegularFile(jar)) jars.add(jar);
-                          }
-                      } catch (IOException e) {
-                          log.warn("Could not read Gradle processors file {}: {}", file, e.getMessage());
-                      }
-                  });
-        } catch (IOException e) {
-            log.warn("Failed to walk for Gradle processor files: {}", e.getMessage());
-        }
-        return new ArrayList<>(jars);
     }
 
     private boolean isWindows() {

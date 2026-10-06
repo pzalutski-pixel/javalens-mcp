@@ -1,0 +1,10 @@
+plugins {
+    id 'java'
+}
+
+group = 'org.fidelity'
+version = '1.0'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+}

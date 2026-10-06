@@ -3,29 +3,36 @@ package org.javalens.core.buildsystem;
 import org.eclipse.jdt.core.IType;
 import org.javalens.core.JdtServiceImpl;
 import org.javalens.core.fixtures.ClasspathSnapshot;
+import org.javalens.core.fixtures.GradleBinary;
 import org.javalens.core.fixtures.TestProjectHelper;
+import org.javalens.core.project.model.LoadWarning;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Bug B — annotation-processor / build-system generated source directories were never
- * added as source folders, so references to generated symbols (Lombok getters, MapStruct
- * mappers, JPA metamodels, ...) showed as unresolved during analysis.
+ * Pins that generated-source directories are linked as source folders, so references to
+ * generated symbols (Lombok getters, MapStruct mappers, JPA metamodels, ...) resolve.
  *
- * <p>The fix probes Maven {@code target/generated-sources/*} and Gradle
- * {@code build/generated/sources/*} as source folders during project import.
+ * <p>Maven: each directory under {@code target/generated-sources/} and
+ * {@code target/generated-test-sources/} is probed. The tests pre-create a generated file
+ * there ({@code target/} is gitignored, so the fixture doesn't ship it) and assert both the
+ * source folder and the resulting type resolution.
  *
- * <p>This test pre-creates a {@code Generated.java} under
- * {@code target/generated-sources/annotations/} (target/ is gitignored, so the fixture
- * doesn't ship it) and asserts both the source-folder discovery and the resulting type
- * resolution.
+ * <p>Gradle: the directories Gradle reports as each source set's generated sources
+ * ({@code build/generated/sources/annotationProcessor/java/<sourceSet>}) are linked with no
+ * warning; a conventional generated-source directory Gradle does not report stays linked
+ * with {@code INCLUDED_OUTSIDE_BUILD}. These tests run Gradle on a copy of the fixture.
  */
 class GeneratedSourcesTest {
 
@@ -140,106 +147,98 @@ class GeneratedSourcesTest {
     }
 
     @Test
-    @DisplayName("Gradle: build/generated/sources/<task>/main/java is added as source folder")
+    @DisplayName("Gradle: the main source set's annotation-processor output, build/generated/sources/annotationProcessor/java/main, is linked with no warning")
     void gradleGeneratedSourcesAddedAsSourceFolder() throws Exception {
-        Path projectRoot = helper.copyFixture("with-generated-sources-gradle");
+        try (GradleBinary gradle = GradleBinary.require("Gradle generated sources")) {
+            Path projectRoot = helper.copyFixture("with-generated-sources-gradle");
 
-        // Stand in for what `annotationProcessor` would write at build time.
-        Path generatedDir = projectRoot.resolve("build/generated/sources/annotationProcessor/main/java/com/example");
-        Files.createDirectories(generatedDir);
-        Files.writeString(generatedDir.resolve("Generated.java"), """
-            package com.example;
-            public final class Generated {
-                public static final String HELLO = "hello";
-                private Generated() {}
-            }
-            """);
+            // Stand in for what the annotationProcessor configuration writes at build time,
+            // in the directory Gradle reports as the main source set's generated sources.
+            Path generatedRoot = projectRoot.resolve("build/generated/sources/annotationProcessor/java/main");
+            Path generated = writeGradleSource(generatedRoot, "Generated");
 
-        JdtServiceImpl service = new JdtServiceImpl();
-        service.loadProject(projectRoot);
-        ClasspathSnapshot snapshot = ClasspathSnapshot.capture(service.getJavaProject());
+            JdtServiceImpl service = new JdtServiceImpl();
+            service.loadProject(projectRoot);
+            ClasspathSnapshot snapshot = ClasspathSnapshot.capture(service.getJavaProject());
 
-        assertTrue(
-            snapshot.sourceFolders().stream().anyMatch(p -> p.toString().replace('\\', '/')
-                .endsWith("build/generated/sources/annotationProcessor/main/java")),
-            "Expected build/generated/sources/annotationProcessor/main/java among source folders. " +
-            "Got: " + snapshot.sourceFolders());
-
-        IType generated = service.findType("com.example.Generated");
-        assertNotNull(generated, "Expected to resolve com.example.Generated through JDT");
+            assertAll(
+                () -> assertEquals(List.of(projectRoot.resolve("src/main/java"), generatedRoot),
+                    snapshot.sourceFolders(), "linked source folders"),
+                () -> assertEquals(List.of(), service.getWarnings(), "warnings"),
+                () -> assertEquals(generated, location(service.findType("com.example.Generated")),
+                    "Generated resolves from its file"));
+        }
     }
 
     @Test
-    @DisplayName("Gradle: build/generated/sources/<task>/test/java is added as source folder")
+    @DisplayName("Gradle: the test source set's annotation-processor output, build/generated/sources/annotationProcessor/java/test, is linked with no warning")
     void gradleGeneratedTestSourcesAddedAsSourceFolder() throws Exception {
-        // addGeneratedSourcePaths iterates the <task> directories and probes BOTH
-        // main/java and test/java. The test branch is its own code path; covering only
-        // main/java leaves a regression that drops the test branch undetected.
-        Path projectRoot = helper.copyFixture("with-generated-sources-gradle");
+        try (GradleBinary gradle = GradleBinary.require("Gradle generated test sources")) {
+            Path projectRoot = helper.copyFixture("with-generated-sources-gradle");
 
-        Path testDir = projectRoot.resolve(
-            "build/generated/sources/annotationProcessor/test/java/com/example");
-        Files.createDirectories(testDir);
-        Files.writeString(testDir.resolve("GeneratedTest.java"), """
-            package com.example;
-            public final class GeneratedTest { private GeneratedTest() {} }
-            """);
+            Path generatedRoot = projectRoot.resolve("build/generated/sources/annotationProcessor/java/test");
+            Path generated = writeGradleSource(generatedRoot, "GeneratedTest");
 
-        JdtServiceImpl service = new JdtServiceImpl();
-        service.loadProject(projectRoot);
-        ClasspathSnapshot snapshot = ClasspathSnapshot.capture(service.getJavaProject());
+            JdtServiceImpl service = new JdtServiceImpl();
+            service.loadProject(projectRoot);
+            ClasspathSnapshot snapshot = ClasspathSnapshot.capture(service.getJavaProject());
 
-        assertTrue(
-            snapshot.sourceFolders().stream().anyMatch(p -> p.toString().replace('\\', '/')
-                .endsWith("build/generated/sources/annotationProcessor/test/java")),
-            "Expected build/generated/sources/annotationProcessor/test/java among source folders; "
-                + "got: " + snapshot.sourceFolders());
-
-        assertNotNull(service.findType("com.example.GeneratedTest"),
-            "Expected GeneratedTest to resolve from the annotationProcessor/test/java dir");
+            assertAll(
+                () -> assertEquals(List.of(projectRoot.resolve("src/main/java"), generatedRoot),
+                    snapshot.sourceFolders(), "linked source folders"),
+                () -> assertEquals(List.of(), service.getWarnings(), "warnings"),
+                () -> assertEquals(generated, location(service.findType("com.example.GeneratedTest")),
+                    "GeneratedTest resolves from its file"));
+        }
     }
 
     @Test
-    @DisplayName("Gradle: multiple <task> subdirectories all become source folders")
+    @DisplayName("Gradle: a generated-source directory of a task the build does not report stays linked after the reported one, named by INCLUDED_OUTSIDE_BUILD")
     void gradleMultipleTaskSubdirsAllAddedAsSourceFolders() throws Exception {
-        // Real projects can declare multiple source-generating tasks: annotationProcessor,
-        // kapt, ksp, openapi-generator, etc. The source code's Files.list iteration must
-        // visit every task subdir. Single-task coverage misses a regression that picked
-        // only the first.
-        Path projectRoot = helper.copyFixture("with-generated-sources-gradle");
+        // The project applies no kapt plugin, so Gradle reports only annotationProcessor's
+        // directory. The conventional probe still finds kapt's, which is kept.
+        try (GradleBinary gradle = GradleBinary.require("Gradle generated sources of several tasks")) {
+            Path projectRoot = helper.copyFixture("with-generated-sources-gradle");
 
-        Path aptMain = projectRoot.resolve(
-            "build/generated/sources/annotationProcessor/main/java/com/example");
-        Path kaptMain = projectRoot.resolve(
-            "build/generated/sources/kapt/main/java/com/example");
-        Files.createDirectories(aptMain);
-        Files.createDirectories(kaptMain);
-        Files.writeString(aptMain.resolve("FromApt.java"), """
-            package com.example;
-            public final class FromApt { private FromApt() {} }
-            """);
-        Files.writeString(kaptMain.resolve("FromKapt.java"), """
-            package com.example;
-            public final class FromKapt { private FromKapt() {} }
-            """);
+            Path aptRoot = projectRoot.resolve("build/generated/sources/annotationProcessor/java/main");
+            Path kaptRoot = projectRoot.resolve("build/generated/sources/kapt/java/main");
+            Path fromApt = writeGradleSource(aptRoot, "FromApt");
+            Path fromKapt = writeGradleSource(kaptRoot, "FromKapt");
 
-        JdtServiceImpl service = new JdtServiceImpl();
-        service.loadProject(projectRoot);
-        ClasspathSnapshot snapshot = ClasspathSnapshot.capture(service.getJavaProject());
+            JdtServiceImpl service = new JdtServiceImpl();
+            service.loadProject(projectRoot);
+            ClasspathSnapshot snapshot = ClasspathSnapshot.capture(service.getJavaProject());
 
-        assertTrue(
-            snapshot.sourceFolders().stream().anyMatch(p -> p.toString().replace('\\', '/')
-                .endsWith("build/generated/sources/annotationProcessor/main/java")),
-            "Expected annotationProcessor/main/java among source folders; got: "
-                + snapshot.sourceFolders());
-        assertTrue(
-            snapshot.sourceFolders().stream().anyMatch(p -> p.toString().replace('\\', '/')
-                .endsWith("build/generated/sources/kapt/main/java")),
-            "Expected kapt/main/java among source folders; got: " + snapshot.sourceFolders());
+            assertAll(
+                () -> assertEquals(List.of(projectRoot.resolve("src/main/java"), aptRoot, kaptRoot),
+                    snapshot.sourceFolders(), "linked source folders"),
+                () -> assertEquals(List.of(new LoadWarning(LoadWarning.INCLUDED_OUTSIDE_BUILD,
+                        "build/generated/sources/kapt/java/main is linked because it holds a conventional source "
+                            + "layout, but the build does not compile it as part of module ':'",
+                        "Declare it as a source directory in the build, or remove it.",
+                        ":")),
+                    service.getWarnings(), "warnings"),
+                () -> assertEquals(fromApt, location(service.findType("com.example.FromApt")),
+                    "FromApt resolves from its file"),
+                () -> assertEquals(fromKapt, location(service.findType("com.example.FromKapt")),
+                    "FromKapt resolves from its file"));
+        }
+    }
 
-        assertNotNull(service.findType("com.example.FromApt"),
-            "Expected FromApt to resolve from annotationProcessor/main/java");
-        assertNotNull(service.findType("com.example.FromKapt"),
-            "Expected FromKapt to resolve from kapt/main/java");
+    /** Write class {@code com.example.<name>} under {@code sourceRoot}; returns the file. */
+    private static Path writeGradleSource(Path sourceRoot, String name) throws IOException {
+        Path packageDir = Files.createDirectories(sourceRoot.resolve("com/example"));
+        Path file = packageDir.resolve(name + ".java");
+        Files.writeString(file, "package com.example;\n\npublic final class " + name + " {\n    private "
+            + name + "() {}\n}\n");
+        return file;
+    }
+
+    /** The file {@code type} was read from, or null when the type did not resolve. */
+    private static Path location(IType type) {
+        if (type == null) {
+            return null;
+        }
+        return Path.of(type.getResource().getLocation().toOSString());
     }
 }

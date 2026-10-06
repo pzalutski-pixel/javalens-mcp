@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Stream;
 
 /**
@@ -27,6 +28,7 @@ import java.util.stream.Stream;
  *       {@code src/main/kotlin}, {@code src/test/kotlin}, fallback {@code src/})
  *       and the generated-source directories written by annotation processors
  *       (Maven {@code target/generated-sources/*}, Gradle
+ *       {@code build/generated/sources/<task>/java/{main,test}} and
  *       {@code build/generated/sources/<task>/{main,test}/java}). The conventional
  *       compiled-output directories are probed by {@link #addConventionalOutputDirs}.</li>
  *   <li><b>Linked-folder creation</b> via {@link #addLinkedSourceFolders}, used by
@@ -51,6 +53,12 @@ public class LinkedFolderConfigurator {
         {"src/test/kotlin", "src-test-kotlin"},
         {"src", "src"}
     };
+
+    // Generated-source directories probed in each task directory under
+    // build/generated/sources/, in the order they are added: the <task>/{main,test}/java
+    // layout, then Gradle's own <task>/java/{main,test}.
+    private static final List<String> GENERATED_TASK_LEAVES = List.of(
+        "main/java", "test/java", "java/main", "java/test");
 
     // Compiled-output directories of the conventional Maven and Gradle Java layouts, in
     // the order they are reported.
@@ -101,8 +109,9 @@ public class LinkedFolderConfigurator {
     /**
      * Create a linked folder per source path in the Eclipse project, with a
      * unique name derived from the source path's location relative to
-     * {@code projectRoot}; append a source classpath entry for each. Failures
-     * to link a single folder are logged but do not abort the rest of the loop.
+     * {@code projectRoot}; append a source classpath entry for each, excluding the
+     * source path's {@code exclusionPatterns}. Failures to link a single folder are
+     * logged but do not abort the rest of the loop.
      *
      * @param entries classpath entries list to append to (mutated)
      * @param project Eclipse workspace project to host the linked folders
@@ -110,6 +119,9 @@ public class LinkedFolderConfigurator {
      *                    paths for linked-folder names (e.g. a multi-module
      *                    submodule's path becomes "submodule-src-main-java")
      * @param sourcePaths absolute source-path roots to link
+     * @param exclusionPatterns for a source path, the paths its source entry excludes,
+     *                    relative to it with '/' separators, each ending in '/'; a source
+     *                    path missing from the map excludes nothing
      * @param workspaceManager creates the linked folders via Eclipse resources API
      * @param multiModule logged for diagnostics only
      */
@@ -118,6 +130,7 @@ public class LinkedFolderConfigurator {
             IProject project,
             Path projectRoot,
             List<Path> sourcePaths,
+            Map<Path, List<String>> exclusionPatterns,
             WorkspaceManager workspaceManager,
             boolean multiModule) throws CoreException {
 
@@ -134,7 +147,10 @@ public class LinkedFolderConfigurator {
             try {
                 workspaceManager.createLinkedFolder(project, linkedName, srcPath);
                 IPath sourceEntryPath = project.getFolder(linkedName).getFullPath();
-                entries.add(JavaCore.newSourceEntry(sourceEntryPath));
+                IPath[] exclusions = exclusionPatterns.getOrDefault(srcPath, List.of()).stream()
+                    .map(org.eclipse.core.runtime.Path::new)
+                    .toArray(IPath[]::new);
+                entries.add(JavaCore.newSourceEntry(sourceEntryPath, exclusions));
                 log.debug("Added linked source folder: {} -> {}", linkedName, srcPath);
             } catch (Exception e) {
                 log.warn("Failed to create linked folder for {}: {}", srcPath, e.getMessage());
@@ -144,10 +160,16 @@ public class LinkedFolderConfigurator {
         log.info("Added {} source folders (multi-module: {})", sourcePaths.size(), multiModule);
     }
 
-    // Maven puts each annotation processor's output under its own subdirectory of
-    // target/generated-sources/ (e.g. annotations, jaxws, jpamodelgen, ...). Gradle's
-    // layout is build/generated/sources/<task>/{main,test}/java/. We probe one level
-    // deep so each processor's directory becomes its own source folder.
+    /**
+     * Add the generated-source directories found in {@code projectPath}. Maven puts each
+     * annotation processor's output under its own subdirectory of
+     * {@code target/generated-sources/} (e.g. annotations, jaxws, jpamodelgen, ...), and of
+     * {@code target/generated-test-sources/} for tests; each such subdirectory is added.
+     * Under {@code build/generated/sources/}, each task's directory is probed for
+     * {@code <task>/main/java} and {@code <task>/test/java}, then for
+     * {@code <task>/java/main} and {@code <task>/java/test}, the layout Gradle's
+     * annotation-processor output uses; each that exists is added.
+     */
     void addGeneratedSourcePaths(Path projectPath, List<Path> sourcePaths) {
         addImmediateSubdirectories(projectPath.resolve("target").resolve("generated-sources"), sourcePaths);
         addImmediateSubdirectories(projectPath.resolve("target").resolve("generated-test-sources"), sourcePaths);
@@ -156,10 +178,10 @@ public class LinkedFolderConfigurator {
         if (Files.isDirectory(gradleGenerated)) {
             try (Stream<Path> tasks = Files.list(gradleGenerated)) {
                 tasks.filter(Files::isDirectory).forEach(taskDir -> {
-                    Path mainJava = taskDir.resolve("main").resolve("java");
-                    Path testJava = taskDir.resolve("test").resolve("java");
-                    if (Files.isDirectory(mainJava)) sourcePaths.add(mainJava);
-                    if (Files.isDirectory(testJava)) sourcePaths.add(testJava);
+                    for (String leaf : GENERATED_TASK_LEAVES) {
+                        Path generated = taskDir.resolve(leaf);
+                        if (Files.isDirectory(generated)) sourcePaths.add(generated);
+                    }
                 });
             } catch (IOException e) {
                 log.debug("Failed to scan Gradle generated sources: {}", e.getMessage());

@@ -3,6 +3,7 @@ package org.javalens.core.project;
 import org.eclipse.jdt.apt.core.util.AptConfig;
 import org.eclipse.jdt.core.IClasspathEntry;
 import org.eclipse.jdt.core.IJavaProject;
+import org.eclipse.jdt.core.IType;
 import org.javalens.core.JdtServiceImpl;
 import org.javalens.core.fixtures.ClasspathSnapshot;
 import org.javalens.core.fixtures.TestProjectHelper;
@@ -29,6 +30,7 @@ import java.util.jar.JarOutputStream;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
 /**
@@ -176,6 +178,50 @@ class BuildModelSeamTest {
             () -> assertEquals(4, service.getSourceFileCount(), "source file count"),
             () -> assertEquals(List.of("a", "s", "b"), service.getPackages(), "packages"),
             () -> assertEquals(List.of(), service.getWarnings(), "warnings"));
+    }
+
+    @Test
+    @DisplayName("A source root inside another is linked once with its own package; the outer root excludes it, so each file is counted, listed and resolved once and edits to it are seen")
+    void nestedSourceRootIsExcludedFromTheOuterRoot() throws Exception {
+        Path root = Files.createDirectories(helper.getTempDirectory().resolve("seam-nested-root"));
+        Path outer = root.resolve("src");
+        Path inner = root.resolve("src/gen");
+        writeSource(outer, "p", "Outer");
+        writeSource(inner, "q", "Gen");
+        Path genFile = inner.resolve("q/Gen.java");
+
+        ModelStub stub = new ModelStub(model(BuildSystem.UNKNOWN, "17",
+            List.of(module(".", root, List.of(outer, inner), List.of())),
+            List.of(), List.of(), List.of()));
+        JdtServiceImpl service = load(root, stub);
+        ClasspathSnapshot snapshot = ClasspathSnapshot.capture(service.getJavaProject());
+
+        List<List<String>> exclusionPatterns = Arrays.stream(service.getJavaProject().getRawClasspath())
+            .filter(entry -> entry.getEntryKind() == IClasspathEntry.CPE_SOURCE)
+            .map(entry -> Arrays.stream(entry.getExclusionPatterns()).map(Object::toString).toList())
+            .toList();
+        IType gen = service.findType("q.Gen");
+        assertAll(
+            () -> assertEquals(List.of(outer, inner), snapshot.sourceFolders(), "linked source folders"),
+            () -> assertEquals(List.of(List.of("gen/"), List.of()), exclusionPatterns,
+                "exclusion patterns of each source entry"),
+            () -> assertEquals(2, service.getSourceFileCount(), "source file count"),
+            () -> assertEquals(List.of("p", "q"), service.getPackages(), "packages"),
+            () -> assertEquals(outer.resolve("p/Outer.java"), location(service.findType("p.Outer")), "p.Outer"),
+            () -> assertEquals(genFile, location(gen), "q.Gen"),
+            () -> assertEquals("q", gen.getPackageFragment().getElementName(), "q.Gen's package"),
+            () -> assertNull(service.findType("gen.q.Gen"), "gen.q.Gen"),
+            () -> assertEquals(List.of(), service.getWarnings(), "warnings"));
+
+        Files.writeString(genFile,
+            "package q;\n\npublic class Gen {\n    public int added() {\n        return 1;\n    }\n}\n");
+        List<Path> repaired = service.ensureFresh();
+        List<String> methods = Arrays.stream(service.findType("q.Gen").getMethods())
+            .map(method -> method.getElementName())
+            .toList();
+        assertAll(
+            () -> assertEquals(List.of(genFile), repaired, "files disk sync repaired"),
+            () -> assertEquals(List.of("added"), methods, "q.Gen's methods after the edit"));
     }
 
     @Test
@@ -458,6 +504,14 @@ class BuildModelSeamTest {
         Path packageDir = Files.createDirectories(sourceRoot.resolve(packageName));
         Files.writeString(packageDir.resolve(className + ".java"),
             "package " + packageName + ";\n\npublic class " + className + " {\n}\n");
+    }
+
+    /** The file {@code type} was read from, or null when the type did not resolve. */
+    private static Path location(IType type) {
+        if (type == null) {
+            return null;
+        }
+        return Path.of(type.getResource().getLocation().toOSString());
     }
 
     private static void writeFile(Path file, String content) throws IOException {
