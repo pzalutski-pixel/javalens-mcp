@@ -10,4 +10,7 @@ Require-Bundle: junit-jupiter-api;bundle-version="[5.0.0,6.0.0)",
  junit-jupiter-params;bundle-version="[5.0.0,6.0.0)"
 Import-Package: org.opentest4j,
  com.fasterxml.jackson.databind,
- com.fasterxml.jackson.databind.node
+ com.fasterxml.jackson.databind.node,
+ org.eclipse.jdt.internal.core,
+ org.eclipse.jdt.internal.core.index,
+ org.eclipse.jdt.internal.core.search.indexing

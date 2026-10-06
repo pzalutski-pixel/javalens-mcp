@@ -35,6 +35,8 @@ package org.javalens.core.project.model;
  *       build does not report it as a source root.</li>
  *   <li>{@code COMPLIANCE_LEVEL_MIXED}: modules declare different Java levels; the project
  *       is analyzed at the highest.</li>
+ *   <li>{@code INDEX_INCOMPLETE}: the search index is missing declarations of source files
+ *       even after re-indexing them; search-based results do not include those files.</li>
  *   <li>{@code EARLIER_PROJECT_KEPT}: the load completed and is in use, but an earlier
  *       JavaLens project could not be removed from the workspace; it stays until the next
  *       load removes it.</li>
@@ -146,6 +148,18 @@ public record LoadWarning(String code, String message, String remediation, Strin
      * {@code module} is null.
      */
     public static final String COMPLIANCE_LEVEL_MIXED = "COMPLIANCE_LEVEL_MIXED";
+
+    /**
+     * The search index is missing declarations of loaded source files: a file's document in
+     * the index lacks a top-level type the file declares, and re-indexing the file did not
+     * restore it. Index-backed results (symbol search, references, call hierarchy) do not
+     * include those files' types and references. The message names the files relative to the
+     * project root, sorted. The warning reflects the index as last verified, which is at load
+     * and after each disk-sync repair for the files it re-read, and goes once the files are
+     * found complete. It comes after the model's warnings and before
+     * {@link #EARLIER_PROJECT_KEPT}. {@code module} is null.
+     */
+    public static final String INDEX_INCOMPLETE = "INDEX_INCOMPLETE";
 
     /**
      * The load completed and its project is the one in use, but a project an earlier load

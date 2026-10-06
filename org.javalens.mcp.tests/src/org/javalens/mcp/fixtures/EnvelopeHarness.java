@@ -12,6 +12,7 @@ import org.javalens.mcp.tools.ToolRegistry;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -37,11 +38,26 @@ public final class EnvelopeHarness {
     private final ToolRegistry registry;
 
     public EnvelopeHarness(JdtServiceImpl service) {
+        this(service, null);
+    }
+
+    /**
+     * Wire the harness as {@link #EnvelopeHarness(JdtServiceImpl)} does, with load_project
+     * loading each project through a service from {@code loadProjectServices}, the
+     * application's package-private seam, instead of a new default service.
+     */
+    public EnvelopeHarness(JdtServiceImpl service, Supplier<JdtServiceImpl> loadProjectServices) {
         try {
             JavaLensApplication app = new JavaLensApplication();
             Field svcField = JavaLensApplication.class.getDeclaredField("jdtService");
             svcField.setAccessible(true);
             svcField.set(app, service);
+
+            if (loadProjectServices != null) {
+                Field servicesField = JavaLensApplication.class.getDeclaredField("loadProjectServices");
+                servicesField.setAccessible(true);
+                servicesField.set(app, loadProjectServices);
+            }
 
             Field registryField = JavaLensApplication.class.getDeclaredField("toolRegistry");
             registryField.setAccessible(true);

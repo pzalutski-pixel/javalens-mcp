@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.IJdtService;
 import org.javalens.core.exceptions.ProjectNotLoadedException;
+import org.javalens.core.exceptions.ReloadRequiredException;
 import org.javalens.mcp.JavaLensApplication;
 import org.javalens.mcp.ProjectLoadingState;
 import org.javalens.mcp.models.ErrorInfo;
@@ -15,10 +16,12 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
 
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -158,6 +161,50 @@ class AbstractToolTest {
             "execute() must pass the supplier's service to executeWithService");
         assertEquals(args, tool.capturedArgs,
             "execute() must pass the raw arguments through unchanged");
+    }
+
+    // ========== Index notice ==========
+
+    @Test
+    @DisplayName("execute() names the files the service reports missing from the index in meta.indexIncomplete of the tool's response")
+    void execute_indexIncomplete_noticeOnToolResponse() {
+        TestTool tool = new TestTool(() -> new IndexGapService(List.of("src/A.java", "src/B.java"), null));
+
+        ToolResponse response = tool.execute(objectMapper.createObjectNode());
+
+        assertAll(
+            () -> assertTrue(response.isSuccess()),
+            () -> assertEquals(Map.of("ok", true), response.getData()),
+            () -> assertEquals(List.of("src/A.java", "src/B.java"), response.getMeta().getIndexIncomplete()));
+    }
+
+    @Test
+    @DisplayName("execute() names the files missing from the index on a RELOAD_REQUIRED refusal too")
+    void execute_indexIncomplete_noticeOnReloadRequired() {
+        ReloadRequiredException reload = new ReloadRequiredException(List.of(Path.of("pom.xml")));
+        TestTool tool = new TestTool(() -> new IndexGapService(List.of("src/A.java"), reload));
+
+        ToolResponse response = tool.execute(objectMapper.createObjectNode());
+
+        assertAll(
+            () -> assertFalse(response.isSuccess()),
+            () -> assertEquals(ErrorInfo.RELOAD_REQUIRED, response.getError().getCode()),
+            () -> assertEquals(reload.getMessage(), response.getError().getMessage()),
+            () -> assertNull(tool.capturedService, "a refused call must not reach executeWithService"),
+            () -> assertEquals(List.of("src/A.java"), response.getMeta().getIndexIncomplete()));
+    }
+
+    @Test
+    @DisplayName("execute() adds no meta while the service reports no file missing from the index")
+    void execute_indexComplete_noMeta() {
+        TestTool tool = new TestTool(() -> new IndexGapService(List.of(), null));
+
+        ToolResponse response = tool.execute(objectMapper.createObjectNode());
+
+        assertAll(
+            () -> assertTrue(response.isSuccess()),
+            () -> assertEquals(Map.of("ok", true), response.getData()),
+            () -> assertNull(response.getMeta()));
     }
 
     // ========== requireService / getService ==========
@@ -338,7 +385,10 @@ class AbstractToolTest {
         @Override public org.eclipse.jdt.core.IJavaProject getJavaProject() { return null; }
         @Override public org.javalens.core.search.SearchService getSearchService() { return null; }
         @Override public org.javalens.core.graph.ProjectGraphService getProjectGraphService() { return null; }
-        @Override public java.util.List<java.nio.file.Path> ensureFresh() { return java.util.List.of(); }
+        @Override public java.util.List<java.nio.file.Path> ensureFresh()
+                throws java.io.IOException, org.eclipse.core.runtime.CoreException, ReloadRequiredException {
+            return java.util.List.of();
+        }
         @Override public org.javalens.core.sync.DiskSyncMode getDiskSyncMode() { return org.javalens.core.sync.DiskSyncMode.STRICT; }
         @Override public org.eclipse.jdt.core.ICompilationUnit getCompilationUnit(java.nio.file.Path p) { return null; }
         @Override public org.eclipse.jdt.core.IJavaElement getElementAtPosition(java.nio.file.Path p, int l, int c) { return null; }
@@ -351,5 +401,32 @@ class AbstractToolTest {
         @Override public List<java.nio.file.Path> getAllJavaFiles() { return List.of(); }
         @Override public org.javalens.core.project.model.BuildModel getBuildModel() { return null; }
         @Override public String getAnalysisLevel() { return null; }
+    }
+
+    /**
+     * A service whose index is verified to miss {@code indexIncompleteFiles} and whose
+     * ensureFresh throws {@code freshness} when it is not null.
+     */
+    private static final class IndexGapService extends MinimalFakeService {
+        private final List<String> indexIncompleteFiles;
+        private final ReloadRequiredException freshness;
+
+        IndexGapService(List<String> indexIncompleteFiles, ReloadRequiredException freshness) {
+            this.indexIncompleteFiles = indexIncompleteFiles;
+            this.freshness = freshness;
+        }
+
+        @Override
+        public List<java.nio.file.Path> ensureFresh() throws ReloadRequiredException {
+            if (freshness != null) {
+                throw freshness;
+            }
+            return List.of();
+        }
+
+        @Override
+        public List<String> getIndexIncompleteFiles() {
+            return indexIncompleteFiles;
+        }
     }
 }

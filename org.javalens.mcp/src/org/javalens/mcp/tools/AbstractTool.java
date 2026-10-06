@@ -81,6 +81,10 @@ public abstract class AbstractTool implements Tool {
      *   <li>Project load failed - returns error with the failure reason</li>
      *   <li>No project loaded - returns standard "project not loaded" error</li>
      * </ul>
+     *
+     * <p>With a project loaded, every response carries {@code meta.indexIncomplete} naming the
+     * files whose declarations the search index is verified to be missing, for as long as it
+     * misses them, so no answer drawn from the index omits them silently.
      */
     @Override
     public ToolResponse execute(JsonNode arguments) {
@@ -95,6 +99,16 @@ public abstract class AbstractTool implements Tool {
             };
         }
 
+        ToolResponse response = executeFresh(service, arguments);
+        List<String> indexIncomplete = service.getIndexIncompleteFiles();
+        return indexIncomplete.isEmpty() ? response : response.withIndexIncomplete(indexIncomplete);
+    }
+
+    /**
+     * Run executeWithService once the service has verified its model against disk and
+     * repaired what changed, so the answer is true of disk at query time.
+     */
+    private ToolResponse executeFresh(IJdtService service, JsonNode arguments) {
         // #26: verify the model against disk and repair the delta before any
         // tool logic runs. Every answer from executeWithService is true of
         // disk at query time; an unverifiable model never answers.

@@ -199,6 +199,20 @@ public interface IJdtService {
     }
 
     /**
+     * Get the source files whose declarations the search index is missing, as last verified.
+     * The index is verified against every compilation unit when a project loads and against
+     * each file a disk-sync repair re-reads; a file found incomplete is re-indexed and verified
+     * again, and is listed only if it is still incomplete. While a file is listed, search-based
+     * answers do not include its types or references.
+     *
+     * @return the files relative to the project root with '/' separators, sorted; empty when
+     *         the index holds every top-level type of the verified files
+     */
+    default List<String> getIndexIncompleteFiles() {
+        return List.of();
+    }
+
+    /**
      * Get the build model resolved by the most recent {@code loadProject} call: the build
      * system, where the project's structure came from, and its modules.
      *

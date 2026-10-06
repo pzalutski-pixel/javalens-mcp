@@ -2,6 +2,8 @@ package org.javalens.mcp.models;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 
+import java.util.List;
+
 /**
  * Standard response wrapper for all tool operations.
  * Provides consistent structure with success/error status, data, and metadata.
@@ -32,6 +34,19 @@ public class ToolResponse {
 
     public ResponseMeta getMeta() {
         return meta;
+    }
+
+    /**
+     * A copy of this response whose {@code meta.indexIncomplete} names {@code files}, the source
+     * files the search index is missing; every other field is kept as it is.
+     */
+    public ToolResponse withIndexIncomplete(List<String> files) {
+        ToolResponse response = new ToolResponse();
+        response.success = success;
+        response.data = data;
+        response.error = error;
+        response.meta = (meta == null ? ResponseMeta.builder().build() : meta).withIndexIncomplete(files);
+        return response;
     }
 
     /**

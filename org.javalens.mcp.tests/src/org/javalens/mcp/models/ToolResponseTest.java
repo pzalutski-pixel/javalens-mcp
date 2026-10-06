@@ -3,6 +3,7 @@ package org.javalens.mcp.models;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -201,5 +202,56 @@ class ToolResponseTest {
         assertTrue(response.getError().getMessage().contains("explicit string error"),
             "internalError(String) must surface the message verbatim; got: "
                 + response.getError().getMessage());
+    }
+
+    // ========== Index notice ==========
+
+    @Test
+    @DisplayName("withIndexIncomplete keeps a success response's data and every meta field, adds meta.indexIncomplete, and leaves the original unchanged")
+    void withIndexIncomplete_successWithMeta_keepsEveryField() {
+        Map<String, String> data = Map.of("key", "value");
+        ToolResponse original = ToolResponse.success(data, ResponseMeta.builder()
+            .totalCount(9)
+            .returnedCount(3)
+            .truncated(true)
+            .suggestedNextTools(List.of("find_references"))
+            .verbosity("compact")
+            .build());
+
+        ToolResponse noticed = original.withIndexIncomplete(List.of("src/A.java", "src/B.java"));
+
+        ResponseMeta meta = noticed.getMeta();
+        assertAll(
+            () -> assertTrue(noticed.isSuccess()),
+            () -> assertEquals(data, noticed.getData()),
+            () -> assertNull(noticed.getError()),
+            () -> assertEquals(9, meta.getTotalCount()),
+            () -> assertEquals(3, meta.getReturnedCount()),
+            () -> assertEquals(Boolean.TRUE, meta.getTruncated()),
+            () -> assertEquals(List.of("find_references"), meta.getSuggestedNextTools()),
+            () -> assertEquals("compact", meta.getVerbosity()),
+            () -> assertEquals(List.of("src/A.java", "src/B.java"), meta.getIndexIncomplete()),
+            () -> assertNull(original.getMeta().getIndexIncomplete(), "the original response is unchanged"));
+    }
+
+    @Test
+    @DisplayName("withIndexIncomplete gives an error response without meta a meta holding only indexIncomplete")
+    void withIndexIncomplete_errorWithoutMeta_metaHoldsOnlyTheNotice() {
+        ToolResponse original = ToolResponse.invalidParameter("query", "Required parameter missing");
+
+        ToolResponse noticed = original.withIndexIncomplete(List.of("src/A.java"));
+
+        ResponseMeta meta = noticed.getMeta();
+        assertAll(
+            () -> assertFalse(noticed.isSuccess()),
+            () -> assertSame(original.getError(), noticed.getError()),
+            () -> assertNull(noticed.getData()),
+            () -> assertNull(meta.getTotalCount()),
+            () -> assertNull(meta.getReturnedCount()),
+            () -> assertNull(meta.getTruncated()),
+            () -> assertNull(meta.getSuggestedNextTools()),
+            () -> assertNull(meta.getVerbosity()),
+            () -> assertEquals(List.of("src/A.java"), meta.getIndexIncomplete()),
+            () -> assertNull(original.getMeta(), "the original response is unchanged"));
     }
 }

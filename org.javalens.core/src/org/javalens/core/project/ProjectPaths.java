@@ -6,10 +6,10 @@ import java.util.Objects;
 
 /**
  * Renders paths relative to the project root for module ids and load warnings, so every
- * path the build model reports reads the same way, and identifies paths however they are
- * spelled.
+ * path the build model and the load report read the same way, and identifies paths however
+ * they are spelled.
  */
-final class ProjectPaths {
+public final class ProjectPaths {
 
     private ProjectPaths() {
     }
@@ -25,7 +25,7 @@ final class ProjectPaths {
      * project on the same file-system root. A path on another file-system root (another
      * Windows drive) cannot be made relative and stays absolute, with '/' separators.
      */
-    static String relativeToRoot(Path projectRoot, Path path) {
+    public static String relativeToRoot(Path projectRoot, Path path) {
         Path normalized = path.normalize();
         Path shown = Objects.equals(projectRoot.getRoot(), normalized.getRoot())
             ? projectRoot.normalize().relativize(normalized)

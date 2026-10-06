@@ -24,6 +24,7 @@ import org.javalens.core.exceptions.ReloadRequiredException;
 import org.javalens.core.graph.ProjectGraphService;
 import org.javalens.core.project.BuildSystem;
 import org.javalens.core.project.ProjectImporter;
+import org.javalens.core.project.ProjectPaths;
 import org.javalens.core.project.model.BuildModel;
 import org.javalens.core.project.model.LoadWarning;
 import org.javalens.core.search.SearchService;
@@ -38,8 +39,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -48,6 +52,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.BooleanSupplier;
+import java.util.function.Function;
 import java.util.stream.Stream;
 
 /**
@@ -81,6 +86,18 @@ public class JdtServiceImpl implements IJdtService {
     /** EARLIER_PROJECT_KEPT for each earlier project the last load could not remove. */
     private List<LoadWarning> earlierProjectWarnings = List.of();
 
+    /** Creates the verifier each load checks the search index with. */
+    private Function<IJavaProject, IndexVerifier> indexVerifiers = IndexVerifier::new;
+    /** Verifies the search index against the loaded compilation units. */
+    private IndexVerifier indexVerifier;
+    /**
+     * The source files whose declarations the search index is missing, as last verified, as
+     * normalized absolute paths: every file at load, and each file a disk-sync repair re-reads.
+     */
+    private volatile Set<Path> indexGaps = Set.of();
+    /** Whether a gap the index verification finds is re-indexed before it is reported. */
+    private boolean indexRepairEnabled = true;
+
     private DiskSyncMode diskSyncMode;
 
     public JdtServiceImpl() {
@@ -111,6 +128,22 @@ public class JdtServiceImpl implements IJdtService {
     /** Test/config seam; production wiring reads JAVALENS_DISK_SYNC at construction. */
     public void setDiskSyncMode(DiskSyncMode mode) {
         this.diskSyncMode = mode;
+    }
+
+    /**
+     * Test seam: with {@code enabled} false, a gap the index verification finds is reported
+     * without re-indexing its files first, so a test can keep a gap past the repair.
+     */
+    void setIndexRepairEnabled(boolean enabled) {
+        this.indexRepairEnabled = enabled;
+    }
+
+    /**
+     * Test seam: each load verifies the search index, at load and after disk-sync repairs, with
+     * a verifier from {@code indexVerifiers}, so a test can act on a file as it is read.
+     */
+    void setIndexVerifiers(Function<IJavaProject, IndexVerifier> indexVerifiers) {
+        this.indexVerifiers = indexVerifiers;
     }
 
     private static int parseTimeout() {
@@ -165,6 +198,7 @@ public class JdtServiceImpl implements IJdtService {
         this.projectRoot = path.toAbsolutePath().normalize();
         this.pathUtils = new PathUtilsImpl(projectRoot);
         this.earlierProjectWarnings = List.of();
+        this.indexGaps = Set.of();
 
         // Initialize workspace
         workspaceManager.initialize();
@@ -224,6 +258,12 @@ public class JdtServiceImpl implements IJdtService {
         // Without this, callers that issue SearchEngine queries immediately after load can
         // race the background indexer and see zero results for symbols that do exist.
         waitForIndexReady();
+
+        // Verify the index against every compilation unit, re-indexing any unit it lacks, so
+        // no search answers around a gap left by the indexer.
+        this.indexVerifier = indexVerifiers.apply(javaProject);
+        this.indexGaps = locations(indexVerifier.verifyAndRepair(sourceCompilationUnits(), indexRepairEnabled));
+        logIndexGaps();
 
         initializeDiskSync();
     }
@@ -295,7 +335,8 @@ public class JdtServiceImpl implements IJdtService {
     /**
      * #26 verify-and-repair: compare disk against the stamps; repair exactly
      * what changed (scoped resource refresh, index barrier, derived-cache
-     * invalidation, restamp); return the repaired paths. Empty list = nothing
+     * invalidation, index verification of the repaired files, restamp); return
+     * the repaired paths. Empty list = nothing
      * had changed. Build-file changes are not repairable per-file and raise
      * {@link ReloadRequiredException}; verification I/O failures propagate as
      * {@link IOException} - callers must never answer around either.
@@ -339,6 +380,7 @@ public class JdtServiceImpl implements IJdtService {
         }
 
         List<Path> repaired = concat(concat(changes.edited(), changes.added()), changes.deleted());
+        verifyRepairedFiles(repaired);
         diskStampService.restamp(repaired);
         log.info("Disk-sync repaired {} file(s): {}", repaired.size(), repaired);
         return repaired;
@@ -348,6 +390,50 @@ public class JdtServiceImpl implements IJdtService {
         List<Path> result = new ArrayList<>(a);
         result.addAll(b);
         return result;
+    }
+
+    /**
+     * Verify the index against the files a disk-sync repair re-read, re-indexing any it lacks,
+     * and update the gaps: a re-read file is a gap only if this verification finds it one, and
+     * the gaps of the other files stay as they were. A deleted file is no longer a gap.
+     */
+    private void verifyRepairedFiles(List<Path> repaired) throws CoreException {
+        Set<Path> gaps = new HashSet<>(indexGaps);
+        List<ICompilationUnit> units = new ArrayList<>();
+        for (Path path : repaired) {
+            gaps.remove(path);
+            ICompilationUnit unit = getCompilationUnit(path);
+            if (unit != null) {
+                units.add(unit);
+            }
+        }
+        gaps.addAll(locations(indexVerifier.verifyAndRepair(units, indexRepairEnabled)));
+        this.indexGaps = Set.copyOf(gaps);
+        logIndexGaps();
+    }
+
+    /** Each unit's file as a normalized absolute path. */
+    private static Set<Path> locations(List<ICompilationUnit> units) {
+        Set<Path> paths = new HashSet<>();
+        for (ICompilationUnit unit : units) {
+            paths.add(Path.of(unit.getResource().getLocation().toOSString()).toAbsolutePath().normalize());
+        }
+        return Set.copyOf(paths);
+    }
+
+    private void logIndexGaps() {
+        if (!indexGaps.isEmpty()) {
+            log.warn("The search index is missing declarations from {} file(s): {}",
+                indexGaps.size(), getIndexIncompleteFiles());
+        }
+    }
+
+    @Override
+    public List<String> getIndexIncompleteFiles() {
+        return indexGaps.stream()
+            .map(path -> ProjectPaths.relativeToRoot(projectRoot, path))
+            .sorted()
+            .toList();
     }
 
     /**
@@ -411,18 +497,37 @@ public class JdtServiceImpl implements IJdtService {
         return pathUtils;
     }
 
+    /**
+     * The model's warnings, then INDEX_INCOMPLETE while the index is verified to miss files'
+     * declarations, then EARLIER_PROJECT_KEPT for each earlier project the load kept.
+     */
     @Override
     public List<LoadWarning> getWarnings() {
         List<LoadWarning> warnings = new ArrayList<>(projectImporter.getWarnings());
+        List<String> indexIncompleteFiles = getIndexIncompleteFiles();
+        if (!indexIncompleteFiles.isEmpty()) {
+            warnings.add(indexIncomplete(indexIncompleteFiles));
+        }
         warnings.addAll(earlierProjectWarnings);
         return List.copyOf(warnings);
+    }
+
+    /** The remediation of a warning that a reload, or failing that a restart, clears. */
+    private static final String RELOAD_OR_RESTART = "Reload the project; if the warning persists, restart JavaLens.";
+
+    private static LoadWarning indexIncomplete(List<String> files) {
+        return new LoadWarning(LoadWarning.INDEX_INCOMPLETE,
+            "The search index is missing declarations from " + files.size()
+                + (files.size() == 1 ? " file: " : " files: ") + String.join(", ", files)
+                + "; search-based results do not include them",
+            RELOAD_OR_RESTART);
     }
 
     private static LoadWarning earlierProjectKept(WorkspaceManager.KeptProject kept) {
         return new LoadWarning(LoadWarning.EARLIER_PROJECT_KEPT,
             "The earlier JavaLens project " + kept.name() + " could not be removed: " + kept.reason()
                 + "; it stays in the workspace until the next load removes it",
-            "Reload the project; if the warning persists, restart JavaLens.");
+            RELOAD_OR_RESTART);
     }
 
     @Override
@@ -814,9 +919,13 @@ public class JdtServiceImpl implements IJdtService {
         }
 
         try {
-            for (IPackageFragmentRoot root : javaProject.getPackageFragmentRoots()) {
-                if (root.getKind() == IPackageFragmentRoot.K_SOURCE) {
-                    collectJavaFiles(root, files);
+            for (ICompilationUnit cu : sourceCompilationUnits()) {
+                IResource resource = cu.getResource();
+                if (resource != null) {
+                    IPath location = resource.getLocation();
+                    if (location != null) {
+                        files.add(Path.of(location.toOSString()));
+                    }
                 }
             }
         } catch (JavaModelException e) {
@@ -826,19 +935,17 @@ public class JdtServiceImpl implements IJdtService {
         return files;
     }
 
-    private void collectJavaFiles(IPackageFragmentRoot root, List<Path> files) throws JavaModelException {
-        for (IJavaElement child : root.getChildren()) {
-            if (child instanceof IPackageFragment pkg) {
-                for (ICompilationUnit cu : pkg.getCompilationUnits()) {
-                    IResource resource = cu.getResource();
-                    if (resource != null) {
-                        IPath location = resource.getLocation();
-                        if (location != null) {
-                            files.add(Path.of(location.toOSString()));
-                        }
-                    }
+    /** The compilation units of the project's source folders, in classpath and package order. */
+    private List<ICompilationUnit> sourceCompilationUnits() throws JavaModelException {
+        List<ICompilationUnit> units = new ArrayList<>();
+        for (IPackageFragmentRoot root : javaProject.getPackageFragmentRoots()) {
+            if (root.getKind() != IPackageFragmentRoot.K_SOURCE) continue;
+            for (IJavaElement child : root.getChildren()) {
+                if (child instanceof IPackageFragment pkg) {
+                    units.addAll(Arrays.asList(pkg.getCompilationUnits()));
                 }
             }
         }
+        return units;
     }
 }
