@@ -34,11 +34,11 @@ class LoadedFixtureTest {
     @Test
     @DisplayName("non-null warnings -> unmodifiable view")
     void nonNullWarnings_unmodifiableView() {
-        List<String> mutable = new ArrayList<>(List.of("MAVEN_SUBPROCESS_FAILED"));
+        List<String> mutable = new ArrayList<>(List.of("BUILD_TOOL_FAILED"));
         LoadedFixture loaded = new LoadedFixture(null, null, mutable);
 
         assertEquals(1, loaded.warnings().size());
-        assertEquals("MAVEN_SUBPROCESS_FAILED", loaded.warnings().get(0));
+        assertEquals("BUILD_TOOL_FAILED", loaded.warnings().get(0));
         assertThrows(UnsupportedOperationException.class,
             () -> loaded.warnings().add("OTHER"),
             "warnings() view must reject mutation");

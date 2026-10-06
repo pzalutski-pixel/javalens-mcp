@@ -84,7 +84,7 @@ class LoadResilienceTest {
             () -> assertEquals(List.of(appJava), snapshot.sourceFolders(), "linked source folders"),
             () -> assertEquals(1, service.getSourceFileCount(), "source file count"),
             () -> assertEquals(List.of("app"), service.getPackages(), "packages"),
-            () -> assertEquals(List.of(LoadWarning.MODULE_NOT_LOADED, LoadWarning.GRADLE_SUBPROCESS_FAILED,
+            () -> assertEquals(List.of(LoadWarning.MODULE_NOT_LOADED, LoadWarning.BUILD_TOOL_UNAVAILABLE,
                     LoadWarning.COMPLIANCE_LEVEL_UNKNOWN),
                 warnings.stream().map(LoadWarning::code).toList(), "warning codes in order"),
             () -> assertEquals(new LoadWarning(LoadWarning.MODULE_NOT_LOADED,

@@ -11,7 +11,9 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 import java.io.IOException;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Bug X — silent subprocess failure.
@@ -28,11 +30,11 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * <p>This fixture deliberately declares a non-existent dependency so {@code mvn
  * dependency:build-classpath} exits non-zero. The test asserts that
- * {@code MAVEN_SUBPROCESS_FAILED} appears in the warnings list.
+ * {@code BUILD_TOOL_FAILED} is the load's one warning.
  *
- * <p>Requires {@code mvn} on PATH (the test failure mode is "exit non-zero", not "binary
- * missing"). On a runner without Maven both failure modes still produce the same warning
- * code, so the assertion remains valid.
+ * <p>Requires {@code mvn} on PATH: the contract is a build tool that runs and fails.
+ * Without Maven the load reports {@code BUILD_TOOL_UNAVAILABLE} instead, which
+ * {@code MavenImporterTest} pins.
  */
 class SilentSubprocessFailureTest {
 
@@ -40,38 +42,30 @@ class SilentSubprocessFailureTest {
     TestProjectHelper helper = new TestProjectHelper();
 
     @Test
-    @DisplayName("mvn dependency resolution failure surfaces exactly one MAVEN_SUBPROCESS_FAILED warning")
+    @DisplayName("mvn dependency resolution failure surfaces exactly one BUILD_TOOL_FAILED warning naming the exit code")
     void mavenSubprocessFailureIsSurfaced() throws Exception {
+        TestEnvironment.requireOrSkip(isMavenAvailable(),
+            "Maven binary on PATH (build tool that runs and fails)");
+
         JdtServiceImpl service = helper.loadProject("broken-maven-deps");
         List<LoadWarning> warnings = service.getWarnings();
 
         // broken-maven-deps declares <maven.compiler.source>21</maven.compiler.source>, so
-        // COMPLIANCE_LEVEL_UNKNOWN must NOT fire. Only the subprocess failure does.
-        // Pinning the exact count catches a regression that emitted spurious extras.
-        List<LoadWarning> mavenWarnings = warnings.stream()
-            .filter(w -> LoadWarning.MAVEN_SUBPROCESS_FAILED.equals(w.code()))
-            .toList();
-        assertEquals(1, mavenWarnings.size(),
-            "Expected exactly one MAVEN_SUBPROCESS_FAILED warning; got warnings: " + warnings);
-        assertEquals(1, warnings.size(),
-            "broken-maven-deps declares compiler.source=21, so the load surfaces ONLY "
-                + "MAVEN_SUBPROCESS_FAILED. Any extra warning indicates a regression that "
-                + "emitted a spurious code; got warnings: " + warnings);
+        // COMPLIANCE_LEVEL_UNKNOWN must NOT fire. Only the build-tool failure does.
+        assertEquals(List.of(LoadWarning.BUILD_TOOL_FAILED),
+            warnings.stream().map(LoadWarning::code).toList(), "warning codes");
 
-        LoadWarning w = mavenWarnings.get(0);
-        assertNotNull(w.message(), "Warning must include a message");
-        assertFalse(w.message().isBlank(), "Warning message must not be blank");
-        assertNotNull(w.remediation(), "Warning must include actionable remediation");
-        assertFalse(w.remediation().isBlank(), "Warning remediation must not be blank");
-        // Pin message content: source.code emits one of several forms — non-zero exit,
-        // could-not-start, or timeout — every form contains "mvn" or "Maven" or the
-        // "exit code" wording. Without this, a regression emitting "" or generic text
-        // (e.g. just "warning") would still pass the non-blank check.
-        String message = w.message().toLowerCase();
-        assertTrue(message.contains("mvn") || message.contains("maven")
-                || message.contains("exit code") || message.contains("could not start"),
-            "MAVEN_SUBPROCESS_FAILED message must describe the subprocess failure; got: "
-                + w.message());
+        LoadWarning w = warnings.get(0);
+        assertAll(
+            () -> assertEquals(null, w.module(), "warning module"),
+            () -> assertEquals("Run 'mvn dependency:build-classpath' manually in " + service.getProjectRoot()
+                    + " to see the full error.",
+                w.remediation(), "warning remediation"),
+            // Maven exits with 1 when the build fails. The message ends with the last lines
+            // of Maven's own error output, whose wording belongs to Maven, so only the part
+            // MavenImporter composes is pinned.
+            () -> assertTrue(w.message().startsWith("mvn dependency:build-classpath exited with code 1. Last output: "),
+                () -> "warning message: " + w.message()));
     }
 
     @Test

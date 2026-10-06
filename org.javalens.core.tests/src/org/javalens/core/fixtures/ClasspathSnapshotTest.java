@@ -38,7 +38,7 @@ class ClasspathSnapshotTest {
         assertNotNull(loaded.classpath(), "classpath snapshot must be present");
         assertNotNull(loaded.warnings(), "warnings list must be present (may be empty)");
         // Whether warnings is empty depends on mvn availability — on a clean simple-maven
-        // load with mvn present it's empty; without mvn, MAVEN_SUBPROCESS_FAILED appears.
+        // load with mvn present it's empty; without mvn, BUILD_TOOL_UNAVAILABLE appears.
         // Both shapes are accepted here; environment-dependent strict assertions belong in
         // tests that explicitly arrange for mvn presence/absence.
     }

@@ -10,11 +10,13 @@ package org.javalens.core.project.model;
  *
  * <p>Stable codes (use these in tests and downstream consumers):
  * <ul>
- *   <li>{@code MAVEN_SUBPROCESS_FAILED} — {@code mvn} could not start, exited non-zero, or
- *       its declared output file is missing.</li>
- *   <li>{@code MAVEN_SUBPROCESS_TIMEOUT} — {@code mvn} did not finish within the configured
- *       wait window.</li>
- *   <li>{@code GRADLE_SUBPROCESS_FAILED} — same shape as Maven, for Gradle.</li>
+ *   <li>{@code BUILD_TOOL_UNAVAILABLE}: the build tool (Maven, Gradle) could not be
+ *       started, or no binary for it exists.</li>
+ *   <li>{@code BUILD_TOOL_FAILED}: the build tool ran and failed: it exited non-zero,
+ *       Maven exited 0 without writing a classpath file, the load was interrupted while
+ *       it ran, or invoking it threw an unexpected error.</li>
+ *   <li>{@code BUILD_TOOL_TIMEOUT}: the build tool did not finish within its time limit
+ *       and was stopped.</li>
  *   <li>{@code BAZEL_NOT_BUILT} — {@code bazel-bin/}/{@code bazel-out/} not populated; user
  *       has not run {@code bazel build} recently.</li>
  *   <li>{@code COMPLIANCE_LEVEL_UNKNOWN} — could not determine the project's compiler
@@ -35,9 +37,28 @@ package org.javalens.core.project.model;
  */
 public record LoadWarning(String code, String message, String remediation, String module) {
 
-    public static final String MAVEN_SUBPROCESS_FAILED = "MAVEN_SUBPROCESS_FAILED";
-    public static final String MAVEN_SUBPROCESS_TIMEOUT = "MAVEN_SUBPROCESS_TIMEOUT";
-    public static final String GRADLE_SUBPROCESS_FAILED = "GRADLE_SUBPROCESS_FAILED";
+    /**
+     * The build tool (Maven, Gradle) could not be started, or no binary for it exists, so
+     * the project's dependencies are unresolved. The message names the tool and the
+     * reason it could not start.
+     */
+    public static final String BUILD_TOOL_UNAVAILABLE = "BUILD_TOOL_UNAVAILABLE";
+
+    /**
+     * The build tool ran and failed: it exited non-zero, Maven exited 0 without writing a
+     * classpath file, the load was interrupted while it ran (it was then stopped together
+     * with every process it started), or invoking it threw an unexpected error. The message
+     * names the tool and, when the tool exited after writing output, ends with its last
+     * lines.
+     */
+    public static final String BUILD_TOOL_FAILED = "BUILD_TOOL_FAILED";
+
+    /**
+     * The build tool did not finish within its time limit and was stopped together with
+     * every process it started. The message names the tool and the limit.
+     */
+    public static final String BUILD_TOOL_TIMEOUT = "BUILD_TOOL_TIMEOUT";
+
     public static final String BAZEL_NOT_BUILT = "BAZEL_NOT_BUILT";
     public static final String COMPLIANCE_LEVEL_UNKNOWN = "COMPLIANCE_LEVEL_UNKNOWN";
     /**

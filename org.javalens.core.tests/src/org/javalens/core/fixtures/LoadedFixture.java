@@ -12,7 +12,7 @@ import java.util.List;
  * immediately after load and the {@code code} field of every {@link
  * org.javalens.core.project.model.LoadWarning} the load surfaced.
  *
- * @param warnings warning codes (e.g. {@code MAVEN_SUBPROCESS_FAILED}) emitted during load,
+ * @param warnings warning codes (e.g. {@code BUILD_TOOL_FAILED}) emitted during load,
  *                 ordered as they were appended; empty when the load was clean.
  */
 public record LoadedFixture(

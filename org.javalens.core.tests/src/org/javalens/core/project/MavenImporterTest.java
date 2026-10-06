@@ -254,7 +254,7 @@ class MavenImporterTest {
             () -> assertEquals(List.of(".", "core"),
                 model.modules().stream().map(BuildModule::id).toList(), "module ids"),
             () -> assertEquals(List.of(LoadWarning.MODULE_NOT_LOADED, LoadWarning.MODULE_NOT_LOADED,
-                    LoadWarning.MAVEN_SUBPROCESS_FAILED),
+                    LoadWarning.BUILD_TOOL_UNAVAILABLE),
                 warnings.stream().map(LoadWarning::code).toList(), "warning codes"),
             () -> assertEquals(List.of(
                     missingModule("pom.xml", "ghost", "ghost"),
@@ -271,20 +271,27 @@ class MavenImporterTest {
     // ========== getDependencies failure path ==========
 
     @Test
-    @DisplayName("getDependencies with non-existent maven binary emits MAVEN_SUBPROCESS_FAILED")
+    @DisplayName("getDependencies with a Maven binary that cannot start returns no dependencies and exactly one BUILD_TOOL_UNAVAILABLE")
     void getDependencies_invalidMavenBinary_emitsWarning(@TempDir Path projectRoot) throws IOException {
         Files.writeString(projectRoot.resolve("pom.xml"), "<project/>");
-        System.setProperty("javalens.maven.binary",
-            projectRoot.resolve("never-existed-mvn").toString());
+        String mvnCmd = projectRoot.resolve("never-existed-mvn").toString();
+        System.setProperty("javalens.maven.binary", mvnCmd);
 
         List<LoadWarning> warnings = new ArrayList<>();
         List<String> deps = importer.getDependencies(projectRoot, warnings);
 
-        assertTrue(deps.isEmpty(),
-            "Failed subprocess → empty dependency list; got: " + deps);
-        assertTrue(warnings.stream().anyMatch(w ->
-            LoadWarning.MAVEN_SUBPROCESS_FAILED.equals(w.code())),
-            "Bad mvn binary must produce MAVEN_SUBPROCESS_FAILED; got: " + warnings);
+        assertAll(
+            () -> assertEquals(List.of(), deps, "dependencies"),
+            () -> assertEquals(List.of(LoadWarning.BUILD_TOOL_UNAVAILABLE),
+                warnings.stream().map(LoadWarning::code).toList(), "warning codes"),
+            () -> assertEquals(null, warnings.get(0).module(), "warning module"),
+            () -> assertEquals("Install Maven and ensure '" + mvnCmd + "' is on PATH for the process that "
+                    + "launches JavaLens. Project dependencies will be unresolved until this is fixed.",
+                warnings.get(0).remediation(), "warning remediation"),
+            // The message ends with the OS's process-start error text, which differs per OS
+            // and locale, so only the part MavenImporter composes is pinned.
+            () -> assertTrue(warnings.get(0).message().startsWith("Could not start '" + mvnCmd + "': "),
+                () -> "warning message: " + warnings.get(0).message()));
     }
 
     // ========== detectAnnotationProcessors ==========

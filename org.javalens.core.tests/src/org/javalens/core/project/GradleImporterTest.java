@@ -13,6 +13,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -30,8 +31,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <ul>
  *   <li>{@code detectCompilerLevel}/{@code detectAnnotationProcessors} return cached
  *       state — null/empty before {@code getDependencies} runs.</li>
- *   <li>{@code getDependencies} emits {@code GRADLE_SUBPROCESS_FAILED} when no Gradle
- *       binary can be located (via {@code javalens.gradle.binary} override pointing at
+ *   <li>{@code getDependencies} emits {@code BUILD_TOOL_UNAVAILABLE} when the Gradle
+ *       binary cannot be started (via {@code javalens.gradle.binary} override pointing at
  *       a non-existent path).</li>
  *   <li>Cache reset on consecutive {@code getDependencies} calls (Bug J safety).</li>
  * </ul>
@@ -72,25 +73,30 @@ class GradleImporterTest {
     }
 
     @Test
-    @DisplayName("getDependencies with a deliberately-invalid Gradle binary emits GRADLE_SUBPROCESS_FAILED")
+    @DisplayName("getDependencies with a Gradle binary that cannot start returns no dependencies and exactly one BUILD_TOOL_UNAVAILABLE")
     void getDependencies_invalidGradleBinary_emitsWarning(@TempDir Path projectRoot) throws IOException {
         // Pretend the project has a valid build.gradle so we don't fail earlier.
         Files.writeString(projectRoot.resolve("build.gradle"), "// stub\n");
-        // Override the binary to point at a file that doesn't exist. The override
-        // bypasses the wrapper/PATH lookup, so the subprocess start IS attempted —
-        // and IOException trips the GRADLE_SUBPROCESS_FAILED branch.
-        System.setProperty("javalens.gradle.binary",
-            projectRoot.resolve("does-not-exist-binary").toString());
+        // Override the binary to point at a file that doesn't exist. The override bypasses
+        // the wrapper/PATH lookup, so starting the process is attempted and fails.
+        String gradleBinary = projectRoot.resolve("does-not-exist-binary").toString();
+        System.setProperty("javalens.gradle.binary", gradleBinary);
 
         GradleImporter importer = new GradleImporter();
         List<LoadWarning> warnings = new ArrayList<>();
         List<String> deps = importer.getDependencies(projectRoot, warnings);
 
-        assertTrue(deps.isEmpty(),
-            "Failed subprocess → empty dependency list; got: " + deps);
-        assertTrue(warnings.stream().anyMatch(w ->
-            LoadWarning.GRADLE_SUBPROCESS_FAILED.equals(w.code())),
-            "Failed Gradle binary must produce GRADLE_SUBPROCESS_FAILED; got: " + warnings);
+        assertAll(
+            () -> assertEquals(List.of(), deps, "dependencies"),
+            () -> assertEquals(List.of(LoadWarning.BUILD_TOOL_UNAVAILABLE),
+                warnings.stream().map(LoadWarning::code).toList(), "warning codes"),
+            () -> assertEquals(null, warnings.get(0).module(), "warning module"),
+            () -> assertEquals("Verify the Gradle Wrapper is intact, or install Gradle and ensure 'gradle' is on PATH.",
+                warnings.get(0).remediation(), "warning remediation"),
+            // The message ends with the OS's process-start error text, which differs per OS
+            // and locale, so only the part GradleImporter composes is pinned.
+            () -> assertTrue(warnings.get(0).message().startsWith("Could not start '" + gradleBinary + "': "),
+                () -> "warning message: " + warnings.get(0).message()));
     }
 
     @Test
@@ -122,12 +128,10 @@ class GradleImporterTest {
         assertNull(importer.detectCompilerLevel(projectRoot));
         assertTrue(importer.detectAnnotationProcessors(projectRoot).isEmpty());
 
-        // Each call must produce its own GRADLE_SUBPROCESS_FAILED warning entry.
-        long countA = warningsA.stream().filter(w ->
-            LoadWarning.GRADLE_SUBPROCESS_FAILED.equals(w.code())).count();
-        long countB = warningsB.stream().filter(w ->
-            LoadWarning.GRADLE_SUBPROCESS_FAILED.equals(w.code())).count();
-        assertEquals(1, countA, "First invocation must produce one GRADLE_SUBPROCESS_FAILED");
-        assertEquals(1, countB, "Second invocation must produce one GRADLE_SUBPROCESS_FAILED");
+        // Each call produces its own single BUILD_TOOL_UNAVAILABLE warning.
+        assertEquals(List.of(LoadWarning.BUILD_TOOL_UNAVAILABLE),
+            warningsA.stream().map(LoadWarning::code).toList(), "first invocation's warning codes");
+        assertEquals(List.of(LoadWarning.BUILD_TOOL_UNAVAILABLE),
+            warningsB.stream().map(LoadWarning::code).toList(), "second invocation's warning codes");
     }
 }

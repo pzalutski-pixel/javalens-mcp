@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import java.util.List;
+import java.util.Set;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -21,7 +22,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -76,13 +76,14 @@ class MultiModuleMavenTest {
             assertTrue(snapshot.hasLibraryMatching(".*spring-core.*\\.jar"),
                 "Expected spring-core (declared in web module) on classpath. Libraries: " + snapshot.libraries());
 
-            // Silent-pass: a successful reactor load must not emit MAVEN_SUBPROCESS_FAILED.
+            // Silent-pass: a successful reactor load must not emit any build-tool warning.
             // Without this, a regression that broke mvn invocation but happened to find
             // jars elsewhere (e.g. test resources) could still pass the matchers above.
-            assertFalse(service.getWarnings().stream()
-                    .anyMatch(w -> LoadWarning.MAVEN_SUBPROCESS_FAILED.equals(w.code())),
-                "MAVEN_SUBPROCESS_FAILED must not fire on a successful reactor load. "
-                    + "Warnings: " + service.getWarnings());
+            Set<String> buildToolCodes = Set.of(LoadWarning.BUILD_TOOL_UNAVAILABLE,
+                LoadWarning.BUILD_TOOL_FAILED, LoadWarning.BUILD_TOOL_TIMEOUT);
+            assertEquals(List.of(),
+                service.getWarnings().stream().filter(w -> buildToolCodes.contains(w.code())).toList(),
+                "build-tool warnings on a successful reactor load");
         } finally {
             if (previousOverride == null) System.clearProperty("javalens.maven.binary");
             else System.setProperty("javalens.maven.binary", previousOverride);

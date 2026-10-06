@@ -6,17 +6,15 @@ import org.javalens.core.project.model.Provenance;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -104,6 +102,13 @@ public class GradleImporter implements BuildSystemImporter {
     private static final String GRADLE_COMPLIANCE_FILENAME = "javalens-compliance.txt";
     private static final String GRADLE_PROCESSORS_FILENAME = "javalens-processors.txt";
 
+    /**
+     * How long the Gradle build may run before it is stopped. The Gradle Wrapper sometimes
+     * downloads a distribution on first run, hence a generous limit; later runs hit the
+     * cache.
+     */
+    private static final Duration GRADLE_TIMEOUT = Duration.ofMinutes(10);
+
     private String cachedCompilerLevel;
     private final List<Path> cachedProcessorJars = new ArrayList<>();
 
@@ -178,64 +183,56 @@ public class GradleImporter implements BuildSystemImporter {
         String gradleBinary = resolveGradleBinary(projectPath);
         if (gradleBinary == null) {
             warnings.add(new LoadWarning(
-                LoadWarning.GRADLE_SUBPROCESS_FAILED,
+                LoadWarning.BUILD_TOOL_UNAVAILABLE,
                 "No Gradle binary available: neither the project's Gradle Wrapper nor a 'gradle' on PATH",
                 "Commit a Gradle Wrapper (./gradlew) into the project, or install Gradle and ensure 'gradle' is on PATH for the process that launches JavaLens."));
             return new ArrayList<>(jars);
         }
 
         Path initScript = null;
-        StringBuilder capturedOutput = new StringBuilder();
         try {
             initScript = Files.createTempFile("javalens-gradle-init-", ".gradle");
             Files.writeString(initScript, GRADLE_INIT_SCRIPT);
 
-            ProcessBuilder pb = new ProcessBuilder(
+            List<String> command = List.of(
                 gradleBinary,
                 "--init-script", initScript.toAbsolutePath().toString(),
                 "javalensWriteClasspath",
                 "-q",
                 "--console=plain"
             );
-            pb.directory(projectPath.toFile());
-            pb.redirectErrorStream(true);
 
             log.info("Running Gradle to get classpath...");
-            Process process;
-            try {
-                process = pb.start();
-            } catch (IOException e) {
-                log.warn("Cannot start Gradle subprocess: {}", e.getMessage());
+            BuildToolRunner.Result result = BuildToolRunner.run(command, projectPath, GRADLE_TIMEOUT);
+
+            if (result.outcome() == BuildToolRunner.Outcome.UNAVAILABLE) {
+                log.warn("Cannot start Gradle subprocess: {}", result.startFailure());
                 warnings.add(new LoadWarning(
-                    LoadWarning.GRADLE_SUBPROCESS_FAILED,
-                    "Could not start '" + gradleBinary + "': " + e.getMessage(),
+                    LoadWarning.BUILD_TOOL_UNAVAILABLE,
+                    "Could not start '" + gradleBinary + "': " + result.startFailure(),
                     "Verify the Gradle Wrapper is intact, or install Gradle and ensure 'gradle' is on PATH."));
                 return new ArrayList<>(jars);
             }
 
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    if (capturedOutput.length() < 4096) {
-                        capturedOutput.append(line).append('\n');
-                    }
-                }
-            }
-
-            // Gradle wrapper sometimes downloads a distribution on first run, hence a
-            // generous timeout. Subsequent runs hit the cache.
-            boolean completed = process.waitFor(10, TimeUnit.MINUTES);
-            if (!completed) {
-                process.destroyForcibly();
+            if (result.outcome() == BuildToolRunner.Outcome.TIMED_OUT) {
                 log.warn("Gradle classpath command timed out");
                 warnings.add(new LoadWarning(
-                    LoadWarning.GRADLE_SUBPROCESS_FAILED,
-                    "Gradle javalensWriteClasspath did not finish within 10 minutes",
+                    LoadWarning.BUILD_TOOL_TIMEOUT,
+                    "Gradle javalensWriteClasspath did not finish within " + GRADLE_TIMEOUT.toMinutes() + " minutes",
                     "Check that the project's build.gradle resolves correctly. Try running './gradlew help' manually in " + projectPath));
                 return new ArrayList<>(jars);
             }
 
-            if (process.exitValue() == 0) {
+            if (result.outcome() == BuildToolRunner.Outcome.INTERRUPTED) {
+                log.warn("Gradle classpath command was interrupted");
+                warnings.add(new LoadWarning(
+                    LoadWarning.BUILD_TOOL_FAILED,
+                    "Gradle javalensWriteClasspath was interrupted before it finished",
+                    "Reload the project to run the build tool again."));
+                return new ArrayList<>(jars);
+            }
+
+            if (result.exitCode() == 0) {
                 aggregateGradleClasspathFiles(projectPath, jars);
                 // Harvest compliance + processor jars while their aux files still exist.
                 // The cleanup in finally below removes them; resolve() then reads level
@@ -245,11 +242,11 @@ public class GradleImporter implements BuildSystemImporter {
                 log.info("Got {} classpath entries from Gradle (compliance={}, {} processor jars)",
                     jars.size(), cachedCompilerLevel, cachedProcessorJars.size());
             } else {
-                int exitCode = process.exitValue();
+                int exitCode = result.exitCode();
                 log.warn("Gradle classpath command failed with exit code: {}", exitCode);
-                String snippet = trimToLastLines(capturedOutput.toString(), 5);
+                String snippet = result.lastLines();
                 warnings.add(new LoadWarning(
-                    LoadWarning.GRADLE_SUBPROCESS_FAILED,
+                    LoadWarning.BUILD_TOOL_FAILED,
                     "Gradle javalensWriteClasspath exited with code " + exitCode +
                         (snippet.isEmpty() ? "" : ". Last output: " + snippet),
                     "Run './gradlew help' manually in " + projectPath + " to see the full error."));
@@ -257,7 +254,7 @@ public class GradleImporter implements BuildSystemImporter {
         } catch (Exception e) {
             log.error("Failed to get Gradle classpath", e);
             warnings.add(new LoadWarning(
-                LoadWarning.GRADLE_SUBPROCESS_FAILED,
+                LoadWarning.BUILD_TOOL_FAILED,
                 "Gradle invocation threw an unexpected error: " + e.getClass().getSimpleName() + ": " + e.getMessage(),
                 "Run './gradlew help' manually in " + projectPath + " to reproduce."));
         } finally {
@@ -407,21 +404,6 @@ public class GradleImporter implements BuildSystemImporter {
             log.warn("Failed to walk for Gradle processor files: {}", e.getMessage());
         }
         return new ArrayList<>(jars);
-    }
-
-    /** Returns the last {@code maxLines} of {@code text}, joined with " | ", trimmed. */
-    private static String trimToLastLines(String text, int maxLines) {
-        if (text == null || text.isBlank()) return "";
-        String[] lines = text.split("\\R");
-        int from = Math.max(0, lines.length - maxLines);
-        StringBuilder sb = new StringBuilder();
-        for (int i = from; i < lines.length; i++) {
-            String t = lines[i].trim();
-            if (t.isEmpty()) continue;
-            if (sb.length() > 0) sb.append(" | ");
-            sb.append(t);
-        }
-        return sb.toString();
     }
 
     private boolean isWindows() {

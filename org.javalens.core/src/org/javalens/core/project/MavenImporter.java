@@ -6,18 +6,16 @@ import org.javalens.core.project.model.Provenance;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
@@ -56,6 +54,9 @@ public class MavenImporter implements BuildSystemImporter {
      */
     private static final String MAVEN_CP_FILENAME = "javalens-classpath.txt";
     private static final String MAVEN_CP_RELATIVE_PATH = "target/" + MAVEN_CP_FILENAME;
+
+    /** How long {@code mvn dependency:build-classpath} may run before it is stopped. */
+    private static final Duration MAVEN_TIMEOUT = Duration.ofSeconds(120);
 
     /**
      * Compose the module walk with {@link #getDependencies}, {@link #detectCompilerLevel}
@@ -295,13 +296,13 @@ public class MavenImporter implements BuildSystemImporter {
 
     /**
      * Run {@code mvn dependency:build-classpath} with a per-module {@code mdep.outputFile},
-     * then walk the reactor for the per-module aux files and union their contents. Failures
-     * and timeouts append a {@code MAVEN_SUBPROCESS_FAILED} / {@code MAVEN_SUBPROCESS_TIMEOUT}
-     * warning so the orchestrator can surface degraded loads.
+     * then walk the reactor for the per-module aux files and union their contents. A Maven
+     * that cannot start appends {@code BUILD_TOOL_UNAVAILABLE}, one that does not finish in
+     * time {@code BUILD_TOOL_TIMEOUT}, and one that fails or is interrupted
+     * {@code BUILD_TOOL_FAILED}, so the orchestrator can surface degraded loads.
      */
     public List<String> getDependencies(Path projectPath, List<LoadWarning> warnings) {
         LinkedHashSet<String> jars = new LinkedHashSet<>();
-        StringBuilder capturedOutput = new StringBuilder();
 
         try {
             // The system property override lets test runs (and pinned-Maven setups) point at
@@ -309,55 +310,49 @@ public class MavenImporter implements BuildSystemImporter {
             // don't set this, so the default lookup is unchanged.
             String mvnCmd = System.getProperty("javalens.maven.binary",
                 isWindows() ? "mvn.cmd" : "mvn");
-            ProcessBuilder pb = new ProcessBuilder(
+            List<String> command = List.of(
                 mvnCmd,
                 "dependency:build-classpath",
                 "-Dmdep.outputFile=" + MAVEN_CP_RELATIVE_PATH,
                 "-Dmdep.regenerateFile=true",
                 "-q"
             );
-            pb.directory(projectPath.toFile());
-            pb.redirectErrorStream(true);
 
             log.info("Running Maven to get classpath...");
-            Process process;
-            try {
-                process = pb.start();
-            } catch (IOException e) {
+            BuildToolRunner.Result result = BuildToolRunner.run(command, projectPath, MAVEN_TIMEOUT);
+
+            if (result.outcome() == BuildToolRunner.Outcome.UNAVAILABLE) {
                 // Most common cause: mvn (or mvn.cmd) not on PATH. Surface it explicitly.
-                log.warn("Cannot start Maven subprocess: {}", e.getMessage());
+                log.warn("Cannot start Maven subprocess: {}", result.startFailure());
                 warnings.add(new LoadWarning(
-                    LoadWarning.MAVEN_SUBPROCESS_FAILED,
-                    "Could not start '" + mvnCmd + "': " + e.getMessage(),
+                    LoadWarning.BUILD_TOOL_UNAVAILABLE,
+                    "Could not start '" + mvnCmd + "': " + result.startFailure(),
                     "Install Maven and ensure '" + mvnCmd + "' is on PATH for the process that " +
                         "launches JavaLens. Project dependencies will be unresolved until this is fixed."));
                 return new ArrayList<>(jars);
             }
 
-            // Consume output to prevent blocking. Capture lines so we can include them in
-            // the warning message when mvn fails — silent failures were the original bug.
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    if (capturedOutput.length() < 4096) {
-                        capturedOutput.append(line).append('\n');
-                    }
-                }
-            }
-
-            boolean completed = process.waitFor(120, TimeUnit.SECONDS);
-            if (!completed) {
-                process.destroyForcibly();
+            if (result.outcome() == BuildToolRunner.Outcome.TIMED_OUT) {
                 log.warn("Maven classpath command timed out");
                 warnings.add(new LoadWarning(
-                    LoadWarning.MAVEN_SUBPROCESS_TIMEOUT,
-                    "Maven dependency:build-classpath did not finish within 120 seconds",
+                    LoadWarning.BUILD_TOOL_TIMEOUT,
+                    "Maven dependency:build-classpath did not finish within " +
+                        MAVEN_TIMEOUT.toSeconds() + " seconds",
                     "Check that the project's pom.xml resolves correctly. Try running " +
                         "'mvn dependency:build-classpath' manually in " + projectPath));
                 return new ArrayList<>(jars);
             }
 
-            if (process.exitValue() == 0) {
+            if (result.outcome() == BuildToolRunner.Outcome.INTERRUPTED) {
+                log.warn("Maven classpath command was interrupted");
+                warnings.add(new LoadWarning(
+                    LoadWarning.BUILD_TOOL_FAILED,
+                    "Maven dependency:build-classpath was interrupted before it finished",
+                    "Reload the project to run the build tool again."));
+                return new ArrayList<>(jars);
+            }
+
+            if (result.exitCode() == 0) {
                 int filesFound = aggregateClasspathFiles(projectPath, jars);
                 log.info("Got {} classpath entries from Maven ({} per-module files)", jars.size(), filesFound);
                 // Narrow Bug X regression: mvn can exit 0 yet write zero classpath files
@@ -366,20 +361,20 @@ public class MavenImporter implements BuildSystemImporter {
                 // Distinguish "mvn wrote nothing" (suspicious, soft fail) from "mvn wrote
                 // files but the project has no deps" (legitimate, no warning).
                 if (filesFound == 0) {
-                    String snippet = trimToLastLines(capturedOutput.toString(), 5);
+                    String snippet = result.lastLines();
                     warnings.add(new LoadWarning(
-                        LoadWarning.MAVEN_SUBPROCESS_FAILED,
+                        LoadWarning.BUILD_TOOL_FAILED,
                         "mvn dependency:build-classpath exited successfully but produced no " +
                             "classpath files. Last output: " + (snippet.isEmpty() ? "(empty)" : snippet),
                         "Run 'mvn dependency:build-classpath -Dmdep.outputFile=target/cp.txt' " +
                             "manually in " + projectPath + " to confirm the plugin emits output."));
                 }
             } else {
-                int exitCode = process.exitValue();
+                int exitCode = result.exitCode();
                 log.warn("Maven classpath command failed with exit code: {}", exitCode);
-                String snippet = trimToLastLines(capturedOutput.toString(), 5);
+                String snippet = result.lastLines();
                 warnings.add(new LoadWarning(
-                    LoadWarning.MAVEN_SUBPROCESS_FAILED,
+                    LoadWarning.BUILD_TOOL_FAILED,
                     "mvn dependency:build-classpath exited with code " + exitCode +
                         (snippet.isEmpty() ? "" : ". Last output: " + snippet),
                     "Run 'mvn dependency:build-classpath' manually in " + projectPath +
@@ -389,7 +384,7 @@ public class MavenImporter implements BuildSystemImporter {
         } catch (Exception e) {
             log.error("Failed to get Maven classpath", e);
             warnings.add(new LoadWarning(
-                LoadWarning.MAVEN_SUBPROCESS_FAILED,
+                LoadWarning.BUILD_TOOL_FAILED,
                 "Maven invocation threw an unexpected error: " + e.getClass().getSimpleName() +
                     ": " + e.getMessage(),
                 "Run 'mvn dependency:build-classpath' manually in " + projectPath +
@@ -468,21 +463,6 @@ public class MavenImporter implements BuildSystemImporter {
         if (!m.find()) return null;
         String value = m.group(1).trim();
         return value.isEmpty() ? null : value;
-    }
-
-    /** Returns the last {@code maxLines} of {@code text}, joined with " | ", trimmed. */
-    private static String trimToLastLines(String text, int maxLines) {
-        if (text == null || text.isBlank()) return "";
-        String[] lines = text.split("\\R");
-        int from = Math.max(0, lines.length - maxLines);
-        StringBuilder sb = new StringBuilder();
-        for (int i = from; i < lines.length; i++) {
-            String t = lines[i].trim();
-            if (t.isEmpty()) continue;
-            if (sb.length() > 0) sb.append(" | ");
-            sb.append(t);
-        }
-        return sb.toString();
     }
 
     private boolean isWindows() {

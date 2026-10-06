@@ -3,6 +3,7 @@ package org.javalens.mcp.tools.project;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.IJdtService;
+import org.javalens.core.project.model.LoadWarning;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.LoadProjectTool;
@@ -113,33 +114,41 @@ class LoadProjectToolTest {
     // carries the bug-fix-specific fields (warnings, buildModel, classpathEntryCount,
     // packages) faithfully.
 
-    @Test @DisplayName("Bug X: subprocess failure surfaces a 'warnings' array in the response")
+    @Test @DisplayName("a build tool that runs and fails surfaces exactly one BUILD_TOOL_FAILED entry in the response's 'warnings' array")
     void subprocessFailureSurfacesWarningsArrayInResponse() throws Exception {
-        // broken-maven-deps declares a non-existent dependency. Whether or not mvn is on
-        // PATH, the load surfaces a MAVEN_SUBPROCESS_FAILED warning — the response must
-        // expose it as a structured field for the agent to see.
+        // broken-maven-deps declares a non-existent dependency, so Maven runs and exits
+        // non-zero. Like the clean-load tests here, this needs Maven on PATH. The response
+        // must expose the failure as a structured field for the agent to see.
         Path brokenPath = helper.getFixturePath("broken-maven-deps");
         ObjectNode args = objectMapper.createObjectNode();
         args.put("projectPath", brokenPath.toString());
 
         ToolResponse r = tool.execute(args);
 
-        assertTrue(r.isSuccess(), "load_project itself succeeds even when subprocess fails");
+        assertTrue(r.isSuccess(), "load_project itself succeeds even when the build tool fails");
         Map<String, Object> data = getData(r);
 
         @SuppressWarnings("unchecked")
-        List<Map<String, Object>> warnings = (List<Map<String, Object>>) data.get("warnings");
-        assertNotNull(warnings,
-            "Expected 'warnings' field in load_project response when mvn subprocess fails. " +
-            "Without it the AI agent has no signal that the classpath is degraded. Got: " + data);
-        assertFalse(warnings.isEmpty(), "Expected at least one warning entry");
+        List<Map<String, Object>> warnings =
+            (List<Map<String, Object>>) data.getOrDefault("warnings", List.of());
+        assertEquals(List.of(LoadWarning.BUILD_TOOL_FAILED),
+            warnings.stream().map(w -> w.get("code")).toList(), "warning codes");
 
-        // Each warning must carry code + message + remediation so the agent can act on it.
+        // The warning carries code, message and remediation so the agent can act on it; it
+        // names no module.
         Map<String, Object> warning = warnings.get(0);
-        assertTrue(warning.containsKey("code"), "warning entry missing 'code'");
-        assertTrue(warning.containsKey("message"), "warning entry missing 'message'");
-        assertEquals("MAVEN_SUBPROCESS_FAILED", warning.get("code"),
-            "Expected the stable code MAVEN_SUBPROCESS_FAILED in the response shape");
+        assertAll(
+            () -> assertEquals(List.of("code", "message", "remediation"), List.copyOf(warning.keySet()),
+                "warning fields in order"),
+            () -> assertEquals("Run 'mvn dependency:build-classpath' manually in "
+                    + brokenPath.toAbsolutePath().normalize() + " to see the full error.",
+                warning.get("remediation"), "warning remediation"),
+            // Maven exits with 1 when the build fails. The message ends with the last lines
+            // of Maven's own error output, whose wording belongs to Maven, so only the part
+            // MavenImporter composes is pinned.
+            () -> assertTrue(String.valueOf(warning.get("message"))
+                    .startsWith("mvn dependency:build-classpath exited with code 1. Last output: "),
+                () -> "warning message: " + warning.get("message")));
     }
 
     @Test @DisplayName("clean project response: no 'warnings' field when nothing went wrong")

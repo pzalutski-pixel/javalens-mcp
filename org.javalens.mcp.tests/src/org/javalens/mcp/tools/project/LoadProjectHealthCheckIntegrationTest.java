@@ -258,7 +258,7 @@ class LoadProjectHealthCheckIntegrationTest {
         assertAll(
             () -> assertEquals(objectMapper.valueToTree(MISSING_MODULE_BUILD_MODEL), loadData.get("buildModel"),
                 "load_project buildModel"),
-            () -> assertEquals(List.of(LoadWarning.MODULE_NOT_LOADED, LoadWarning.MAVEN_SUBPROCESS_FAILED),
+            () -> assertEquals(List.of(LoadWarning.MODULE_NOT_LOADED, LoadWarning.BUILD_TOOL_UNAVAILABLE),
                 warningCodes(warnings), "load_project warning codes in order"),
             () -> assertEquals(objectMapper.valueToTree(GHOST_WARNING), warnings.get(0), "ghost's warning"),
             () -> assertEquals(List.of("code", "message", "remediation", "module"), fieldNames(warnings.path(0)),

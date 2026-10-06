@@ -3,6 +3,12 @@ package org.javalens.core.project.model;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -45,9 +51,9 @@ class LoadWarningTest {
     void codeConstants_haveDocumentedValues() {
         // Test consumers downstream (in tests AND in the load_project response) pattern-match
         // on these exact strings. A rename would break every check; pin the constants.
-        assertEquals("MAVEN_SUBPROCESS_FAILED", LoadWarning.MAVEN_SUBPROCESS_FAILED);
-        assertEquals("MAVEN_SUBPROCESS_TIMEOUT", LoadWarning.MAVEN_SUBPROCESS_TIMEOUT);
-        assertEquals("GRADLE_SUBPROCESS_FAILED", LoadWarning.GRADLE_SUBPROCESS_FAILED);
+        assertEquals("BUILD_TOOL_UNAVAILABLE", LoadWarning.BUILD_TOOL_UNAVAILABLE);
+        assertEquals("BUILD_TOOL_FAILED", LoadWarning.BUILD_TOOL_FAILED);
+        assertEquals("BUILD_TOOL_TIMEOUT", LoadWarning.BUILD_TOOL_TIMEOUT);
         assertEquals("BAZEL_NOT_BUILT", LoadWarning.BAZEL_NOT_BUILT);
         assertEquals("COMPLIANCE_LEVEL_UNKNOWN", LoadWarning.COMPLIANCE_LEVEL_UNKNOWN);
         assertEquals("APT_PROCESSOR_JARS_MISSING", LoadWarning.APT_PROCESSOR_JARS_MISSING);
@@ -56,14 +62,43 @@ class LoadWarningTest {
     }
 
     @Test
+    @DisplayName("The public code constants are exactly the documented codes, each valued as its name")
+    void codeConstants_areExactlyTheDocumentedSet() {
+        // Consumers read the codes from the schema, so a code that is replaced is removed,
+        // never kept as an alias.
+        Map<String, Object> constants = new TreeMap<>();
+        for (Field field : LoadWarning.class.getDeclaredFields()) {
+            int modifiers = field.getModifiers();
+            if (Modifier.isPublic(modifiers) && Modifier.isStatic(modifiers) && Modifier.isFinal(modifiers)
+                    && field.getType() == String.class) {
+                try {
+                    constants.put(field.getName(), field.get(null));
+                } catch (IllegalAccessException e) {
+                    throw new AssertionError("public constant " + field.getName() + " is not readable", e);
+                }
+            }
+        }
+
+        Map<String, Object> expected = new TreeMap<>();
+        for (String code : List.of(
+                "BUILD_TOOL_UNAVAILABLE", "BUILD_TOOL_FAILED", "BUILD_TOOL_TIMEOUT",
+                "BAZEL_NOT_BUILT", "COMPLIANCE_LEVEL_UNKNOWN", "COMPLIANCE_LEVEL_UNSUPPORTED",
+                "APT_PROCESSOR_JARS_MISSING", "JRE_REGISTRATION_FAILED",
+                "MODULE_NOT_LOADED", "MODULE_LAYOUT_ASSUMED")) {
+            expected.put(code, code);
+        }
+        assertEquals(expected, constants);
+    }
+
+    @Test
     @DisplayName("Code constants are mutually distinct")
     void codeConstants_distinct() {
         // Defensive: a typo could accidentally make two constants equal. Verify they're all
         // distinct identifiers.
         String[] codes = {
-            LoadWarning.MAVEN_SUBPROCESS_FAILED,
-            LoadWarning.MAVEN_SUBPROCESS_TIMEOUT,
-            LoadWarning.GRADLE_SUBPROCESS_FAILED,
+            LoadWarning.BUILD_TOOL_UNAVAILABLE,
+            LoadWarning.BUILD_TOOL_FAILED,
+            LoadWarning.BUILD_TOOL_TIMEOUT,
             LoadWarning.BAZEL_NOT_BUILT,
             LoadWarning.COMPLIANCE_LEVEL_UNKNOWN,
             LoadWarning.APT_PROCESSOR_JARS_MISSING,

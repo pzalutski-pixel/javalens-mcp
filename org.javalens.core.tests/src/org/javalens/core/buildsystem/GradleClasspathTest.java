@@ -15,11 +15,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -174,7 +174,7 @@ class GradleClasspathTest {
      * caller-supplied assertions on the resulting classpath snapshot.
      *
      * <p>Always asserts (regardless of the caller-supplied assertions): the load surfaced
-     * no {@link LoadWarning#GRADLE_SUBPROCESS_FAILED}, and the init script's aux files
+     * no {@code BUILD_TOOL_*} warning, and the init script's aux files
      * ({@code javalens-classpath.txt}, {@code javalens-compliance.txt},
      * {@code javalens-processors.txt}) were cleaned up. Both pin behaviors that the
      * single-positive-assertion tests would have silently regressed on.
@@ -192,15 +192,16 @@ class GradleClasspathTest {
             service.loadProject(projectRoot);
             ClasspathSnapshot snapshot = ClasspathSnapshot.capture(service.getJavaProject());
 
-            // Silent-pass: a successful Gradle build must not emit any subprocess-failed
-            // warning. Without this, a regression that broke Gradle invocation entirely
-            // but returned a cached-from-elsewhere jar list could still pass the
-            // single-library-present check.
+            // Silent-pass: a successful Gradle build must not emit any build-tool warning.
+            // Without this, a regression that broke Gradle invocation entirely but returned
+            // a cached-from-elsewhere jar list could still pass the single-library-present
+            // check.
             List<LoadWarning> warnings = service.getWarnings();
-            assertFalse(warnings.stream()
-                    .anyMatch(w -> LoadWarning.GRADLE_SUBPROCESS_FAILED.equals(w.code())),
-                "GRADLE_SUBPROCESS_FAILED must not fire on a successful Gradle build. "
-                    + "Warnings: " + warnings);
+            Set<String> buildToolCodes = Set.of(LoadWarning.BUILD_TOOL_UNAVAILABLE,
+                LoadWarning.BUILD_TOOL_FAILED, LoadWarning.BUILD_TOOL_TIMEOUT);
+            assertEquals(List.of(),
+                warnings.stream().filter(w -> buildToolCodes.contains(w.code())).toList(),
+                "build-tool warnings on a successful Gradle build");
 
             // Cleanup pin: the three aux files written by GRADLE_INIT_SCRIPT must be
             // removed after load. cleanupGradleClasspathFiles runs in the finally block of
