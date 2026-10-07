@@ -20,6 +20,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.function.Supplier;
 
@@ -31,6 +32,9 @@ import java.util.function.Supplier;
 public class GetDiagnosticsTool extends AbstractTool {
 
     private static final Logger log = LoggerFactory.getLogger(GetDiagnosticsTool.class);
+
+    /** The accepted {@code severity} values, compared case-insensitively. */
+    private static final List<String> SEVERITIES = List.of("error", "warning", "all");
 
     public GetDiagnosticsTool(Supplier<IJdtService> serviceSupplier) {
         super(serviceSupplier);
@@ -51,6 +55,10 @@ public class GetDiagnosticsTool extends AbstractTool {
 
             Useful for finding syntax errors, type mismatches, missing imports, etc.
 
+            severity (optional, compared case-insensitively): error or warning keeps
+            the diagnostics of that severity; all (the default) keeps both. Any
+            other value is rejected with INVALID_PARAMETER.
+
             Requires load_project to be called first.
             """;
     }
@@ -59,7 +67,8 @@ public class GetDiagnosticsTool extends AbstractTool {
     public Map<String, Object> getInputSchema() {
         return SchemaBuilder.object()
             .optional("filePath", "string", "Optional path to source file. If omitted, checks all files.")
-            .optional("severity", "string", "Filter by severity: 'error', 'warning', or 'all' (default: 'all')")
+            .optional("severity", "string", "Filter by severity, case-insensitive: 'error', 'warning' "
+                + "or 'all' (default: 'all')")
             .optional("maxResults", "integer", "Max diagnostics to return (default 100)")
             .build();
     }
@@ -67,9 +76,15 @@ public class GetDiagnosticsTool extends AbstractTool {
     @Override
     protected ToolResponse executeWithService(IJdtService service, JsonNode arguments) {
         String filePath = getStringParam(arguments, "filePath");
-        String severity = getStringParam(arguments, "severity", "all");
+        String requestedSeverity = getStringParam(arguments, "severity", "all");
+        String severity = requestedSeverity.toLowerCase(Locale.ROOT);
         int maxResults = getIntParam(arguments, "maxResults", 100);
 
+        if (!SEVERITIES.contains(severity)) {
+            return ToolResponse.invalidParameter("severity",
+                "Must be one of " + String.join(", ", SEVERITIES) + " (case-insensitive); got: "
+                    + requestedSeverity);
+        }
         if (maxResults < 0) {
             return ToolResponse.invalidParameter("maxResults",
                 "Must be >= 0; got: " + maxResults);

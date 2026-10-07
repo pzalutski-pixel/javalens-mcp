@@ -115,22 +115,12 @@ class SuggestImportsToolTest {
     }
 
     @Test
-    @DisplayName("maxResults=1 caps to exactly java.util.List and meta.truncated is true")
+    @DisplayName("maxResults=1 returns java.util.List, the most relevant of the two List candidates, and reports the cut")
     void respectsMaxResults() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("typeName", "List");
         args.put("maxResults", 1);
-
-        ToolResponse response = tool.execute(args);
-
-        assertTrue(response.isSuccess());
-        Map<String, Object> data = getData(response);
-        List<Map<String, Object>> candidates = getCandidates(data);
-        // List resolves to >1 candidate (java.util.List, java.awt.List, ...), so the cap fires.
-        assertEquals(1, candidates.size());
-        assertEquals(1, ((Number) data.get("totalCandidates")).intValue());
-        assertEquals("java.util.List", candidates.get(0).get("fullyQualifiedName"));
-        assertEquals(Boolean.TRUE, response.getMeta().getTruncated());
+        assertPayload(args, suggestions("List", 2, List.of(JAVA_UTIL_LIST)));
     }
 
     @Test
@@ -363,5 +353,69 @@ class SuggestImportsToolTest {
         assertTrue(cands.size() > 0, "at least java.util.List");
         assertEquals("java.util.List", cands.get(0).get("fullyQualifiedName").asText(),
             "the top-ranked import must survive the JSON-RPC envelope");
+    }
+
+    // ========== exact payload helpers ==========
+
+    /*
+     * The JDK 21 types named List are java.util.List (java.base), java.awt.List (java.desktop)
+     * and com.sun.tools.javac.util.List (jdk.compiler), which the com.sun. filter leaves out;
+     * simple-maven declares none.
+     */
+    private static final Map<String, Object> JAVA_UTIL_LIST =
+        candidate("java.util", "List", 100, true, false);
+    private static final Map<String, Object> JAVA_AWT_LIST =
+        candidate("java.awt", "List", 70, false, true);
+
+    private static Map<String, Object> candidate(String pkg, String simpleName, int relevance,
+                                                 boolean isInterface, boolean isClass) {
+        Map<String, Object> candidate = new java.util.LinkedHashMap<>();
+        candidate.put("fullyQualifiedName", pkg + "." + simpleName);
+        candidate.put("packageName", pkg);
+        candidate.put("simpleName", simpleName);
+        candidate.put("relevance", relevance);
+        candidate.put("isInterface", isInterface);
+        candidate.put("isClass", isClass);
+        candidate.put("isEnum", false);
+        candidate.put("fixId", "add_import:" + pkg + "." + simpleName);
+        return candidate;
+    }
+
+    /** The success payload for {@code typeName}: {@code total} candidates, {@code candidates} listed. */
+    private static Map<String, Object> suggestions(String typeName, int total, List<Map<String, Object>> candidates) {
+        Map<String, Object> data = new java.util.LinkedHashMap<>();
+        data.put("typeName", typeName);
+        data.put("totalCandidates", total);
+        data.put("candidates", candidates);
+        Map<String, Object> meta = new java.util.LinkedHashMap<>();
+        meta.put("totalCount", total);
+        meta.put("returnedCount", candidates.size());
+        meta.put("truncated", candidates.size() < total);
+        meta.put("suggestedNextTools", List.of(
+            "apply_quick_fix with fixId to add the import",
+            "get_quick_fixes to see all available fixes"));
+        Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("success", true);
+        payload.put("data", data);
+        payload.put("meta", meta);
+        return payload;
+    }
+
+    /**
+     * The payload through execute(), read back from the JSON text it serializes to, and through
+     * the JSON-RPC envelope both equal {@code expected}.
+     */
+    private void assertPayload(ObjectNode args, Map<String, Object> expected) {
+        JsonNode expectedJson = objectMapper.valueToTree(expected);
+        JsonNode direct;
+        try {
+            direct = objectMapper.readTree(objectMapper.writeValueAsString(tool.execute(args.deepCopy())));
+        } catch (Exception e) {
+            throw new AssertionError("execute() payload does not serialize for " + args, e);
+        }
+        JsonNode wire = envelope.assertEnvelopeFidelity("suggest_imports", args);
+        assertAll(
+            () -> assertEquals(expectedJson, direct, "execute() payload for " + args),
+            () -> assertEquals(expectedJson, wire, "envelope payload for " + args));
     }
 }

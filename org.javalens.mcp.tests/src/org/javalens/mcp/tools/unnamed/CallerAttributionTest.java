@@ -109,10 +109,12 @@ class CallerAttributionTest {
                 "signature", "length()",
                 "callLine", 17))),
             "overrides", map());
-        Map<String, Object> meta = map("suggestedNextTools", List.of(
-            "analyze_type for declaring type analysis",
-            "find_references for all usages",
-            "go_to_definition to navigate to a callee"));
+        // Six callers and one callee, all listed.
+        Map<String, Object> meta = map("totalCount", 7, "returnedCount", 7, "truncated", false,
+            "suggestedNextTools", List.of(
+                "analyze_type for declaring type analysis",
+                "find_references for all usages",
+                "go_to_definition to navigate to a callee"));
         assertPayload(mapper, new AnalyzeMethodTool(() -> service), envelope, position(16, 16),
             success(data, meta));
     }

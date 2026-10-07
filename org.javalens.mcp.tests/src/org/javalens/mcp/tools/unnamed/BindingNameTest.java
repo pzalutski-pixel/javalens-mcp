@@ -168,7 +168,7 @@ class BindingNameTest {
                 "callLine", 31))),
             "overrides", map());
         assertPayload(mapper, new AnalyzeMethodTool(() -> service), envelope, position(30, 13),
-            success(data, map("suggestedNextTools", ANALYZE_NEXT_TOOLS)));
+            success(data, map("totalCount", 1, "returnedCount", 1, "truncated", false, "suggestedNextTools", ANALYZE_NEXT_TOOLS)));
     }
 
     @Test
@@ -196,7 +196,7 @@ class BindingNameTest {
                     "callLine", 81))),
             "overrides", map());
         assertPayload(mapper, new AnalyzeMethodTool(() -> service), envelope, position(67, 8),
-            success(data, map("suggestedNextTools", ANALYZE_NEXT_TOOLS)));
+            success(data, map("totalCount", 3, "returnedCount", 3, "truncated", false, "suggestedNextTools", ANALYZE_NEXT_TOOLS)));
     }
 
     @Test
@@ -252,7 +252,7 @@ class BindingNameTest {
                     "callLine", 133))),
             "overrides", map());
         assertPayload(mapper, new AnalyzeMethodTool(() -> service), envelope, position(130, 15),
-            success(data, map("suggestedNextTools", ANALYZE_NEXT_TOOLS)));
+            success(data, map("totalCount", 5, "returnedCount", 5, "truncated", false, "suggestedNextTools", ANALYZE_NEXT_TOOLS)));
     }
 
     private static Map<String, Object> libraryCallee(String method, String declaringClass, String signature,

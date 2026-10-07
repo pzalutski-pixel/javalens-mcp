@@ -62,7 +62,7 @@ class AnonymousOverridesTest {
             "callees", map("count", 0, "list", List.of()),
             "overrides", map("overrides", map("method", "name", "qualifiedType", OVERRIDES_TYPE + "$Shape")));
         assertPayload(mapper, new AnalyzeMethodTool(() -> service), envelope, position(OVERRIDES, 16, 26),
-            success(data, map("suggestedNextTools", ANALYZE_NEXT_TOOLS)));
+            success(data, map("totalCount", 0, "returnedCount", 0, "truncated", false, "suggestedNextTools", ANALYZE_NEXT_TOOLS)));
     }
 
     @Test
@@ -75,7 +75,7 @@ class AnonymousOverridesTest {
             "callees", map("count", 0, "list", List.of()),
             "overrides", map("overrides", map("method", "size", "qualifiedType", OVERRIDES_TYPE + "$Base")));
         assertPayload(mapper, new AnalyzeMethodTool(() -> service), envelope, position(OVERRIDES, 24, 16),
-            success(data, map("suggestedNextTools", ANALYZE_NEXT_TOOLS)));
+            success(data, map("totalCount", 0, "returnedCount", 0, "truncated", false, "suggestedNextTools", ANALYZE_NEXT_TOOLS)));
     }
 
     @Test
@@ -89,7 +89,7 @@ class AnonymousOverridesTest {
             "callees", map("count", 0, "list", List.of()),
             "overrides", map("overrides", map("method", "compareTo", "qualifiedType", "java.lang.Comparable")));
         assertPayload(mapper, new AnalyzeMethodTool(() -> service), envelope, position(OVERRIDES, 32, 23),
-            success(data, map("suggestedNextTools", ANALYZE_NEXT_TOOLS)));
+            success(data, map("totalCount", 0, "returnedCount", 0, "truncated", false, "suggestedNextTools", ANALYZE_NEXT_TOOLS)));
     }
 
     @Test
@@ -102,7 +102,7 @@ class AnonymousOverridesTest {
             "callees", map("count", 0, "list", List.of()),
             "overrides", map());
         assertPayload(mapper, new AnalyzeMethodTool(() -> service), envelope, position(CALLS, 36, 16),
-            success(data, map("suggestedNextTools", ANALYZE_NEXT_TOOLS)));
+            success(data, map("totalCount", 0, "returnedCount", 0, "truncated", false, "suggestedNextTools", ANALYZE_NEXT_TOOLS)));
     }
 
     private static Map<String, Object> methodInfo(String name, List<String> modifiers, String declaringType,

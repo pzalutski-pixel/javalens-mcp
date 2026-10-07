@@ -216,15 +216,14 @@ public class RenameSymbolTool extends AbstractTool {
                 }
             }
 
-            // Reference sites via SearchEngine. The cap is high so the rename surfaces
-            // every site; per-tool maxResults capping doesn't apply here because rename
-            // edits are not paginated — applying a partial rename would break compilation.
+            // Reference sites via SearchEngine, every one of them: rename edits are not
+            // paginated, and a partial rename would break compilation.
             // A method's references are searched in the project's sources only: the edits
             // are made only there, and a search of the JDK resolves each JDK call of a
             // method of the same name, for every method of the ripple.
             SearchResult result = member instanceof IMethod
                 ? service.getSearchService().findAllReferencesInSources(member, SearchService.ALL_MATCHES)
-                : service.getSearchService().findAllReferences(member, 1_000_000);
+                : service.getSearchService().findAllReferences(member, SearchService.ALL_MATCHES);
             for (SearchMatch match : result.matches()) {
                 ICompilationUnit matchCu = MatchResolver.resolveCu(match);
                 if (matchCu == null) continue;

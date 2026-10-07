@@ -2,8 +2,9 @@ package org.javalens.mcp.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import org.eclipse.jdt.core.IType;
-import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.IJdtService;
+import org.javalens.core.search.SearchResult;
+import org.javalens.core.search.SearchService.ReferenceKind;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
 import org.slf4j.Logger;
@@ -71,6 +72,12 @@ public class GetDiRegistrationsTool extends AbstractTool {
 
             Returns empty categories for non-Spring projects (does not error).
 
+            maxResults caps the matches listed for each annotation type (default
+            200). Each summary count is the exact number of registrations in its
+            category; meta.totalCount counts every registration, meta.returnedCount
+            those listed, and meta.truncated is true when an annotation type has
+            more matches than maxResults.
+
             Requires load_project to be called first.
             """;
     }
@@ -92,38 +99,32 @@ public class GetDiRegistrationsTool extends AbstractTool {
         }
 
         try {
-            List<Map<String, Object>> components = scanAnnotations(service, COMPONENT_ANNOTATIONS, maxResults);
-            List<Map<String, Object>> configurations = scanAnnotations(service, CONFIG_ANNOTATIONS, maxResults);
-            List<Map<String, Object>> beans = scanAnnotations(service, BEAN_ANNOTATIONS, maxResults);
-            List<Map<String, Object>> injectionPoints = scanAnnotations(service, INJECTION_ANNOTATIONS, maxResults);
+            Category components = scanAnnotations(service, COMPONENT_ANNOTATIONS, maxResults);
+            Category configurations = scanAnnotations(service, CONFIG_ANNOTATIONS, maxResults);
+            Category beans = scanAnnotations(service, BEAN_ANNOTATIONS, maxResults);
+            Category injectionPoints = scanAnnotations(service, INJECTION_ANNOTATIONS, maxResults);
 
             Map<String, Object> summary = new LinkedHashMap<>();
-            summary.put("components", components.size());
-            summary.put("configurations", configurations.size());
-            summary.put("beans", beans.size());
-            summary.put("injectionPoints", injectionPoints.size());
+            summary.put("components", components.total());
+            summary.put("configurations", configurations.total());
+            summary.put("beans", beans.total());
+            summary.put("injectionPoints", injectionPoints.total());
 
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("summary", summary);
-            data.put("components", components);
-            data.put("configurations", configurations);
-            data.put("beans", beans);
-            data.put("injectionPoints", injectionPoints);
+            data.put("components", components.matches());
+            data.put("configurations", configurations.matches());
+            data.put("beans", beans.matches());
+            data.put("injectionPoints", injectionPoints.matches());
 
-            int total = components.size() + configurations.size() + beans.size() + injectionPoints.size();
-
-            // `maxResults` is the per-category cap (see scanAnnotations) — if any
-            // category list hit the cap, the aggregate output is potentially missing
-            // entries from that category.
-            boolean truncated = components.size() >= maxResults
-                || configurations.size() >= maxResults
-                || beans.size() >= maxResults
-                || injectionPoints.size() >= maxResults;
+            int total = components.total() + configurations.total() + beans.total() + injectionPoints.total();
+            int returned = components.matches().size() + configurations.matches().size()
+                + beans.matches().size() + injectionPoints.matches().size();
 
             return ToolResponse.success(data, ResponseMeta.builder()
                 .totalCount(total)
-                .returnedCount(total)
-                .truncated(truncated)
+                .returnedCount(returned)
+                .truncated(returned < total)
                 .suggestedNextTools(List.of(
                     "find_references to trace a specific dependency",
                     "analyze_type for details on a registered component"
@@ -135,8 +136,17 @@ public class GetDiRegistrationsTool extends AbstractTool {
         }
     }
 
-    private List<Map<String, Object>> scanAnnotations(IJdtService service, String[][] annotations, int maxResults) {
+    /** A category's registrations: the matches listed, and the exact count of all of them. */
+    private record Category(List<Map<String, Object>> matches, int total) {
+    }
+
+    /**
+     * The registrations of {@code annotations}: for each annotation type its first
+     * {@code maxResults} matches, and the count of every match of every one of them.
+     */
+    private Category scanAnnotations(IJdtService service, String[][] annotations, int maxResults) {
         List<Map<String, Object>> results = new ArrayList<>();
+        int total = 0;
 
         for (String[] annotation : annotations) {
             String fqn = annotation[0];
@@ -146,11 +156,10 @@ public class GetDiRegistrationsTool extends AbstractTool {
                 IType annotationType = service.findType(fqn);
                 if (annotationType == null) continue;
 
-                List<SearchMatch> matches = service.getSearchService().findReferences(
-                    annotationType,
-                    org.javalens.core.search.SearchService.ReferenceKind.ANNOTATION,
-                    maxResults).matches();
-                for (Map<String, Object> match : formatMatches(matches, service)) {
+                SearchResult result = service.getSearchService().findReferences(
+                    annotationType, ReferenceKind.ANNOTATION, maxResults);
+                total += result.totalEncountered();
+                for (Map<String, Object> match : formatMatches(result.matches(), service)) {
                     match.put("annotation", "@" + label);
                     results.add(match);
                 }
@@ -159,6 +168,6 @@ public class GetDiRegistrationsTool extends AbstractTool {
             }
         }
 
-        return results;
+        return new Category(results, total);
     }
 }

@@ -10,6 +10,7 @@ import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.IJdtService;
 import org.javalens.core.graph.ProjectGraph;
 import org.javalens.core.graph.ProjectGraph.GraphNode;
+import org.javalens.core.search.SearchService;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
 import org.slf4j.Logger;
@@ -48,7 +49,8 @@ public class AnalyzeChangeImpactTool extends AbstractTool {
             Analyze the blast radius of changing a symbol.
 
             USAGE: analyze_change_impact(filePath="path/to/File.java", line=10, column=5)
-            OUTPUT: All files and call sites affected, grouped by file
+            OUTPUT: All files and call sites affected, grouped by file. Every
+            reference at every depth is listed and counted; nothing is cut.
 
             Options:
             - depth: How many levels of callers to follow (default 1, max 3)
@@ -117,7 +119,10 @@ public class AnalyzeChangeImpactTool extends AbstractTool {
                     if (visited.contains(key)) continue;
                     visited.add(key);
 
-                    List<SearchMatch> matches = service.getSearchService().findAllReferences(target, 500).matches();
+                    // Every reference: the call sites, the counts and the next level's callers
+                    // all come from the complete list.
+                    List<SearchMatch> matches = service.getSearchService()
+                        .findAllReferences(target, SearchService.ALL_MATCHES).matches();
 
                     for (SearchMatch match : matches) {
                         Map<String, Object> callSite = formatMatch(match, service);

@@ -370,4 +370,25 @@ class GetComplexityMetricsToolTest {
         assertEquals(2, risk.get("mediumRiskMethods").asInt());
         assertEquals(1, risk.get("highRiskMethods").asInt());
     }
+
+    // ========== Input schema ==========
+
+    @Test
+    @DisplayName("The input schema offers exactly filePath (required) and includeDetails: every payload holds the file, summary and per-method levels")
+    void inputSchema_exactParameters() {
+        Map<String, Object> filePath = new java.util.LinkedHashMap<>();
+        filePath.put("type", "string");
+        filePath.put("description", "Path to source file");
+        Map<String, Object> includeDetails = new java.util.LinkedHashMap<>();
+        includeDetails.put("type", "boolean");
+        includeDetails.put("description", "Include per-method breakdown (default: true)");
+        Map<String, Object> properties = new java.util.LinkedHashMap<>();
+        properties.put("filePath", filePath);
+        properties.put("includeDetails", includeDetails);
+        Map<String, Object> schema = new java.util.LinkedHashMap<>();
+        schema.put("type", "object");
+        schema.put("properties", properties);
+        schema.put("required", List.of("filePath"));
+        assertEquals(objectMapper.valueToTree(schema), objectMapper.valueToTree(tool.getInputSchema()));
+    }
 }

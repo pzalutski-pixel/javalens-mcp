@@ -92,22 +92,18 @@ class GetTypeUsageSummaryToolTest {
         assertEquals("com.example.Calculator", getData(tool.execute(args)).get("typeName"));
     }
 
-    @Test @DisplayName("maxPerCategory caps each category's count and locations to the limit")
-    @SuppressWarnings("unchecked")
+    @Test @DisplayName("maxPerCategory=2 lists at most two locations a category, in search order, and counts every usage")
     void respectsMaxPerCategory() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("typeName", "com.example.Calculator");
-        args.put("maxPerCategory", 1);
-
-        ToolResponse r = tool.execute(args);
-        assertTrue(r.isSuccess());
-        Map<String, Object> usages = (Map<String, Object>) getData(r).get("usages");
-        Map<String, Object> instantiations = (Map<String, Object>) usages.get("instantiations");
-        // 5 actual instantiations, but count IS the clipped match-list size -> 1.
-        assertEquals(1, ((Number) instantiations.get("count")).intValue());
-        assertEquals(1, ((List<?>) instantiations.get("locations")).size());
-        // Each of the 4 non-empty categories clips to 1 -> totalUsages 4.
-        assertEquals(4, ((Number) getData(r).get("totalUsages")).intValue());
+        args.put("maxPerCategory", 2);
+        // Only instantiations (5) has more usages than the cap: 7 of the 10 locations are listed.
+        Map<String, Object> usages = new java.util.LinkedHashMap<>();
+        usages.put("instantiations", category(5, List.of(NEW_CALCULATOR_57, NEW_CALCULATOR_211)));
+        usages.put("casts", category(1, List.of(CAST_79)));
+        usages.put("instanceofChecks", category(2, List.of(INSTANCEOF_78, INSTANCEOF_99)));
+        usages.put("typeArguments", category(2, List.of(TYPE_ARGUMENT_26, TYPE_ARGUMENT_210)));
+        assertPayload(args, summaryPayload("com.example.Calculator", "class", usages, 10, 7));
     }
 
     @Test @DisplayName("missing typeName -> exact INVALID_PARAMETER")
@@ -300,5 +296,130 @@ class GetTypeUsageSummaryToolTest {
         assertEquals(0, usages.get("typeArguments").get("count").asInt(), "Animal not a generic type arg");
         assertEquals(1, usages.get("instantiations").get("count").asInt(),
             "Animal instantiated exactly once (FieldHolder) — count must survive the envelope");
+    }
+
+    // ========== maxPerCategory: exact counts, cut locations, documented range ==========
+
+    @Test
+    @DisplayName("maxPerCategory=1 on Calculator keeps the first location of each category and counts every usage exactly")
+    void maxPerCategoryOne_exactCountsFirstLocations() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("typeName", "com.example.Calculator");
+        args.put("maxPerCategory", 1);
+        Map<String, Object> usages = new java.util.LinkedHashMap<>();
+        usages.put("instantiations", category(5, List.of(NEW_CALCULATOR_57)));
+        usages.put("casts", category(1, List.of(CAST_79)));
+        usages.put("instanceofChecks", category(2, List.of(INSTANCEOF_78)));
+        usages.put("typeArguments", category(2, List.of(TYPE_ARGUMENT_26)));
+        assertPayload(args, summaryPayload("com.example.Calculator", "class", usages, 10, 4));
+    }
+
+    @Test
+    @DisplayName("maxPerCategory outside 1 to 50 is INVALID_PARAMETER naming the range, never clamped")
+    void maxPerCategory_outsideRangeIsRefused() {
+        ObjectNode zero = objectMapper.createObjectNode();
+        zero.put("typeName", "com.example.Calculator");
+        zero.put("maxPerCategory", 0);
+        ObjectNode fiftyOne = objectMapper.createObjectNode();
+        fiftyOne.put("typeName", "com.example.Calculator");
+        fiftyOne.put("maxPerCategory", 51);
+        assertAll(
+            () -> assertPayload(zero, refusal("Invalid parameter 'maxPerCategory': Must be between 1 and 50; got: 0")),
+            () -> assertPayload(fiftyOne,
+                refusal("Invalid parameter 'maxPerCategory': Must be between 1 and 50; got: 51")));
+    }
+
+    // ========== exact payload helpers ==========
+
+    private static final String SEARCH_PATTERNS = "src/main/java/com/example/SearchPatterns.java";
+
+    /*
+     * Each location is the type reference "Calculator" (length 10). Raw offsets depend on line
+     * endings, so they are removed; line and column pin each location.
+     */
+    private static final Map<String, Object> NEW_CALCULATOR_57 =
+        location(SEARCH_PATTERNS, 57, 30, "Calculator calc = new Calculator();");
+    private static final Map<String, Object> CAST_79 =
+        location(SEARCH_PATTERNS, 79, 31, "Calculator calc = (Calculator) obj;");
+    private static final Map<String, Object> INSTANCEOF_78 =
+        location(SEARCH_PATTERNS, 78, 27, "if (obj instanceof Calculator) {");
+    private static final Map<String, Object> TYPE_ARGUMENT_26 =
+        location(SEARCH_PATTERNS, 26, 17, "private List<Calculator> calculatorList;");
+    private static final Map<String, Object> NEW_CALCULATOR_211 =
+        location(SEARCH_PATTERNS, 211, 22, "calcs.add(new Calculator());");
+    private static final Map<String, Object> INSTANCEOF_99 =
+        location(SEARCH_PATTERNS, 99, 27, "if (obj instanceof Calculator) {");
+    private static final Map<String, Object> TYPE_ARGUMENT_210 =
+        location(SEARCH_PATTERNS, 210, 13, "List<Calculator> calcs = new ArrayList<>();");
+
+    private static Map<String, Object> location(String file, int line, int column, String context) {
+        Map<String, Object> location = new java.util.LinkedHashMap<>();
+        location.put("filePath", file);
+        location.put("length", 10);
+        location.put("line", line);
+        location.put("column", column);
+        location.put("context", context);
+        return location;
+    }
+
+    private static Map<String, Object> category(int count, List<Map<String, Object>> locations) {
+        Map<String, Object> category = new java.util.LinkedHashMap<>();
+        category.put("count", count);
+        category.put("locations", locations);
+        return category;
+    }
+
+    /** The success payload for {@code usages}: {@code total} usages, {@code returned} locations listed. */
+    private static Map<String, Object> summaryPayload(String typeName, String kind, Map<String, Object> usages,
+                                                      int total, int returned) {
+        Map<String, Object> data = new java.util.LinkedHashMap<>();
+        data.put("typeName", typeName);
+        data.put("kind", kind);
+        data.put("usages", usages);
+        data.put("totalUsages", total);
+        Map<String, Object> meta = new java.util.LinkedHashMap<>();
+        meta.put("totalCount", total);
+        meta.put("returnedCount", returned);
+        meta.put("truncated", returned < total);
+        meta.put("suggestedNextTools", List.of(
+            "analyze_type for complete type analysis",
+            "get_type_hierarchy to understand inheritance",
+            "find_references for all reference types"));
+        Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("success", true);
+        payload.put("data", data);
+        payload.put("meta", meta);
+        return payload;
+    }
+
+    private static Map<String, Object> refusal(String message) {
+        return Map.of("success", false, "error", Map.of("code", "INVALID_PARAMETER", "message", message));
+    }
+
+    /**
+     * The payload through execute(), read back from the JSON text it serializes to, and through
+     * the JSON-RPC envelope both equal {@code expected}, each without its locations' raw offsets.
+     */
+    private void assertPayload(ObjectNode args, Map<String, Object> expected) {
+        JsonNode expectedJson = objectMapper.valueToTree(expected);
+        JsonNode direct;
+        try {
+            direct = withoutOffsets(objectMapper.readTree(
+                objectMapper.writeValueAsString(tool.execute(args.deepCopy()))));
+        } catch (Exception e) {
+            throw new AssertionError("execute() payload does not serialize for " + args, e);
+        }
+        JsonNode wire = withoutOffsets(envelope.assertEnvelopeFidelity("get_type_usage_summary", args));
+        assertAll(
+            () -> assertEquals(expectedJson, direct, "execute() payload for " + args),
+            () -> assertEquals(expectedJson, wire, "envelope payload for " + args));
+    }
+
+    /** {@code payload} without the offset of each location of every usage category. */
+    private static JsonNode withoutOffsets(JsonNode payload) {
+        JsonNode copy = payload.deepCopy();
+        copy.path("data").path("usages").forEach(category ->
+            category.path("locations").forEach(location -> ((ObjectNode) location).remove("offset")));
+        return copy;
     }
 }

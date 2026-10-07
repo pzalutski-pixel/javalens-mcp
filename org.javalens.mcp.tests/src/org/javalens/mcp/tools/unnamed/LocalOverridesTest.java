@@ -112,7 +112,7 @@ class LocalOverridesTest {
             "callees", map("count", 0, "list", List.of()),
             "overrides", overrides);
         assertPayload(mapper, new AnalyzeMethodTool(() -> service), envelope, args,
-            success(data, map("suggestedNextTools", NEXT_TOOLS)));
+            success(data, map("totalCount", 0, "returnedCount", 0, "truncated", false, "suggestedNextTools", NEXT_TOOLS)));
     }
 
     private static Map<String, Object> methodInfo(String name, List<String> modifiers, String typeQualifiedName,

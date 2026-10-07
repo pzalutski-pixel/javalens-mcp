@@ -86,6 +86,12 @@ public class AnalyzeMethodTool extends AbstractTool {
               superclass constructor its constructor runs)
             - Override information (super method, overriding methods)
 
+            callers.count and callees.count are the exact numbers of distinct
+            callers and callees; each list holds the first maxCallers (default 20)
+            or maxCallees (default 50) of them, callers in search order and callees
+            in source order. meta.totalCount counts both, meta.returnedCount those
+            listed, and meta.truncated is true when either list is cut.
+
             Use this instead of multiple calls to get_method_at_position + call hierarchy tools.
 
             IMPORTANT: Uses ZERO-BASED coordinates.
@@ -100,8 +106,8 @@ public class AnalyzeMethodTool extends AbstractTool {
             .required("filePath", "string", "Path to source file")
             .required("line", "integer", "Zero-based line number")
             .required("column", "integer", "Zero-based column number")
-            .optional("maxCallers", "integer", "Maximum callers to return (default 20)")
-            .optional("maxCallees", "integer", "Maximum callees to return (default 50)")
+            .optional("maxCallers", "integer", "Maximum callers listed (default 20); callers.count counts all")
+            .optional("maxCallees", "integer", "Maximum callees listed (default 50); callees.count counts all")
             .build();
     }
 
@@ -156,18 +162,25 @@ public class AnalyzeMethodTool extends AbstractTool {
             }
 
             // Incoming calls (callers)
-            data.put("callers", findCallers(method, service, maxCallers));
+            List<Map<String, Object>> callers = findCallers(method, service);
+            data.put("callers", calls(callers, maxCallers));
 
             // The method's declaration, with bindings: its callees are read from it.
             MethodDeclaration declaration = findDeclaration(method, cu);
 
             // Outgoing calls (callees)
-            data.put("callees", findCallees(declaration, maxCallees));
+            List<Map<String, Object>> callees = findCallees(declaration);
+            data.put("callees", calls(callees, maxCallees));
 
             // Override info
             data.put("overrides", findOverrideInfo(method, service));
 
+            int total = callers.size() + callees.size();
+            int returned = listed(callers, maxCallers).size() + listed(callees, maxCallees).size();
             return ToolResponse.success(data, ResponseMeta.builder()
+                .totalCount(total)
+                .returnedCount(returned)
+                .truncated(returned < total)
                 .suggestedNextTools(List.of(
                     "analyze_type for declaring type analysis",
                     "find_references for all usages",
@@ -238,21 +251,32 @@ public class AnalyzeMethodTool extends AbstractTool {
         return params;
     }
 
-    private Map<String, Object> findCallers(IMethod method, IJdtService service, int maxCallers) {
+    /** A callers or callees block: the count of all of them and the first {@code max} listed. */
+    private static Map<String, Object> calls(List<Map<String, Object>> all, int max) {
         Map<String, Object> result = new LinkedHashMap<>();
+        result.put("count", all.size());
+        result.put("list", listed(all, max));
+        return result;
+    }
+
+    /** The first {@code max} of {@code all}; none when {@code max} is not positive. */
+    private static List<Map<String, Object>> listed(List<Map<String, Object>> all, int max) {
+        return all.subList(0, Math.max(0, Math.min(max, all.size())));
+    }
+
+    /** Every distinct caller of {@code method}, in search order. */
+    private List<Map<String, Object>> findCallers(IMethod method, IJdtService service) {
         List<Map<String, Object>> callers = new ArrayList<>();
 
         try {
-            // Every reference: callers are the distinct enclosing methods, so the first
-            // maxCallers of them can lie past any fixed number of references.
+            // Every reference: callers are the distinct enclosing methods, and each is
+            // counted however many references it holds.
             List<SearchMatch> references = service.getSearchService()
                 .findAllReferences(method, SearchService.ALL_MATCHES).matches();
 
             Set<String> seenCallers = new HashSet<>();
 
             for (SearchMatch match : references) {
-                if (callers.size() >= maxCallers) break;
-
                 // A call is attributed to the member holding it that has a name: a call in a
                 // lambda belongs to the method, initializer or field the lambda is written in.
                 // An initializer or field initializer calls as <initializer>.
@@ -284,9 +308,7 @@ public class AnalyzeMethodTool extends AbstractTool {
             log.debug("Error finding callers: {}", e.getMessage());
         }
 
-        result.put("count", callers.size());
-        result.put("list", callers);
-        return result;
+        return callers;
     }
 
     /**
@@ -316,10 +338,9 @@ public class AnalyzeMethodTool extends AbstractTool {
      * The calls {@code methodDecl} makes itself: those in its body and in the lambdas written in
      * it. A call in the body of an anonymous or local class declared in the method is a call of
      * that class's member; the creation of an anonymous class and its arguments are calls of
-     * the method.
+     * the method. Each distinct callee once, in source order.
      */
-    private Map<String, Object> findCallees(MethodDeclaration methodDecl, int maxCallees) {
-        Map<String, Object> result = new LinkedHashMap<>();
+    private List<Map<String, Object>> findCallees(MethodDeclaration methodDecl) {
         List<Map<String, Object>> callees = new ArrayList<>();
 
         try {
@@ -340,7 +361,6 @@ public class AnalyzeMethodTool extends AbstractTool {
 
                     @Override
                     public boolean visit(MethodInvocation node) {
-                        if (callees.size() >= maxCallees) return false;
                         addCallee(node.resolveMethodBinding(), "METHOD", node.getName().toString(),
                             ast.getLineNumber(node.getStartPosition()), seenCallees, callees);
                         return true;
@@ -348,7 +368,6 @@ public class AnalyzeMethodTool extends AbstractTool {
 
                     @Override
                     public boolean visit(SuperMethodInvocation node) {
-                        if (callees.size() >= maxCallees) return false;
                         addCallee(node.resolveMethodBinding(), "SUPER_METHOD", node.getName().toString(),
                             ast.getLineNumber(node.getStartPosition()), seenCallees, callees);
                         return true;
@@ -356,7 +375,6 @@ public class AnalyzeMethodTool extends AbstractTool {
 
                     @Override
                     public boolean visit(ClassInstanceCreation node) {
-                        if (callees.size() >= maxCallees) return false;
                         // An anonymous class's creation is a call of the superclass constructor
                         // its constructor runs (CreationCalls).
                         IMethodBinding constructor = CreationCalls.constructorCalled(node);
@@ -370,7 +388,6 @@ public class AnalyzeMethodTool extends AbstractTool {
 
                     @Override
                     public boolean visit(ConstructorInvocation node) {
-                        if (callees.size() >= maxCallees) return false;
                         IMethodBinding binding = node.resolveConstructorBinding();
                         if (binding != null) {
                             addCallee(binding, "THIS_CONSTRUCTOR", ElementNames.typeExpression(binding.getDeclaringClass()),
@@ -381,7 +398,6 @@ public class AnalyzeMethodTool extends AbstractTool {
 
                     @Override
                     public boolean visit(SuperConstructorInvocation node) {
-                        if (callees.size() >= maxCallees) return false;
                         IMethodBinding binding = node.resolveConstructorBinding();
                         if (binding != null) {
                             addCallee(binding, "SUPER_CONSTRUCTOR", ElementNames.typeExpression(binding.getDeclaringClass()),
@@ -414,7 +430,6 @@ public class AnalyzeMethodTool extends AbstractTool {
                     }
 
                     private void visitMethodReference(MethodReference node) {
-                        if (callees.size() >= maxCallees) return;
                         IMethodBinding binding = node.resolveMethodBinding();
                         if (binding != null) {
                             addCallee(binding, "METHOD_REFERENCE", binding.getName(),
@@ -427,9 +442,7 @@ public class AnalyzeMethodTool extends AbstractTool {
             log.debug("Error finding callees: {}", e.getMessage());
         }
 
-        result.put("count", callees.size());
-        result.put("list", callees);
-        return result;
+        return callees;
     }
 
     private void addCallee(IMethodBinding binding, String kind, String name, int line,

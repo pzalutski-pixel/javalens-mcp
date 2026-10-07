@@ -67,6 +67,7 @@ class QuickFixImportNameTest {
         Map<String, Object> meta = map(
             "totalCount", 1,
             "returnedCount", 1,
+            "truncated", false,
             "suggestedNextTools", List.of(
                 "apply_quick_fix with fixId to apply a fix",
                 "get_diagnostics to see all problems"));

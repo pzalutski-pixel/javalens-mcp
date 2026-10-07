@@ -51,8 +51,11 @@ public class SuggestImportsTool extends AbstractTool {
             OUTPUT: List of matching types with fully qualified names and relevance
 
             Searches project sources, JDK, and libraries for types matching
-            the simple name. Results are sorted by relevance (java.util types
-            ranked higher than java.awt, etc.).
+            the simple name. Every candidate is ranked by relevance (java.util
+            types ranked higher than java.awt, etc.; equally relevant ones by
+            fully qualified name), then the first maxResults are returned.
+            totalCandidates and meta.totalCount count every candidate;
+            meta.truncated is true when candidates are left out.
 
             Requires load_project to be called first.
             """;
@@ -92,14 +95,10 @@ public class SuggestImportsTool extends AbstractTool {
 
             SearchEngine engine = new SearchEngine();
 
-            // Collect matching types
+            // Collect every matching type: the most relevant can come last in search order
             TypeNameMatchRequestor requestor = new TypeNameMatchRequestor() {
                 @Override
                 public void acceptTypeNameMatch(TypeNameMatch match) {
-                    // Collect extra for sorting; overflow-safe doubling (maxResults can be MAX_VALUE)
-                    int collectBudget = maxResults > Integer.MAX_VALUE / 2 ? Integer.MAX_VALUE : maxResults * 2;
-                    if (candidates.size() >= collectBudget) return;
-
                     try {
                         IType type = match.getType();
                         String fqn = type.getFullyQualifiedName();
@@ -153,9 +152,10 @@ public class SuggestImportsTool extends AbstractTool {
                 new NullProgressMonitor()
             );
 
-            // Sort by relevance (descending)
-            candidates.sort(Comparator.comparingInt(
-                (Map<String, Object> c) -> (int) c.get("relevance")).reversed());
+            // Rank every candidate: by relevance (descending), then by fully qualified name
+            candidates.sort(Comparator.comparingInt((Map<String, Object> c) -> (int) c.get("relevance"))
+                .reversed()
+                .thenComparing(c -> (String) c.get("fullyQualifiedName")));
 
             // Limit results
             int totalCandidates = candidates.size();
@@ -166,7 +166,7 @@ public class SuggestImportsTool extends AbstractTool {
 
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("typeName", typeName);
-            data.put("totalCandidates", result.size());
+            data.put("totalCandidates", totalCandidates);
             data.put("candidates", result);
 
             return ToolResponse.success(data, ResponseMeta.builder()

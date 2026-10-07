@@ -34,6 +34,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.function.Supplier;
 
@@ -46,6 +47,9 @@ import java.util.function.Supplier;
 public class FindPossibleBugsTool extends AbstractTool {
 
     private static final Logger log = LoggerFactory.getLogger(FindPossibleBugsTool.class);
+
+    /** The accepted {@code severity} values, compared case-insensitively. */
+    private static final List<String> SEVERITIES = List.of("high", "medium", "low", "all");
 
     public FindPossibleBugsTool(Supplier<IJdtService> serviceSupplier) {
         super(serviceSupplier);
@@ -72,6 +76,10 @@ public class FindPossibleBugsTool extends AbstractTool {
             - Comparison issues (== on objects instead of equals)
             - Synchronization issues (sync on String)
 
+            severity (optional, compared case-insensitively): high, medium or low
+            keeps the issues of that severity; all (the default) keeps every issue.
+            Any other value is rejected with INVALID_PARAMETER.
+
             Requires load_project to be called first.
             """;
     }
@@ -80,14 +88,21 @@ public class FindPossibleBugsTool extends AbstractTool {
     public Map<String, Object> getInputSchema() {
         return SchemaBuilder.object()
             .optional("filePath", "string", "Optional: specific file to check (default: all files)")
-            .optional("severity", "string", "Filter by severity: high, medium, low, all (default: all)")
+            .optional("severity", "string", "Filter by severity, case-insensitive: high, medium, low "
+                + "or all (default: all)")
             .build();
     }
 
     @Override
     protected ToolResponse executeWithService(IJdtService service, JsonNode arguments) {
         String filePath = getStringParam(arguments, "filePath", null);
-        String severity = getStringParam(arguments, "severity", "all");
+        String requestedSeverity = getStringParam(arguments, "severity", "all");
+        String severity = requestedSeverity.toLowerCase(Locale.ROOT);
+        if (!SEVERITIES.contains(severity)) {
+            return ToolResponse.invalidParameter("severity",
+                "Must be one of " + String.join(", ", SEVERITIES) + " (case-insensitive); got: "
+                    + requestedSeverity);
+        }
 
         try {
             List<Map<String, Object>> issues = new ArrayList<>();

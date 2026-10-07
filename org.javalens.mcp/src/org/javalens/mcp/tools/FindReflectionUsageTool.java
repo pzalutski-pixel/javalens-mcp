@@ -3,13 +3,17 @@ package org.javalens.mcp.tools;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.eclipse.jdt.core.IMethod;
 import org.eclipse.jdt.core.IType;
+import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.IJdtService;
+import org.javalens.core.search.SearchResult;
+import org.javalens.core.search.SearchService;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -72,6 +76,12 @@ public class FindReflectionUsageTool extends AbstractTool {
             These usages are invisible to static reference searches
             and can break when types or methods are renamed.
 
+            maxResults caps the calls listed for each reflection method, all its
+            overloads together (default 100), in source order: by file, then
+            position. summary counts every call of each reflection method, and
+            totalCalls and meta.totalCount count every call; meta.truncated is true
+            when calls are left out.
+
             Requires load_project to be called first.
             """;
     }
@@ -106,13 +116,11 @@ public class FindReflectionUsageTool extends AbstractTool {
                     IType type = service.findType(typeName);
                     if (type == null) continue;
 
-                    int forThisLabel = 0;
-                    int labelTotalEncountered = 0;
-                    // Iterate all overloads of methodName on this type. The documented
-                    // maxResults is PER REFLECTION METHOD (per label), not per overload.
-                    // Track total matches per label so truncated reports accurately:
-                    // comparing forThisLabel to maxResults misreports the exact-equal case.
-                    labelLoop:
+                    // Every call of every overload of methodName on this type: maxResults caps
+                    // the calls listed per reflection method (per label), not per overload,
+                    // and the label's count is every call.
+                    List<SearchMatch> labelMatches = new ArrayList<>();
+                    int labelTotal = 0;
                     for (IMethod method : type.getMethods()) {
                         if (!methodName.equals(method.getElementName())) continue;
                         if (!method.exists()) continue;
@@ -120,23 +128,26 @@ public class FindReflectionUsageTool extends AbstractTool {
                         // Source-scoped: reflection-method references that matter are
                         // the project's own call sites. The full-scope search leaked
                         // classpath and workspace-metadata (target/work) matches.
-                        org.javalens.core.search.SearchResult result =
-                            service.getSearchService().findAllReferencesInSources(method, maxResults);
-                        labelTotalEncountered += result.totalEncountered();
-
-                        List<Map<String, Object>> formatted = formatMatches(result.matches(), service);
-                        for (Map<String, Object> match : formatted) {
-                            if (forThisLabel >= maxResults) break labelLoop;
-                            match.put("reflectionMethod", label);
-                            allCalls.add(match);
-                            forThisLabel++;
-                        }
+                        SearchResult result = service.getSearchService()
+                            .findAllReferencesInSources(method, SearchService.ALL_MATCHES);
+                        labelTotal += result.totalEncountered();
+                        labelMatches.addAll(result.matches());
                     }
 
-                    if (forThisLabel > 0) {
-                        summary.put(label, forThisLabel);
+                    // The first maxResults calls in source order, whatever overload each calls
+                    labelMatches.sort(Comparator
+                        .comparing((SearchMatch match) -> match.getResource().getFullPath().toString())
+                        .thenComparingInt(SearchMatch::getOffset));
+                    List<SearchMatch> listed = labelMatches.subList(0, Math.min(maxResults, labelMatches.size()));
+                    for (Map<String, Object> match : formatMatches(listed, service)) {
+                        match.put("reflectionMethod", label);
+                        allCalls.add(match);
                     }
-                    grandTotalEncountered += labelTotalEncountered;
+
+                    if (labelTotal > 0) {
+                        summary.put(label, labelTotal);
+                    }
+                    grandTotalEncountered += labelTotal;
                 } catch (Exception e) {
                     log.debug("Could not scan for {}.{}: {}", typeName, methodName, e.getMessage());
                 }

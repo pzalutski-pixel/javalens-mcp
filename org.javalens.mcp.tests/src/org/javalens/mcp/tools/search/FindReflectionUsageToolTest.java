@@ -92,28 +92,14 @@ class FindReflectionUsageToolTest {
     }
 
     @Test
-    @DisplayName("should respect maxResults parameter (per-reflection-method cap, per the tool's description)")
+    @DisplayName("maxResults=1 lists one call of each reflection method, counts all eight calls and reports the cut")
     void respectsMaxResults() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("maxResults", 1);
-
-        ToolResponse response = tool.execute(args);
-        assertTrue(response.isSuccess());
-        Map<String, Object> data = getData(response);
-
-        // The tool documents `maxResults` as "Maximum results per reflection method". The
-        // summary maps each detected reflection label to its count; every value must obey
-        // the cap.
-        @SuppressWarnings("unchecked")
-        Map<String, Object> summary = (Map<String, Object>) data.get("summary");
-        assertNotNull(summary);
-        // The per-reflection-method cap of 1 leaves every count at exactly 1 — including
-        // Method.invoke, whose two call sites are clipped down to one.
-        for (Map.Entry<String, Object> entry : summary.entrySet()) {
-            assertEquals(1, ((Number) entry.getValue()).intValue(),
-                "maxResults=1 caps each reflection label's count to exactly 1; "
-                    + entry.getKey() + "; full summary: " + summary);
-        }
+        // maxResults caps the calls listed per reflection method: Method.invoke lists its call
+        // on line 32 of its two, and its summary count stays 2.
+        assertPayload(args, reflection(List.of(FOR_NAME_26, GET_METHOD_31, GET_DECLARED_FIELD_36,
+            GET_DECLARED_CONSTRUCTOR_27, INVOKE_32, FIELD_GET_38, NEW_INSTANCE_27)));
     }
 
     @Test
@@ -463,5 +449,99 @@ class FindReflectionUsageToolTest {
             assertFalse(fp.contains("target/work") || fp.contains("javalens-WS"),
                 "no workspace-metadata leak through the envelope; got: " + fp);
         }
+    }
+
+    // ========== exact payload helpers ==========
+
+    private static final String REFLECTION = "src/main/java/com/example/DiAndReflectionPatterns.java";
+
+    /*
+     * The eight reflection calls of DiAndReflectionPatterns. Each match runs from the method's
+     * name to the closing parenthesis of its call. Raw offsets depend on line endings, so they
+     * are removed; line and column pin each call.
+     */
+    private static final Map<String, Object> FOR_NAME_26 = call("Class.forName", 26, 31, "forName(className)",
+        "Class<?> clazz = Class.forName(className);");
+    private static final Map<String, Object> GET_DECLARED_CONSTRUCTOR_27 = call("Class.getDeclaredConstructor", 27,
+        21, "getDeclaredConstructor()", "return clazz.getDeclaredConstructor().newInstance();");
+    private static final Map<String, Object> NEW_INSTANCE_27 = call("Constructor.newInstance", 27, 46,
+        "newInstance()", "return clazz.getDeclaredConstructor().newInstance();");
+    private static final Map<String, Object> GET_METHOD_31 = call("Class.getMethod", 31, 42,
+        "getMethod(methodName)", "Method method = target.getClass().getMethod(methodName);");
+    private static final Map<String, Object> INVOKE_32 = call("Method.invoke", 32, 22, "invoke(target)",
+        "return method.invoke(target);");
+    private static final Map<String, Object> GET_DECLARED_FIELD_36 = call("Class.getDeclaredField", 36, 40,
+        "getDeclaredField(fieldName)", "Field field = target.getClass().getDeclaredField(fieldName);");
+    private static final Map<String, Object> FIELD_GET_38 = call("Field.get", 38, 21, "get(target)",
+        "return field.get(target);");
+    private static final Map<String, Object> INVOKE_120 = call("Method.invoke", 120, 22, "invoke(target)",
+        "return method.invoke(target);");
+
+    private static Map<String, Object> call(String reflectionMethod, int line, int column, String matched,
+                                            String context) {
+        Map<String, Object> call = new java.util.LinkedHashMap<>();
+        call.put("filePath", REFLECTION);
+        call.put("length", matched.length());
+        call.put("line", line);
+        call.put("column", column);
+        call.put("context", context);
+        call.put("reflectionMethod", reflectionMethod);
+        return call;
+    }
+
+    /**
+     * The success payload listing {@code calls}, in the tool's reflection-method order: all eight
+     * calls are counted, Method.invoke's two among them.
+     */
+    private static Map<String, Object> reflection(List<Map<String, Object>> calls) {
+        Map<String, Object> summary = new java.util.LinkedHashMap<>();
+        summary.put("Class.forName", 1);
+        summary.put("Class.getMethod", 1);
+        summary.put("Class.getDeclaredField", 1);
+        summary.put("Class.getDeclaredConstructor", 1);
+        summary.put("Method.invoke", 2);
+        summary.put("Field.get", 1);
+        summary.put("Constructor.newInstance", 1);
+        Map<String, Object> data = new java.util.LinkedHashMap<>();
+        data.put("totalCalls", 8);
+        data.put("summary", summary);
+        data.put("reflectionCalls", calls);
+        Map<String, Object> meta = new java.util.LinkedHashMap<>();
+        meta.put("totalCount", 8);
+        meta.put("returnedCount", calls.size());
+        meta.put("truncated", calls.size() < 8);
+        meta.put("suggestedNextTools", List.of(
+            "analyze_change_impact to assess risk of renaming reflected types",
+            "get_symbol_info at a reflection call site for context"));
+        Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("success", true);
+        payload.put("data", data);
+        payload.put("meta", meta);
+        return payload;
+    }
+
+    /**
+     * The payload through execute(), read back from the JSON text it serializes to, and through
+     * the JSON-RPC envelope both equal {@code expected}, each without its calls' raw offsets.
+     */
+    private void assertPayload(ObjectNode args, Map<String, Object> expected) {
+        JsonNode expectedJson = objectMapper.valueToTree(expected);
+        JsonNode direct;
+        try {
+            direct = withoutOffsets(objectMapper.readTree(
+                objectMapper.writeValueAsString(tool.execute(args.deepCopy()))));
+        } catch (Exception e) {
+            throw new AssertionError("execute() payload does not serialize for " + args, e);
+        }
+        JsonNode wire = withoutOffsets(envelope.assertEnvelopeFidelity("find_reflection_usage", args));
+        assertAll(
+            () -> assertEquals(expectedJson, direct, "execute() payload for " + args),
+            () -> assertEquals(expectedJson, wire, "envelope payload for " + args));
+    }
+
+    private static JsonNode withoutOffsets(JsonNode payload) {
+        JsonNode copy = payload.deepCopy();
+        copy.path("data").path("reflectionCalls").forEach(call -> ((ObjectNode) call).remove("offset"));
+        return copy;
     }
 }

@@ -157,7 +157,7 @@ class OutgoingCallsTest {
                 analyzedCallee("Local", "CONSTRUCTOR", LOCAL, "Local()", 51))),
             "overrides", map());
         assertPayload(mapper, new AnalyzeMethodTool(() -> service), envelope, position(31, 8),
-            success(data, map("suggestedNextTools", ANALYZE_NEXT_TOOLS)));
+            success(data, map("totalCount", 8, "returnedCount", 8, "truncated", false, "suggestedNextTools", ANALYZE_NEXT_TOOLS)));
     }
 
     @Test

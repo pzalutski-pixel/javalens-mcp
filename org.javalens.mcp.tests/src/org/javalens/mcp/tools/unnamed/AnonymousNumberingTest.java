@@ -148,10 +148,12 @@ class AnonymousNumberingTest {
                 "signature", "length()",
                 "callLine", 95))),
             "overrides", map());
-        Map<String, Object> meta = map("suggestedNextTools", List.of(
-            "analyze_type for declaring type analysis",
-            "find_references for all usages",
-            "go_to_definition to navigate to a callee"));
+        // Four callers and one callee, all listed.
+        Map<String, Object> meta = map("totalCount", 5, "returnedCount", 5, "truncated", false,
+            "suggestedNextTools", List.of(
+                "analyze_type for declaring type analysis",
+                "find_references for all usages",
+                "go_to_definition to navigate to a callee"));
         assertPayload(mapper, new AnalyzeMethodTool(() -> service), envelope, position(94, 15),
             success(data, meta));
     }

@@ -41,7 +41,8 @@ import java.util.function.Supplier;
 /**
  * Calculate code complexity metrics (cyclomatic, cognitive, LOC).
  *
- * Provides metrics at file, type, or method granularity with risk assessment.
+ * Every answer holds the file's line counts, the summary and risk assessment over its methods
+ * and, with includeDetails, each method's metrics with the type declaring it.
  */
 public class GetComplexityMetricsTool extends AbstractTool {
 
@@ -62,7 +63,9 @@ public class GetComplexityMetricsTool extends AbstractTool {
             Get cyclomatic complexity, cognitive complexity, LOC.
 
             USAGE: get_complexity_metrics(filePath="path/to/File.java")
-            OUTPUT: Complexity metrics with risk assessment
+            OUTPUT: The file's line counts, a summary and risk assessment over its
+            methods and, with includeDetails (default true), each method's metrics
+            with the type declaring it
 
             Metrics:
             - Cyclomatic Complexity: Count of decision points (+1 for if/for/while/case/catch)
@@ -82,7 +85,6 @@ public class GetComplexityMetricsTool extends AbstractTool {
     public Map<String, Object> getInputSchema() {
         return SchemaBuilder.object()
             .required("filePath", "string", "Path to source file")
-            .optional("granularity", "string", "Level of detail: 'file', 'type', or 'method' (default: 'file')")
             .optional("includeDetails", "boolean", "Include per-method breakdown (default: true)")
             .build();
     }
@@ -90,7 +92,6 @@ public class GetComplexityMetricsTool extends AbstractTool {
     @Override
     protected ToolResponse executeWithService(IJdtService service, JsonNode arguments) {
         String filePath = getStringParam(arguments, "filePath");
-        String granularity = getStringParam(arguments, "granularity", "file");
         boolean includeDetails = getBooleanParam(arguments, "includeDetails", true);
 
         if (filePath == null || filePath.isBlank()) {

@@ -45,6 +45,117 @@ class AnalyzeMethodToolTest {
     @SuppressWarnings("unchecked")
     private Map<String, Object> getMethod(Map<String, Object> d) { return (Map<String, Object>) d.get("method"); }
 
+    // ========== exact payload helpers ==========
+
+    private static final String CALCULATOR = "src/main/java/com/example/Calculator.java";
+    private static final String SEARCH_PATTERNS = "src/main/java/com/example/SearchPatterns.java";
+
+    private static final List<String> NEXT_TOOLS = List.of(
+        "analyze_type for declaring type analysis",
+        "find_references for all usages",
+        "go_to_definition to navigate to a callee");
+
+    /** Calculator.add: its source range, and so its line, starts at its Javadoc on line 8. */
+    private static final Map<String, Object> CALCULATOR_ADD =
+        methodInfo("add", "com.example.Calculator", "add(int a, int b): int", "int", CALCULATOR, 8);
+    private static final List<Map<String, Object>> ADD_PARAMETERS =
+        List.of(parameter("int", "a"), parameter("int", "b"));
+
+    /** A public method's info; its line is where its source range, Javadoc included, starts. */
+    private static Map<String, Object> methodInfo(String name, String declaringType, String signature,
+                                                  String returnType, String file, int line) {
+        Map<String, Object> info = new java.util.LinkedHashMap<>();
+        info.put("name", name);
+        info.put("constructor", false);
+        info.put("modifiers", List.of("public"));
+        info.put("declaringType", declaringType);
+        info.put("signature", signature);
+        info.put("returnType", returnType);
+        info.put("file", file);
+        info.put("line", line);
+        return info;
+    }
+
+    private static Map<String, Object> parameter(String type, String name) {
+        Map<String, Object> parameter = new java.util.LinkedHashMap<>();
+        parameter.put("type", type);
+        parameter.put("name", name);
+        return parameter;
+    }
+
+    /** A callers or callees block: {@code count} of them in all, {@code list} the ones listed. */
+    private static Map<String, Object> calls(int count, List<Map<String, Object>> list) {
+        Map<String, Object> calls = new java.util.LinkedHashMap<>();
+        calls.put("count", count);
+        calls.put("list", list);
+        return calls;
+    }
+
+    private static Map<String, Object> caller(String method, String qualifiedType, String file, int callLine) {
+        Map<String, Object> caller = new java.util.LinkedHashMap<>();
+        caller.put("method", method);
+        caller.put("qualifiedType", qualifiedType);
+        caller.put("file", file);
+        caller.put("callLine", callLine);
+        return caller;
+    }
+
+    private static Map<String, Object> callee(String name, String qualifiedType, String signature, int callLine) {
+        Map<String, Object> callee = new java.util.LinkedHashMap<>();
+        callee.put("name", name);
+        callee.put("kind", "METHOD");
+        callee.put("qualifiedType", qualifiedType);
+        callee.put("signature", signature);
+        callee.put("callLine", callLine);
+        return callee;
+    }
+
+    /**
+     * The success payload of a method without declared exceptions; meta counts its callers and
+     * callees, all of them and those listed, and reports whether either list is cut.
+     */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> analysis(Map<String, Object> method, List<Map<String, Object>> parameters,
+                                                Map<String, Object> callers, Map<String, Object> callees,
+                                                Map<String, Object> overrides) {
+        Map<String, Object> data = new java.util.LinkedHashMap<>();
+        data.put("method", method);
+        data.put("parameters", parameters);
+        data.put("callers", callers);
+        data.put("callees", callees);
+        data.put("overrides", overrides);
+        int total = (int) callers.get("count") + (int) callees.get("count");
+        int returned = ((List<Object>) callers.get("list")).size() + ((List<Object>) callees.get("list")).size();
+        Map<String, Object> meta = new java.util.LinkedHashMap<>();
+        meta.put("totalCount", total);
+        meta.put("returnedCount", returned);
+        meta.put("truncated", returned < total);
+        meta.put("suggestedNextTools", NEXT_TOOLS);
+        Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("success", true);
+        payload.put("data", data);
+        payload.put("meta", meta);
+        return payload;
+    }
+
+    /**
+     * The payload through execute(), read back from the JSON text it serializes to, and through
+     * the JSON-RPC envelope both equal {@code expected}.
+     */
+    private void assertPayload(ObjectNode args, Map<String, Object> expected) {
+        JsonNode expectedJson = objectMapper.valueToTree(expected);
+        JsonNode direct;
+        try {
+            direct = objectMapper.readTree(objectMapper.writeValueAsString(tool.execute(args.deepCopy())));
+        } catch (Exception e) {
+            throw new AssertionError("execute() payload does not serialize for " + args, e);
+        }
+        JsonNode wire = envelope.assertEnvelopeFidelity("analyze_method", args);
+        assertAll(
+            () -> assertEquals(expectedJson, direct, "execute() payload for " + args),
+            () -> assertEquals(expectedJson, wire, "envelope payload for " + args));
+    }
+
     @Test @DisplayName("analyzes method comprehensively")
     void analyzesMethodComprehensively() {
         ObjectNode args = objectMapper.createObjectNode();
@@ -85,7 +196,7 @@ class AnalyzeMethodToolTest {
         assertNotNull(data.get("overrides"), "overrides field missing (may be null/empty marker)");
     }
 
-    @Test @DisplayName("maxCallers caps the callers list to exactly the limit")
+    @Test @DisplayName("maxCallers=1 lists the first of Calculator.add's 4 distinct callers, counts all 4 and reports the cut")
     void respectsMaxLimits() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", calculatorPath);
@@ -93,17 +204,26 @@ class AnalyzeMethodToolTest {
         args.put("column", 15);
         args.put("maxCallers", 1);
         args.put("maxCallees", 1);
+        // Callers in search order: SearchPatterns.createObjects, SearchPatterns.performCasts,
+        // UserService.calculateSum, SampleTest.testAddition. add calls nothing.
+        assertPayload(args, analysis(CALCULATOR_ADD, ADD_PARAMETERS,
+            calls(4, List.of(caller("createObjects", "com.example.SearchPatterns", SEARCH_PATTERNS, 58))),
+            calls(0, List.of()), Map.of()));
+    }
 
-        ToolResponse r = tool.execute(args);
-
-        assertTrue(r.isSuccess());
-        @SuppressWarnings("unchecked")
-        Map<String, Object> callers = (Map<String, Object>) getData(r).get("callers");
-        @SuppressWarnings("unchecked")
-        List<?> callerList = (List<?>) callers.get("list");
-        // Calculator.add has 4 distinct callers; maxCallers=1 caps the list to exactly 1.
-        assertEquals(1, callerList.size());
-        assertEquals(1, ((Number) callers.get("count")).intValue());
+    @Test @DisplayName("maxCallees=1 lists the first of performCasts' 4 distinct callees in source order, counts all 4 and reports the cut")
+    void maxCalleesOne_countsEveryCallee() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", helper.getFixturePath("simple-maven").resolve(SEARCH_PATTERNS).toString());
+        args.put("line", 64);
+        args.put("column", 16);
+        args.put("maxCallees", 1);
+        // performCasts calls println(String) on line 68, println(int) and size() on line 74 and
+        // add(int, int) on line 80; nothing calls performCasts.
+        Map<String, Object> method = methodInfo("performCasts", "com.example.SearchPatterns",
+            "performCasts(Object obj): void", "void", SEARCH_PATTERNS, 61);
+        assertPayload(args, analysis(method, List.of(parameter("Object", "obj")), calls(0, List.of()),
+            calls(4, List.of(callee("println", "java.io.PrintStream", "println(String)", 68))), Map.of()));
     }
 
     @Test @DisplayName("missing filePath/line/column each yield exact INVALID_PARAMETER")

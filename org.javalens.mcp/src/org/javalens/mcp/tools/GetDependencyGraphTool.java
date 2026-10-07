@@ -77,6 +77,11 @@ public class GetDependencyGraphTool extends AbstractTool {
             on-demand package import) has no package; neither has a name that
             does not resolve.
 
+            At package scope the graph covers the package and its subpackages:
+            each import is an edge from the package of the file declaring it to
+            the package it imports, and every edge's source and target is a node,
+            as is the requested package.
+
             Dependency types tracked:
             - import: Direct imports
             - extends: Superclass inheritance
@@ -228,15 +233,24 @@ public class GetDependencyGraphTool extends AbstractTool {
         /**
          * An edge from {@code from} to {@code target}, kept when {@code includeExternal} or when
          * the target is not in a JDK package; the target's first kind and target are kept.
+         * Answers whether the edge is kept.
          */
-        void depend(String from, Target target, String kind, boolean includeExternal) {
+        boolean depend(String from, Target target, String kind, boolean includeExternal) {
             if (target == null || (!includeExternal && isExternalPackage(target.home()))) {
-                return;
+                return false;
             }
             edges.computeIfAbsent(from, k -> new HashMap<>()).merge(target.name(), 1, Integer::sum);
             nodes.add(target.name());
             kinds.putIfAbsent(target.name(), kind);
             targets.putIfAbsent(target.name(), target);
+            return true;
+        }
+
+        /** The package {@code name} as a node. */
+        void addPackage(String name) {
+            nodes.add(name);
+            kinds.putIfAbsent(name, "package");
+            targets.putIfAbsent(name, Target.ofPackage(name));
         }
     }
 
@@ -333,14 +347,13 @@ public class GetDependencyGraphTool extends AbstractTool {
     }
 
     /**
-     * Collect dependencies at package level.
+     * Collect dependencies at package level: the imports of the package and of its subpackages,
+     * each an edge from the package of the file declaring it, which is then a node.
      */
     private void collectPackageDependencies(String packageName, IJdtService service, Graph graph,
                                              boolean includeExternal) throws Exception {
 
-        graph.nodes.add(packageName);
-        graph.kinds.put(packageName, "package");
-        graph.targets.put(packageName, Target.ofPackage(packageName));
+        graph.addPackage(packageName);
 
         for (IPackageFragmentRoot root : service.getJavaProject().getPackageFragmentRoots()) {
             if (root.getKind() != IPackageFragmentRoot.K_SOURCE) continue;
@@ -360,7 +373,9 @@ public class GetDependencyGraphTool extends AbstractTool {
                         if (importPkg.isEmpty()) continue;
 
                         if (importPkg.equals(pkgName)) continue;
-                        graph.depend(pkgName, Target.ofPackage(importPkg), "package", includeExternal);
+                        if (graph.depend(pkgName, Target.ofPackage(importPkg), "package", includeExternal)) {
+                            graph.addPackage(pkgName);
+                        }
                     }
                 }
             }

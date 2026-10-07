@@ -24,7 +24,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 /**
  * analyze_method draws its callers and overriding methods from every match of its searches:
  * callers are the distinct calling methods found among all references to the method, the first
- * {@code maxCallers} of them in search order, and overriddenBy lists every overriding method.
+ * {@code maxCallers} of them in search order, callers.count is the number of all of them, and
+ * overriddenBy lists every overriding method. meta.truncated is true when the callers are cut.
  *
  * <p>On the capped-searches fixture, Dispatch.target is called four times from first() and then
  * once from second(); Handlers.handle is overridden by its twenty-one nested subclasses
@@ -69,13 +70,13 @@ class AnalyzeMethodCallersOverridersTest {
     }
 
     @Test
-    @DisplayName("maxCallers=1 returns the first distinct caller in search order")
+    @DisplayName("maxCallers=1 returns the first distinct caller in search order, counts both callers and reports the cut")
     void callers_maxCallersOne_isTheFirstCaller() {
         ObjectNode args = at(DISPATCH, 7, 15);
         args.put("maxCallers", 1);
         assertPayload(args, payload(
             methodInfo("target", List.of("static"), "org.example.capped.Dispatch", "target(): int", "int", DISPATCH),
-            Map.of("count", 1, "list", List.of(caller("first", 12))),
+            Map.of("count", 2, "list", List.of(caller("first", 12))),
             Map.of()));
     }
 
@@ -113,9 +114,14 @@ class AnalyzeMethodCallersOverridersTest {
             () -> assertEquals(expectedJson, wire, "envelope payload for " + args));
     }
 
-    /** A method with no parameters, no declared exceptions and no callees. */
+    /**
+     * A method with no parameters, no declared exceptions and no callees; meta counts its
+     * callers, all of them and those listed.
+     */
     private static Map<String, Object> payload(Map<String, Object> method, Map<String, Object> callers,
                                                Map<String, Object> overrides) {
+        int total = (int) callers.get("count");
+        int returned = ((List<?>) callers.get("list")).size();
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("method", method);
         data.put("parameters", List.of());
@@ -125,7 +131,11 @@ class AnalyzeMethodCallersOverridersTest {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("success", true);
         payload.put("data", data);
-        payload.put("meta", Map.of("suggestedNextTools", NEXT_TOOLS));
+        payload.put("meta", Map.of(
+            "totalCount", total,
+            "returnedCount", returned,
+            "truncated", returned < total,
+            "suggestedNextTools", NEXT_TOOLS));
         return payload;
     }
 

@@ -164,7 +164,6 @@ class Java21SyntaxToleranceTest {
     void getComplexityMetrics_switchPatterns_nonZeroCC() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", fixturePath);
-        args.put("granularity", "method");
         args.put("includeDetails", true);
         GetComplexityMetricsTool tool = new GetComplexityMetricsTool(() -> service);
         ToolResponse r = tool.execute(args);

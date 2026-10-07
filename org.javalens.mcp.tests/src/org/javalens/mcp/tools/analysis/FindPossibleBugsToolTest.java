@@ -295,4 +295,103 @@ class FindPossibleBugsToolTest {
         assertEquals(java.util.Set.of(10), lines,
             "the single NULL_DEREFERENCE magnitude and line must survive the envelope");
     }
+
+    // ========== severity values ==========
+
+    @Test
+    @DisplayName("severity is compared case-insensitively: HIGH on BugPatterns gives exactly its four high issues")
+    void severity_caseInsensitive() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", BUG_PATTERNS);
+        args.put("severity", "HIGH");
+        assertPayload(args, report(4, 0, 0, List.of(
+            STRING_COMPARISON_25, SYNC_ON_STRING_41, SYNC_ON_STRING_70, STRING_COMPARISON_71)));
+    }
+
+    @Test
+    @DisplayName("an undocumented severity is INVALID_PARAMETER naming the accepted values")
+    void severity_unknownIsRefused() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", BUG_PATTERNS);
+        args.put("severity", "critical");
+        assertPayload(args, Map.of("success", false, "error", Map.of(
+            "code", "INVALID_PARAMETER",
+            "message", "Invalid parameter 'severity': Must be one of high, medium, low, all "
+                + "(case-insensitive); got: critical")));
+    }
+
+    // ========== exact payload helpers ==========
+
+    private static final String BUG_PATTERNS = "src/main/java/com/example/BugPatterns.java";
+
+    /*
+     * The issues of BugPatterns, in the order the AST visit meets them. Each is reported at the
+     * start of its node: the catch keyword, the left operand of ==, the synchronized keyword and
+     * the declaration statement.
+     */
+    private static final Map<String, Object> EMPTY_CATCH_16 =
+        issue("EMPTY_CATCH", "Empty catch block swallows exception", "medium", BUG_PATTERNS, 16, 10);
+    private static final Map<String, Object> STRING_COMPARISON_25 = issue("STRING_COMPARISON",
+        "String comparison with == instead of equals()", "high", BUG_PATTERNS, 25, 15);
+    private static final Map<String, Object> SYNC_ON_STRING_41 = issue("SYNC_ON_STRING",
+        "Synchronizing on String (interned strings are shared)", "high", BUG_PATTERNS, 41, 8);
+    private static final Map<String, Object> RESOURCE_LEAK_51 = issue("RESOURCE_LEAK",
+        "Closeable resource may not be closed: InputStream", "medium", BUG_PATTERNS, 51, 8);
+    private static final Map<String, Object> SYNC_ON_STRING_70 = issue("SYNC_ON_STRING",
+        "Synchronizing on String (interned strings are shared)", "high", BUG_PATTERNS, 70, 12);
+    private static final Map<String, Object> STRING_COMPARISON_71 = issue("STRING_COMPARISON",
+        "String comparison with == instead of equals()", "high", BUG_PATTERNS, 71, 23);
+    private static final Map<String, Object> EMPTY_CATCH_73 =
+        issue("EMPTY_CATCH", "Empty catch block swallows exception", "medium", BUG_PATTERNS, 73, 10);
+
+    private static Map<String, Object> issue(String code, String message, String severity, String file,
+                                             int line, int column) {
+        Map<String, Object> issue = new java.util.LinkedHashMap<>();
+        issue.put("code", code);
+        issue.put("message", message);
+        issue.put("severity", severity);
+        issue.put("filePath", file);
+        issue.put("line", line);
+        issue.put("column", column);
+        return issue;
+    }
+
+    /** The success payload listing {@code issues}, of which {@code high}, {@code medium} and {@code low} are of each severity. */
+    private static Map<String, Object> report(int high, int medium, int low, List<Map<String, Object>> issues) {
+        Map<String, Object> data = new java.util.LinkedHashMap<>();
+        data.put("totalIssues", issues.size());
+        data.put("highCount", high);
+        data.put("mediumCount", medium);
+        data.put("lowCount", low);
+        data.put("issues", issues);
+        Map<String, Object> meta = new java.util.LinkedHashMap<>();
+        meta.put("totalCount", issues.size());
+        meta.put("returnedCount", issues.size());
+        meta.put("suggestedNextTools", issues.isEmpty()
+            ? List.of("No potential bugs found")
+            : List.of("Review and fix the identified issues"));
+        Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("success", true);
+        payload.put("data", data);
+        payload.put("meta", meta);
+        return payload;
+    }
+
+    /**
+     * The payload through execute(), read back from the JSON text it serializes to as a client
+     * reads it, and through the JSON-RPC envelope both equal {@code expected}.
+     */
+    private void assertPayload(ObjectNode args, Map<String, Object> expected) {
+        JsonNode expectedJson = objectMapper.valueToTree(expected);
+        JsonNode direct;
+        try {
+            direct = objectMapper.readTree(objectMapper.writeValueAsString(tool.execute(args.deepCopy())));
+        } catch (Exception e) {
+            throw new AssertionError("execute() payload does not serialize for " + args, e);
+        }
+        JsonNode wire = envelope.assertEnvelopeFidelity("find_possible_bugs", args);
+        assertAll(
+            () -> assertEquals(expectedJson, direct, "execute() payload for " + args),
+            () -> assertEquals(expectedJson, wire, "envelope payload for " + args));
+    }
 }

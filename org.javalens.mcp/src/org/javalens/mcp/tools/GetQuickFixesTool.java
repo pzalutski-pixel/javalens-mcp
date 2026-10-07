@@ -49,6 +49,9 @@ public class GetQuickFixesTool extends AbstractTool {
     private static final int UNHANDLED_EXCEPTION = 16777384;      // IProblem.UnhandledException
     private static final int IMPORT_NOT_FOUND = 268435846;        // IProblem.ImportNotFound
 
+    /** The import candidates listed for one unresolved type, the most relevant. */
+    private static final int MAX_IMPORT_CANDIDATES = 10;
+
     public GetQuickFixesTool(Supplier<IJdtService> serviceSupplier) {
         super(serviceSupplier);
     }
@@ -70,9 +73,14 @@ public class GetQuickFixesTool extends AbstractTool {
             - UndefinedType: Suggest imports for unresolved types, each fixId
               naming the type as an import does (add_import:pkg.Outer.Inner for a
               member type); a type in the default package cannot be imported
-              and is never suggested
+              and is never suggested. Every candidate is ranked by relevance
+              (equally relevant ones by name), then the 10 most relevant are listed
             - UnusedImport: Remove unused import
             - UnhandledException: Add throws or surround with try-catch
+
+            Fixes are listed by relevance. meta.totalCount counts every fix for the
+            problems at the position, meta.returnedCount those listed, and
+            meta.truncated is true when import candidates are left out.
 
             IMPORTANT: Uses ZERO-BASED line numbers.
 
@@ -144,6 +152,7 @@ public class GetQuickFixesTool extends AbstractTool {
 
             IProblem[] problems = ast.getProblems();
             List<Map<String, Object>> fixes = new ArrayList<>();
+            int totalFixes = 0;
             List<Map<String, Object>> problemsAtLine = new ArrayList<>();
 
             // Filter problems at the specified line
@@ -167,9 +176,9 @@ public class GetQuickFixesTool extends AbstractTool {
                 problemsAtLine.add(problemInfo);
 
                 // Generate fixes based on problem type
-                List<Map<String, Object>> problemFixes = generateFixes(
-                    problem, ast, cu, service);
-                fixes.addAll(problemFixes);
+                Fixes problemFixes = generateFixes(problem, ast, cu, service);
+                fixes.addAll(problemFixes.listed());
+                totalFixes += problemFixes.total();
             }
 
             // Sort fixes by relevance
@@ -184,8 +193,9 @@ public class GetQuickFixesTool extends AbstractTool {
             data.put("fixes", fixes);
 
             return ToolResponse.success(data, ResponseMeta.builder()
-                .totalCount(fixes.size())
+                .totalCount(totalFixes)
                 .returnedCount(fixes.size())
+                .truncated(fixes.size() < totalFixes)
                 .suggestedNextTools(List.of(
                     "apply_quick_fix with fixId to apply a fix",
                     "get_diagnostics to see all problems"
@@ -198,12 +208,18 @@ public class GetQuickFixesTool extends AbstractTool {
         }
     }
 
+    /** A problem's fixes: those listed, and the count of all of them. */
+    private record Fixes(List<Map<String, Object>> listed, int total) {
+    }
+
     /**
-     * Generate fixes for a specific problem.
+     * Generate fixes for a specific problem: every fix, except that an unresolved type lists
+     * only its most relevant import candidates.
      */
-    private List<Map<String, Object>> generateFixes(IProblem problem, CompilationUnit ast,
-                                                     ICompilationUnit cu, IJdtService service) {
+    private Fixes generateFixes(IProblem problem, CompilationUnit ast,
+                                ICompilationUnit cu, IJdtService service) {
         List<Map<String, Object>> fixes = new ArrayList<>();
+        int unlisted = 0;
         int problemId = problem.getID();
 
         try {
@@ -226,7 +242,9 @@ public class GetQuickFixesTool extends AbstractTool {
                 if (unresolvedName != null) {
                     List<Map<String, Object>> importFixes = suggestImportFixes(
                         unresolvedName, service, problem);
-                    fixes.addAll(importFixes);
+                    int listed = Math.min(MAX_IMPORT_CANDIDATES, importFixes.size());
+                    fixes.addAll(importFixes.subList(0, listed));
+                    unlisted += importFixes.size() - listed;
                 }
             }
 
@@ -310,11 +328,12 @@ public class GetQuickFixesTool extends AbstractTool {
             log.debug("Error generating fixes for problem {}: {}", problemId, e.getMessage());
         }
 
-        return fixes;
+        return new Fixes(fixes, fixes.size() + unlisted);
     }
 
     /**
-     * Suggest import fixes for an unresolved type.
+     * Every import fix for an unresolved type, ranked: by relevance (descending), then by the
+     * name the import gives.
      */
     private List<Map<String, Object>> suggestImportFixes(String typeName, IJdtService service,
                                                           IProblem problem) {
@@ -334,8 +353,6 @@ public class GetQuickFixesTool extends AbstractTool {
             TypeNameMatchRequestor requestor = new TypeNameMatchRequestor() {
                 @Override
                 public void acceptTypeNameMatch(TypeNameMatch match) {
-                    if (candidates.size() >= 10) return;
-
                     try {
                         IType type = match.getType();
                         String packageName = type.getPackageFragment().getElementName();
@@ -380,9 +397,10 @@ public class GetQuickFixesTool extends AbstractTool {
                 new NullProgressMonitor()
             );
 
-            // Sort by relevance
-            candidates.sort(Comparator.comparingInt(
-                (Map<String, Object> c) -> (int) c.get("relevance")).reversed());
+            // Rank every candidate: by relevance (descending), then by import name
+            candidates.sort(Comparator.comparingInt((Map<String, Object> c) -> (int) c.get("relevance"))
+                .reversed()
+                .thenComparing(c -> (String) c.get("importName")));
 
             // Create fixes
             for (Map<String, Object> candidate : candidates) {
