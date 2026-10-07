@@ -85,6 +85,8 @@ public class JdtServiceImpl implements IJdtService {
     private List<String> packages;
     private BuildModel buildModel;
     private String analysisLevel;
+    /** The importer's warnings for the last completed load: the model's, the JRE check's and configuration's. */
+    private List<LoadWarning> modelWarnings = List.of();
     /** EARLIER_PROJECT_KEPT for each earlier project the last load could not remove. */
     private List<LoadWarning> earlierProjectWarnings = List.of();
 
@@ -202,6 +204,36 @@ public class JdtServiceImpl implements IJdtService {
     private void load(Path path) throws CoreException {
         log.info("Loading project: {}", path);
 
+        // A load that fails leaves this service as its last completed load left it, a reload of
+        // the same root included: the earlier project stays, and so does every answer.
+        LoadedState earlier = loadedState();
+        IProject project;
+        try {
+            project = loadNewProject(path);
+        } catch (CoreException | RuntimeException | Error e) {
+            restore(earlier);
+            throw e;
+        }
+        this.modelWarnings = List.copyOf(projectImporter.getWarnings());
+
+        // The load has completed and is the result even when an earlier project cannot be
+        // removed: each one that stays is reported, and the next load removes it.
+        this.earlierProjectWarnings = workspaceManager.removeCreatedProjectsExcept(project).stream()
+            .map(JdtServiceImpl::earlierProjectKept)
+            .toList();
+
+        this.loadedAt = Instant.now();
+        log.info("Project loaded successfully at {}", loadedAt);
+    }
+
+    /**
+     * Resolve the model of the root at {@code path}, then create, configure and index a new
+     * project for it. Every earlier project stays.
+     *
+     * @return the new project
+     * @throws CoreException if the load fails; the new project is then removed
+     */
+    private IProject loadNewProject(Path path) throws CoreException {
         this.projectRoot = path.toAbsolutePath().normalize();
         this.pathUtils = new PathUtilsImpl(projectRoot);
         this.earlierProjectWarnings = List.of();
@@ -221,7 +253,8 @@ public class JdtServiceImpl implements IJdtService {
         log.info("Detected {} build system, {} source files, {} packages",
             model.buildSystem(), sourceFileCount, packageCount);
 
-        // Create project in workspace (metadata stays in workspace, not user's project)
+        // Create project in workspace (metadata stays in workspace, not user's project), under
+        // a name of its own: a reload of the same root keeps the earlier project until it loads.
         String projectName = "javalens-" + projectRoot.getFileName();
         IProject project = workspaceManager.createLinkedProject(projectName, projectRoot);
 
@@ -238,14 +271,46 @@ public class JdtServiceImpl implements IJdtService {
             }
             throw e;
         }
-        // The load has completed and is the result even when an earlier project cannot be
-        // removed: each one that stays is reported, and the next load removes it.
-        this.earlierProjectWarnings = workspaceManager.removeCreatedProjectsExcept(project).stream()
-            .map(JdtServiceImpl::earlierProjectKept)
-            .toList();
+        return project;
+    }
 
-        this.loadedAt = Instant.now();
-        log.info("Project loaded successfully at {}", loadedAt);
+    /** What a load sets on this service, as its last completed load left it. */
+    private record LoadedState(Path projectRoot, IPathUtils pathUtils, IJavaProject javaProject,
+                               String analysisLevel, Map<Path, IFolder> sourceRootFolders,
+                               SearchService searchService, ProjectGraphService projectGraphService,
+                               IndexVerifier indexVerifier, Set<Path> indexGaps, List<String> libraryIndexGaps,
+                               DiskStampService diskStampService, BuildModel buildModel, int sourceFileCount,
+                               List<String> packages, int packageCount, List<LoadWarning> modelWarnings,
+                               List<LoadWarning> earlierProjectWarnings, Instant loadedAt) {
+    }
+
+    private LoadedState loadedState() {
+        return new LoadedState(projectRoot, pathUtils, javaProject, analysisLevel,
+            new java.util.LinkedHashMap<>(sourceRootFolders), searchService, projectGraphService,
+            indexVerifier, indexGaps, libraryIndexGaps, diskStampService, buildModel, sourceFileCount,
+            packages, packageCount, modelWarnings, earlierProjectWarnings, loadedAt);
+    }
+
+    private void restore(LoadedState state) {
+        this.projectRoot = state.projectRoot();
+        this.pathUtils = state.pathUtils();
+        this.javaProject = state.javaProject();
+        this.analysisLevel = state.analysisLevel();
+        this.sourceRootFolders.clear();
+        this.sourceRootFolders.putAll(state.sourceRootFolders());
+        this.searchService = state.searchService();
+        this.projectGraphService = state.projectGraphService();
+        this.indexVerifier = state.indexVerifier();
+        this.indexGaps = state.indexGaps();
+        this.libraryIndexGaps = state.libraryIndexGaps();
+        this.diskStampService = state.diskStampService();
+        this.buildModel = state.buildModel();
+        this.sourceFileCount = state.sourceFileCount();
+        this.packages = state.packages();
+        this.packageCount = state.packageCount();
+        this.modelWarnings = state.modelWarnings();
+        this.earlierProjectWarnings = state.earlierProjectWarnings();
+        this.loadedAt = state.loadedAt();
     }
 
     private void configureAndIndex(IProject project, BuildModel model) throws CoreException {
@@ -545,7 +610,7 @@ public class JdtServiceImpl implements IJdtService {
      */
     @Override
     public List<LoadWarning> getWarnings() {
-        List<LoadWarning> warnings = new ArrayList<>(projectImporter.getWarnings());
+        List<LoadWarning> warnings = new ArrayList<>(modelWarnings);
         List<String> indexIncompleteFiles = getIndexIncompleteFiles();
         if (!indexIncompleteFiles.isEmpty()) {
             warnings.add(indexIncomplete(indexIncompleteFiles));

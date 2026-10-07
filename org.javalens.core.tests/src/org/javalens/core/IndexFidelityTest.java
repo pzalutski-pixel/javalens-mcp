@@ -4,6 +4,7 @@ import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IPath;
 import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.core.runtime.Status;
@@ -23,6 +24,9 @@ import org.eclipse.jdt.core.search.SearchParticipant;
 import org.eclipse.jdt.core.search.SearchPattern;
 import org.eclipse.jdt.core.search.SearchRequestor;
 import org.eclipse.jdt.core.search.TypeNameRequestor;
+import org.eclipse.jdt.internal.core.JavaModelManager;
+import org.eclipse.jdt.internal.core.index.Index;
+import org.eclipse.jdt.internal.core.search.indexing.IndexManager;
 import org.eclipse.jdt.launching.JavaRuntime;
 import org.javalens.core.fixtures.TestProjectHelper;
 import org.javalens.core.project.ProjectImporter;
@@ -39,6 +43,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -47,6 +52,7 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -56,6 +62,7 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -197,6 +204,67 @@ class IndexFidelityTest {
         };
 
         assertFailedReloadKeepsEarlierLoad(failing, CoreException.class, "configuration unavailable");
+    }
+
+    // ========== Reload of the same root by the same service ==========
+
+    @Test
+    @DisplayName("a reload of the same root by the same service leaves the JRE's index in place and one JavaLens project, under a new name, whose index holds each type")
+    void sameServiceReload_keepsLibraryIndexesAndReplacesProject() throws Exception {
+        Path root = helper.getFixturePath("index-fidelity");
+        JdtServiceImpl service = new JdtServiceImpl();
+        service.loadProject(root);
+        String earlierName = service.getJavaProject().getElementName();
+        IPath jre = jreLibrary(service.getJavaProject());
+        Index jreIndex = cachedIndex(jre);
+
+        service.loadProject(root);
+
+        String reloadName = service.getJavaProject().getElementName();
+        assertAll(
+            () -> assertSame(jreIndex, cachedIndex(jre), "the JRE's index must be the one the earlier load built"),
+            () -> assertEquals(List.of(reloadName), javaLensProjects()),
+            () -> assertFalse(workspaceProject(earlierName).exists(),
+                "the earlier load's project " + earlierName + " must be gone"),
+            () -> assertEquals(INDEX_FIDELITY_TYPES, indexedTypes(service.getJavaProject())),
+            () -> assertEquals(NODE_REFERENCES, references(service.getJavaProject(), "org.example.indexing.Graph.Node")));
+    }
+
+    @Test
+    @DisplayName("a reload of the same root by the same service that fails in configuration keeps the earlier project, and the service answers as it did before the reload")
+    void sameServiceReloadFailingInConfiguration_keepsEarlierLoad() throws Exception {
+        AtomicBoolean failing = new AtomicBoolean(false);
+        JdtServiceImpl service = new JdtServiceImpl(new ProjectImporter() {
+            @Override
+            public IJavaProject configureJavaProject(IProject project, Path projectPath, BuildModel model,
+                                                     WorkspaceManager workspaceManager) throws CoreException {
+                IJavaProject javaProject = super.configureJavaProject(project, projectPath, model, workspaceManager);
+                if (failing.get()) {
+                    throw new CoreException(new Status(IStatus.ERROR, "org.javalens.core.tests", "configuration unavailable"));
+                }
+                return javaProject;
+            }
+        });
+
+        assertFailedSameServiceReloadKeepsEarlierLoad(service, failing, "configuration unavailable");
+    }
+
+    @Test
+    @DisplayName("a reload of the same root by the same service that fails in the index verification, after its project is configured, keeps the earlier project, and the service answers as it did before the reload")
+    void sameServiceReloadFailingInIndexVerification_keepsEarlierLoad() throws Exception {
+        AtomicBoolean failing = new AtomicBoolean(false);
+        JdtServiceImpl service = new JdtServiceImpl();
+        service.setIndexVerifiers(project -> new IndexVerifier(project) {
+            @Override
+            List<ICompilationUnit> verifyAndRepair(Collection<ICompilationUnit> units, boolean repair) throws CoreException {
+                if (failing.get()) {
+                    throw new CoreException(new Status(IStatus.ERROR, "org.javalens.core.tests", "index unavailable"));
+                }
+                return super.verifyAndRepair(units, repair);
+            }
+        });
+
+        assertFailedSameServiceReloadKeepsEarlierLoad(service, failing, "index unavailable");
     }
 
     @Test
@@ -344,6 +412,60 @@ class IndexFidelityTest {
                     "org.example.indexing.Graph.Kind", sources.resolve("Graph.java"),
                     "org.example.indexing.Graph.Node", sources.resolve("Graph.java")),
                 typeFiles(earlier, INDEX_FIDELITY_TYPES)));
+    }
+
+    /**
+     * Load the index-fidelity fixture through {@code service}, set {@code failing}, then reload
+     * it through the same service: the reload throws a CoreException with {@code failure}, the
+     * earlier project is still the only JavaLens project, and the service answers as it did
+     * before the reload: the same project, root, load time and (no) warnings, a complete index,
+     * and every fixture type resolved to its source file.
+     */
+    private void assertFailedSameServiceReloadKeepsEarlierLoad(JdtServiceImpl service, AtomicBoolean failing,
+                                                               String failure) throws Exception {
+        Path root = helper.getFixturePath("index-fidelity");
+        service.loadProject(root);
+        IJavaProject earlierProject = service.getJavaProject();
+        Instant earlierLoadedAt = service.getLoadedAt();
+        failing.set(true);
+
+        CoreException thrown = assertThrows(CoreException.class, () -> service.loadProject(root));
+
+        Path sources = root.resolve("src/main/java/org/example/indexing").toAbsolutePath().normalize();
+        assertAll(
+            () -> assertEquals(failure, thrown.getMessage()),
+            () -> assertEquals(List.of(earlierProject.getElementName()), javaLensProjects()),
+            () -> assertEquals(earlierProject, service.getJavaProject()),
+            () -> assertEquals(root.toAbsolutePath().normalize(), service.getProjectRoot()),
+            () -> assertEquals(earlierLoadedAt, service.getLoadedAt()),
+            () -> assertEquals(List.of(), service.getWarnings()),
+            () -> assertEquals(INDEX_FIDELITY_TYPES, indexedTypes(service.getJavaProject())),
+            () -> assertEquals(Map.of(
+                    "org.example.indexing.Builder", sources.resolve("Builder.java"),
+                    "org.example.indexing.Collector", sources.resolve("Collector.java"),
+                    "org.example.indexing.Graph", sources.resolve("Graph.java"),
+                    "org.example.indexing.Graph.Kind", sources.resolve("Graph.java"),
+                    "org.example.indexing.Graph.Node", sources.resolve("Graph.java")),
+                typeFiles(service, INDEX_FIDELITY_TYPES)));
+    }
+
+    /** The JRE's library on the project's resolved classpath: the JDK's jrt-fs.jar. */
+    private static IPath jreLibrary(IJavaProject project) throws CoreException {
+        List<IPath> jre = new ArrayList<>();
+        for (IClasspathEntry entry : project.getResolvedClasspath(true)) {
+            if (entry.getEntryKind() == IClasspathEntry.CPE_LIBRARY
+                    && "jrt-fs.jar".equals(entry.getPath().lastSegment())) {
+                jre.add(entry.getPath());
+            }
+        }
+        assertEquals(1, jre.size(), "one JRE library on " + project.getElementName() + ": " + jre);
+        return jre.get(0);
+    }
+
+    /** The index JDT caches for {@code library}, or null when it caches none. */
+    private static Index cachedIndex(IPath library) {
+        IndexManager indexManager = JavaModelManager.getIndexManager();
+        return indexManager.getIndex(indexManager.computeIndexLocation(library));
     }
 
     /** Each type name to the source file {@code service} resolves it to, or null when unresolved. */

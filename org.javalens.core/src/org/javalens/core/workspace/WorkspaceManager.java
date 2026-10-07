@@ -27,8 +27,8 @@ import java.util.UUID;
  * Manages Eclipse workspace programmatically for headless operation.
  * Creates and configures projects without requiring Eclipse IDE.
  *
- * Each session gets a unique UUID-based project name to support
- * multiple concurrent sessions without conflicts.
+ * Each project it creates gets a name of its own, so no load replaces another load's project,
+ * and is marked with this instance's session ID.
  */
 public class WorkspaceManager {
 
@@ -120,25 +120,23 @@ public class WorkspaceManager {
      * This approach keeps all Eclipse metadata (.project, .classpath) inside the workspace,
      * not polluting the user's actual project directory.
      *
-     * The project name includes a session UUID to support multiple concurrent sessions.
+     * <p>Each project gets a name of its own, the base name and a fresh 8-character
+     * hexadecimal suffix, so creating one never replaces a project that exists, an earlier
+     * load's of the same root and session included. Earlier loads' projects go only once a
+     * load has completed, through {@link #removeCreatedProjectsExcept}: a load that fails keeps
+     * them, and JDT keeps the indexes of the libraries they share with the new project.
      *
-     * @param name Base project name (session ID will be appended)
+     * @param name Base project name (a fresh suffix is appended)
      * @param externalProjectRoot External filesystem path to the project root
      * @return The created/opened project
      * @throws CoreException if project creation fails
      */
     public IProject createLinkedProject(String name, java.nio.file.Path externalProjectRoot) throws CoreException {
-        // Append session ID to make project name unique per session. Other projects stay:
-        // earlier loads' projects go only once a load has completed, through
-        // removeCreatedProjectsExcept.
-        String uniqueName = name + "-" + sessionId;
-
-        IProject project = root.getProject(uniqueName);
-
-        if (project.exists()) {
-            log.info("Project {} already exists, deleting and recreating", uniqueName);
-            removeProject(project);
-        }
+        IProject project;
+        do {
+            project = root.getProject(name + "-" + UUID.randomUUID().toString().substring(0, 8));
+        } while (project.exists());
+        String uniqueName = project.getName();
 
         // Create project description WITHOUT external location, using the same
         // unique name as the IProject handle. Passing the base `name` here used

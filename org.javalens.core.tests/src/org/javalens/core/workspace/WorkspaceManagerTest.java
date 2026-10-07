@@ -113,13 +113,16 @@ class WorkspaceManagerTest {
     }
 
     @Test
-    @DisplayName("createLinkedProject should append session ID to name")
-    void createLinkedProject_appendsSessionId() throws CoreException {
-        IProject project = workspaceManager.createLinkedProject("my-project", fixturePath);
+    @DisplayName("createLinkedProject names each project it creates by the base name and a fresh 8-character hexadecimal suffix")
+    void createLinkedProject_namesEachProjectFreshly() throws CoreException {
+        IProject first = workspaceManager.createLinkedProject("my-project", fixturePath);
+        IProject second = workspaceManager.createLinkedProject("my-project", fixturePath);
 
-        String expectedName = "my-project-" + workspaceManager.getSessionId();
-        assertEquals(expectedName, project.getName(),
-            "Project name should include session ID");
+        // The suffix is random, so the names are pinned by their form and their difference.
+        assertAll(
+            () -> assertTrue(first.getName().matches("my-project-[0-9a-f]{8}"), "first name: " + first.getName()),
+            () -> assertTrue(second.getName().matches("my-project-[0-9a-f]{8}"), "second name: " + second.getName()),
+            () -> assertNotEquals(first.getName(), second.getName(), "two projects of one base name"));
     }
 
     @Test
@@ -144,25 +147,17 @@ class WorkspaceManagerTest {
         earlierSession.initialize();
         IProject sameName = earlierSession.createLinkedProject("keep-test", fixturePath);
         IProject otherName = earlierSession.createLinkedProject("other-base", fixturePath);
+        IProject sameSession = workspaceManager.createLinkedProject("keep-test", fixturePath);
 
         IProject created = workspaceManager.createLinkedProject("keep-test", fixturePath);
 
         assertAll(
             () -> assertTrue(created.exists(), "the new project must exist"),
-            () -> assertTrue(sameName.exists(), "an earlier session's project of the same name must stay"),
-            () -> assertTrue(otherName.exists(), "a project of another name must stay"));
-    }
-
-    @Test
-    @DisplayName("createLinkedProject should recreate if already exists")
-    void createLinkedProject_recreatesIfExists() throws CoreException {
-        // Create first time
-        IProject project1 = workspaceManager.createLinkedProject("recreate-test", fixturePath);
-        assertTrue(project1.exists());
-
-        // Create second time - should succeed (recreates)
-        IProject project2 = workspaceManager.createLinkedProject("recreate-test", fixturePath);
-        assertTrue(project2.exists());
+            () -> assertTrue(sameName.exists(), "an earlier session's project of the same base name must stay"),
+            () -> assertTrue(otherName.exists(), "a project of another base name must stay"),
+            () -> assertTrue(sameSession.exists(), "this session's earlier project of the same base name must stay"),
+            () -> assertEquals(4, Set.of(created.getName(), sameName.getName(), otherName.getName(),
+                sameSession.getName()).size(), "four projects, four names"));
     }
 
     // ========== Linked Folder Tests ==========

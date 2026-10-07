@@ -3,6 +3,7 @@ package org.javalens.core;
 import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IResource;
+import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.NullProgressMonitor;
@@ -59,6 +60,7 @@ import java.util.stream.Stream;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -428,7 +430,7 @@ class IndexVerifierTest {
     }
 
     @Test
-    @DisplayName("a source file that exists but cannot be read fails the load with the reading error, and the load's project is removed")
+    @DisplayName("a source file that exists but cannot be read fails the load with the reading error, the load's project is removed and the service holds no project, as before the load")
     void unitUnreadable_failsLoad() throws Exception {
         Path root = helper.copyFixture(FIXTURE);
         // The form in which JDT reports any failure to read a file's contents.
@@ -447,13 +449,16 @@ class IndexVerifierTest {
             }
         });
 
+        List<String> projectsBefore = workspaceProjects();
+
         JavaModelException thrown = assertThrows(JavaModelException.class, () -> service.loadProject(root));
 
         assertAll(
             () -> assertSame(unreadable, thrown),
             () -> assertEquals(UNREADABLE, thrown.getMessage()),
             () -> assertTrue(Files.exists(root.resolve(POSTING)), "Posting.java still exists"),
-            () -> assertFalse(service.getJavaProject().getProject().exists(), "the failed load's project is removed"));
+            () -> assertEquals(projectsBefore, workspaceProjects(), "the failed load's project is removed"),
+            () -> assertNull(service.getJavaProject(), "the service holds no project, as before the load"));
     }
 
     // ========== Disk sync ==========
@@ -524,6 +529,14 @@ class IndexVerifierTest {
     }
 
     // ========== Helpers ==========
+
+    /** The names of the workspace's projects, sorted. */
+    private static List<String> workspaceProjects() {
+        return Arrays.stream(ResourcesPlugin.getWorkspace().getRoot().getProjects())
+            .map(IProject::getName)
+            .sorted()
+            .toList();
+    }
 
     /**
      * Close {@code unit}, so reading its declarations goes to its file as for a unit not yet
