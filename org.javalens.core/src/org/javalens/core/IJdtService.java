@@ -217,6 +217,18 @@ public interface IJdtService {
     }
 
     /**
+     * Get the libraries on the classpath whose search index JDT could not build at the last
+     * load, even after rebuilding it, as LIBRARY_INDEX_INCOMPLETE names them. While a library is
+     * listed, search-based answers do not include its types.
+     *
+     * @return the libraries, one under the project root relative to it and any other by its
+     *         absolute path, with '/' separators, sorted; empty when every library is searchable
+     */
+    default List<String> getLibraryIndexIncomplete() {
+        return List.of();
+    }
+
+    /**
      * Get the build model resolved by the most recent {@code loadProject} call: the build
      * system, where the project's structure came from, and its modules.
      *

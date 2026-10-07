@@ -254,4 +254,70 @@ class ToolResponseTest {
             () -> assertEquals(List.of("src/A.java"), meta.getIndexIncomplete()),
             () -> assertNull(original.getMeta(), "the original response is unchanged"));
     }
+
+    // ========== Library index notice ==========
+
+    @Test
+    @DisplayName("withLibraryIndexIncomplete keeps a success response's data and every meta field, meta.indexIncomplete included, adds meta.libraryIndexIncomplete, and leaves the original unchanged")
+    void withLibraryIndexIncomplete_successWithMeta_keepsEveryField() {
+        Map<String, String> data = Map.of("key", "value");
+        ToolResponse original = ToolResponse.success(data, ResponseMeta.builder()
+            .totalCount(9)
+            .returnedCount(3)
+            .truncated(true)
+            .suggestedNextTools(List.of("find_references"))
+            .verbosity("compact")
+            .build()).withIndexIncomplete(List.of("src/A.java"));
+
+        ToolResponse noticed = original.withLibraryIndexIncomplete(List.of("/libs/a.jar", "lib/b.jar"));
+
+        ResponseMeta meta = noticed.getMeta();
+        assertAll(
+            () -> assertTrue(noticed.isSuccess()),
+            () -> assertEquals(data, noticed.getData()),
+            () -> assertNull(noticed.getError()),
+            () -> assertEquals(9, meta.getTotalCount()),
+            () -> assertEquals(3, meta.getReturnedCount()),
+            () -> assertEquals(Boolean.TRUE, meta.getTruncated()),
+            () -> assertEquals(List.of("find_references"), meta.getSuggestedNextTools()),
+            () -> assertEquals("compact", meta.getVerbosity()),
+            () -> assertEquals(List.of("src/A.java"), meta.getIndexIncomplete()),
+            () -> assertEquals(List.of("/libs/a.jar", "lib/b.jar"), meta.getLibraryIndexIncomplete()),
+            () -> assertNull(original.getMeta().getLibraryIndexIncomplete(), "the original response is unchanged"));
+    }
+
+    @Test
+    @DisplayName("withLibraryIndexIncomplete gives an error response without meta a meta holding only libraryIndexIncomplete")
+    void withLibraryIndexIncomplete_errorWithoutMeta_metaHoldsOnlyTheNotice() {
+        ToolResponse original = ToolResponse.invalidParameter("query", "Required parameter missing");
+
+        ToolResponse noticed = original.withLibraryIndexIncomplete(List.of("/libs/a.jar"));
+
+        ResponseMeta meta = noticed.getMeta();
+        assertAll(
+            () -> assertFalse(noticed.isSuccess()),
+            () -> assertSame(original.getError(), noticed.getError()),
+            () -> assertNull(noticed.getData()),
+            () -> assertNull(meta.getTotalCount()),
+            () -> assertNull(meta.getReturnedCount()),
+            () -> assertNull(meta.getTruncated()),
+            () -> assertNull(meta.getSuggestedNextTools()),
+            () -> assertNull(meta.getVerbosity()),
+            () -> assertNull(meta.getIndexIncomplete()),
+            () -> assertEquals(List.of("/libs/a.jar"), meta.getLibraryIndexIncomplete()),
+            () -> assertNull(original.getMeta(), "the original response is unchanged"));
+    }
+
+    @Test
+    @DisplayName("withIndexIncomplete keeps meta.libraryIndexIncomplete")
+    void withIndexIncomplete_keepsLibraryNotice() {
+        ToolResponse original = ToolResponse.invalidParameter("query", "Required parameter missing")
+            .withLibraryIndexIncomplete(List.of("/libs/a.jar"));
+
+        ResponseMeta meta = original.withIndexIncomplete(List.of("src/A.java")).getMeta();
+
+        assertAll(
+            () -> assertEquals(List.of("src/A.java"), meta.getIndexIncomplete()),
+            () -> assertEquals(List.of("/libs/a.jar"), meta.getLibraryIndexIncomplete()));
+    }
 }

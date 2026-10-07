@@ -50,6 +50,19 @@ public class ToolResponse {
     }
 
     /**
+     * A copy of this response whose {@code meta.libraryIndexIncomplete} names {@code libraries},
+     * the libraries whose search index could not be built; every other field is kept as it is.
+     */
+    public ToolResponse withLibraryIndexIncomplete(List<String> libraries) {
+        ToolResponse response = new ToolResponse();
+        response.success = success;
+        response.data = data;
+        response.error = error;
+        response.meta = (meta == null ? ResponseMeta.builder().build() : meta).withLibraryIndexIncomplete(libraries);
+        return response;
+    }
+
+    /**
      * Create a successful response with data and optional metadata.
      */
     public static ToolResponse success(Object data) {

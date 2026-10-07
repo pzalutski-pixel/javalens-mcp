@@ -513,6 +513,11 @@ public class JdtServiceImpl implements IJdtService {
             .toList();
     }
 
+    @Override
+    public List<String> getLibraryIndexIncomplete() {
+        return libraryIndexGaps;
+    }
+
     /**
      * Map a normalized absolute file path to its workspace IFile in the linked folder of
      * the source root that owns it; null when no source root holds the path.

@@ -195,6 +195,35 @@ class AbstractToolTest {
     }
 
     @Test
+    @DisplayName("execute() names the libraries whose index the load could not build in meta.libraryIndexIncomplete, beside meta.indexIncomplete")
+    void execute_libraryIndexIncomplete_noticeOnToolResponse() {
+        TestTool tool = new TestTool(() -> new IndexGapService(List.of("src/A.java"), List.of("/libs/a.jar"), null));
+
+        ToolResponse response = tool.execute(objectMapper.createObjectNode());
+
+        assertAll(
+            () -> assertTrue(response.isSuccess()),
+            () -> assertEquals(Map.of("ok", true), response.getData()),
+            () -> assertEquals(List.of("src/A.java"), response.getMeta().getIndexIncomplete()),
+            () -> assertEquals(List.of("/libs/a.jar"), response.getMeta().getLibraryIndexIncomplete()));
+    }
+
+    @Test
+    @DisplayName("execute() names the libraries whose index the load could not build on a RELOAD_REQUIRED refusal too")
+    void execute_libraryIndexIncomplete_noticeOnReloadRequired() {
+        ReloadRequiredException reload = new ReloadRequiredException(List.of(Path.of("pom.xml")));
+        TestTool tool = new TestTool(() -> new IndexGapService(List.of(), List.of("/libs/a.jar"), reload));
+
+        ToolResponse response = tool.execute(objectMapper.createObjectNode());
+
+        assertAll(
+            () -> assertFalse(response.isSuccess()),
+            () -> assertEquals(ErrorInfo.RELOAD_REQUIRED, response.getError().getCode()),
+            () -> assertNull(response.getMeta().getIndexIncomplete()),
+            () -> assertEquals(List.of("/libs/a.jar"), response.getMeta().getLibraryIndexIncomplete()));
+    }
+
+    @Test
     @DisplayName("execute() adds no meta while the service reports no file missing from the index")
     void execute_indexComplete_noMeta() {
         TestTool tool = new TestTool(() -> new IndexGapService(List.of(), null));
@@ -404,16 +433,29 @@ class AbstractToolTest {
     }
 
     /**
-     * A service whose index is verified to miss {@code indexIncompleteFiles} and whose
-     * ensureFresh throws {@code freshness} when it is not null.
+     * A service whose index is verified to miss {@code indexIncompleteFiles}, whose load could
+     * not build the index of {@code libraryIndexIncomplete}, and whose ensureFresh throws
+     * {@code freshness} when it is not null.
      */
     private static final class IndexGapService extends MinimalFakeService {
         private final List<String> indexIncompleteFiles;
+        private final List<String> libraryIndexIncomplete;
         private final ReloadRequiredException freshness;
 
         IndexGapService(List<String> indexIncompleteFiles, ReloadRequiredException freshness) {
+            this(indexIncompleteFiles, List.of(), freshness);
+        }
+
+        IndexGapService(List<String> indexIncompleteFiles, List<String> libraryIndexIncomplete,
+                        ReloadRequiredException freshness) {
             this.indexIncompleteFiles = indexIncompleteFiles;
+            this.libraryIndexIncomplete = libraryIndexIncomplete;
             this.freshness = freshness;
+        }
+
+        @Override
+        public List<String> getLibraryIndexIncomplete() {
+            return libraryIndexIncomplete;
         }
 
         @Override

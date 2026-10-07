@@ -84,7 +84,8 @@ public abstract class AbstractTool implements Tool {
      *
      * <p>With a project loaded, every response carries {@code meta.indexIncomplete} naming the
      * files whose declarations the search index is verified to be missing, for as long as it
-     * misses them, so no answer drawn from the index omits them silently.
+     * misses them, and {@code meta.libraryIndexIncomplete} naming the libraries whose index the
+     * load could not build, so no answer drawn from the index omits them silently.
      */
     @Override
     public ToolResponse execute(JsonNode arguments) {
@@ -101,7 +102,14 @@ public abstract class AbstractTool implements Tool {
 
         ToolResponse response = executeFresh(service, arguments);
         List<String> indexIncomplete = service.getIndexIncompleteFiles();
-        return indexIncomplete.isEmpty() ? response : response.withIndexIncomplete(indexIncomplete);
+        if (!indexIncomplete.isEmpty()) {
+            response = response.withIndexIncomplete(indexIncomplete);
+        }
+        List<String> libraryIndexIncomplete = service.getLibraryIndexIncomplete();
+        if (!libraryIndexIncomplete.isEmpty()) {
+            response = response.withLibraryIndexIncomplete(libraryIndexIncomplete);
+        }
+        return response;
     }
 
     /**

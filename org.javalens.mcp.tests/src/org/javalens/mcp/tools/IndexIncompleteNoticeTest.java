@@ -148,13 +148,14 @@ class IndexIncompleteNoticeTest {
     }
 
     @Test
-    @DisplayName("on a complete index no tool's response carries meta.indexIncomplete, through the envelope, for every registered tool")
+    @DisplayName("on a complete index no tool's response carries meta.indexIncomplete or meta.libraryIndexIncomplete, through the envelope, for every registered tool")
     void completeIndex_noResponseCarriesTheNotice() throws Exception {
         JdtServiceImpl service = helper.loadProject("simple-maven");
         EnvelopeHarness envelope = new EnvelopeHarness(service);
         Map<String, ObjectNode> inputs = ToolInvocationInputs.buildValidInputs(mapper, helper.getFixturePath("simple-maven"));
 
         Map<String, String> withNotice = new TreeMap<>();
+        Map<String, String> withLibraryNotice = new TreeMap<>();
         int compared = 0;
         for (String name : new TreeSet<>(envelope.registry().getToolNames())) {
             JsonNode payload = envelope.payload(name, inputs.get(name));
@@ -162,13 +163,18 @@ class IndexIncompleteNoticeTest {
             if (payload.path("meta").has("indexIncomplete")) {
                 withNotice.put(name, payload.path("meta").get("indexIncomplete").toString());
             }
+            if (payload.path("meta").has("libraryIndexIncomplete")) {
+                withLibraryNotice.put(name, payload.path("meta").get("libraryIndexIncomplete").toString());
+            }
         }
 
         int toolCount = compared;
         assertAll(
             () -> assertEquals(List.of(), service.getIndexIncompleteFiles()),
+            () -> assertEquals(List.of(), service.getLibraryIndexIncomplete()),
             () -> assertEquals(75, toolCount, "every registered tool must be driven"),
-            () -> assertEquals(Map.of(), withNotice));
+            () -> assertEquals(Map.of(), withNotice),
+            () -> assertEquals(Map.of(), withLibraryNotice));
     }
 
     // ========== Helpers ==========
