@@ -39,6 +39,7 @@ public class FindTypeInstantiationsTool extends AbstractFineGrainReferenceTool {
             - Identifying factory method candidates
             - Finding coupling points
 
+            """ + POTENTIAL_MATCHES + """
             Requires load_project to be called first.
             """;
     }

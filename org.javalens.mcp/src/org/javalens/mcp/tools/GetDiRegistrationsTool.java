@@ -76,8 +76,11 @@ public class GetDiRegistrationsTool extends AbstractTool {
             200). Each summary count is the exact number of registrations in its
             category; meta.totalCount counts every registration, meta.returnedCount
             those listed, and meta.truncated is true when an annotation type has
-            more matches than maxResults.
+            more matches than maxResults. potentialMatches lists, the first
+            maxResults of each annotation type, the annotations JDT could not
+            confirm, each with the annotation it names; none is a registration.
 
+            """ + POTENTIAL_MATCHES + """
             Requires load_project to be called first.
             """;
     }
@@ -116,6 +119,18 @@ public class GetDiRegistrationsTool extends AbstractTool {
             data.put("configurations", configurations.matches());
             data.put("beans", beans.matches());
             data.put("injectionPoints", injectionPoints.matches());
+            int potentialTotal = components.potentialTotal() + configurations.potentialTotal()
+                + beans.potentialTotal() + injectionPoints.potentialTotal();
+            if (potentialTotal > 0) {
+                List<Map<String, Object>> potential = new ArrayList<>(components.potential());
+                potential.addAll(configurations.potential());
+                potential.addAll(beans.potential());
+                potential.addAll(injectionPoints.potential());
+                Map<String, Object> potentialMatches = new LinkedHashMap<>();
+                potentialMatches.put("count", potentialTotal);
+                potentialMatches.put("locations", potential);
+                data.put("potentialMatches", potentialMatches);
+            }
 
             int total = components.total() + configurations.total() + beans.total() + injectionPoints.total();
             int returned = components.matches().size() + configurations.matches().size()
@@ -136,17 +151,24 @@ public class GetDiRegistrationsTool extends AbstractTool {
         }
     }
 
-    /** A category's registrations: the matches listed, and the exact count of all of them. */
-    private record Category(List<Map<String, Object>> matches, int total) {
+    /**
+     * A category's registrations: the matches listed, and the exact count of all of them; and the
+     * places the search could not confirm, those listed and the exact count of them.
+     */
+    private record Category(List<Map<String, Object>> matches, int total,
+                            List<Map<String, Object>> potential, int potentialTotal) {
     }
 
     /**
      * The registrations of {@code annotations}: for each annotation type its first
-     * {@code maxResults} matches, and the count of every match of every one of them.
+     * {@code maxResults} matches, and the count of every match of every one of them; and as many
+     * of the places the search could not confirm, and the count of them.
      */
     private Category scanAnnotations(IJdtService service, String[][] annotations, int maxResults) {
         List<Map<String, Object>> results = new ArrayList<>();
         int total = 0;
+        List<Map<String, Object>> potential = new ArrayList<>();
+        int potentialTotal = 0;
 
         for (String[] annotation : annotations) {
             String fqn = annotation[0];
@@ -163,11 +185,16 @@ public class GetDiRegistrationsTool extends AbstractTool {
                     match.put("annotation", "@" + label);
                     results.add(match);
                 }
+                potentialTotal += result.potentialTotal();
+                for (Map<String, Object> match : formatMatches(result.potentialMatches(), service)) {
+                    match.put("annotation", "@" + label);
+                    potential.add(match);
+                }
             } catch (Exception e) {
                 log.debug("Could not scan for {}: {}", fqn, e.getMessage());
             }
         }
 
-        return new Category(results, total);
+        return new Category(results, total, potential, potentialTotal);
     }
 }

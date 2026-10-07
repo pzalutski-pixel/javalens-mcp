@@ -48,8 +48,13 @@ public class FindReferencesTool extends AbstractTool {
             USAGE: Position on symbol, find all usages
             OUTPUT: List of reference locations with context
 
+            The references of a symbol of a class file, such as a JDK method, are
+            those in the project's source files. A position on a name the compiler
+            cannot resolve has no symbol: SYMBOL_NOT_FOUND.
+
             IMPORTANT: Uses ZERO-BASED coordinates.
 
+            """ + POTENTIAL_MATCHES + """
             Requires load_project to be called first.
             """;
     }
@@ -125,6 +130,7 @@ public class FindReferencesTool extends AbstractTool {
 
             data.put("totalCount", result.totalEncountered());
             data.put("locations", references);
+            putPotentialMatches(data, result, service);
 
             return ToolResponse.success(data, ResponseMeta.builder()
                 .totalCount(result.totalEncountered())

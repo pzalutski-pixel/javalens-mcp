@@ -85,6 +85,12 @@ public class SearchSymbolsTool extends AbstractTool {
             pagination.hasMore (and meta.truncated) is true when more follow this page,
             so request offset + returned next.
 
+            A query naming the declaring type (Type.member) makes JDT resolve each
+            declaration of the name and keep those of that type and its subtypes;
+            one in a type whose own supertypes do not all resolve may be in that
+            hierarchy, and is a potential match, never a result.
+
+            """ + POTENTIAL_MATCHES + """
             IMPORTANT: Requires load_project to be called first.
             """;
     }
@@ -149,6 +155,7 @@ public class SearchSymbolsTool extends AbstractTool {
                 "returned", results.size(),
                 "hasMore", hasMore
             ));
+            putPotentialMatches(data, searchResult, service);
 
             return ToolResponse.success(data, ResponseMeta.builder()
                 .totalCount(total)

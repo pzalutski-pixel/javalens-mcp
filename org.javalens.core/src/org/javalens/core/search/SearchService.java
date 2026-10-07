@@ -106,7 +106,11 @@ public class SearchService {
      * @return The page ({@code matches}, kept declarations {@code offset} onward, at most
      *     {@code limit} of them) and the count of every kept declaration ({@code totalEncountered}).
      *     Declarations follow the page exactly when {@code offset + matches().size()} is less
-     *     than that count.
+     *     than that count. A declaration the search reports but cannot confirm is never kept (a
+     *     pattern naming a declaring type makes it resolve each declaration, and one in a type
+     *     whose supertypes do not all resolve may be in the named type's hierarchy: A_INACCURATE);
+     *     the first {@code limit} of those that pass the filters are {@code potentialMatches},
+     *     and {@code potentialTotal} counts them all.
      */
     public SearchResult searchSymbols(String pattern, Integer searchFor, Predicate<IJavaElement> accept,
                                       int offset, int limit) throws CoreException {
@@ -141,9 +145,13 @@ public class SearchService {
         }
 
         // The `?` narrowing and `accept` run on every reported match before it is counted,
-        // so the page and the count both describe the declarations that pass.
+        // so the page and the count both describe the declarations that pass. A declaration
+        // the search could not confirm is no declaration of the page: it is counted, and the
+        // first `limit` of them kept, apart.
         List<SearchMatch> page = new ArrayList<>();
         int[] passing = { 0 };
+        List<SearchMatch> potential = new ArrayList<>();
+        int[] potentialTotal = { 0 };
 
         // Sources-only scope: symbol search returns the project's own declared symbols,
         // not classpath/JDK types or workspace-metadata phantoms (which leak unresolvable
@@ -164,6 +172,13 @@ public class SearchService {
                     if (!accept.test(element)) {
                         return;
                     }
+                    if (match.getAccuracy() == SearchMatch.A_INACCURATE) {
+                        if (potential.size() < limit) {
+                            potential.add(withModelElement(match));
+                        }
+                        potentialTotal[0]++;
+                        return;
+                    }
                     if (passing[0] >= offset && page.size() < limit) {
                         page.add(withModelElement(match));
                     }
@@ -175,11 +190,18 @@ public class SearchService {
 
         log.debug("Symbol search '{}' kept {} declarations, returning {} from offset {}",
             pattern, passing[0], page.size(), offset);
-        return new SearchResult(page, passing[0]);
+        return new SearchResult(page, passing[0], potential, potentialTotal[0]);
     }
 
     /**
-     * Find all references to a Java element.
+     * Find all references to a Java element: the matches the search confirms, and apart from them
+     * the places it reports but cannot confirm ({@link SearchResult#potentialMatches()}).
+     *
+     * <p>The references of an element of a class file, such as a JDK method, are the project's
+     * own: they are searched in the project's source files only, as
+     * {@link #findAllReferencesInSources} searches. The library's own uses of it, which a search of
+     * the whole classpath reads from attached sources, are no references in the project and have
+     * no location in it.
      *
      * @param element The element to find references to
      * @param limitTo Limit type: REFERENCES, READ_ACCESSES, WRITE_ACCESSES, or combination
@@ -197,20 +219,20 @@ public class SearchService {
             return new SearchResult(List.of(), 0);
         }
 
-        CollectingSearchRequestor requestor = new CollectingSearchRequestor(maxResults);
+        boolean ofClassFile = isOfClassFile(element);
+        CollectingSearchRequestor requestor = new CollectingSearchRequestor(maxResults, ofClassFile);
 
         engine.search(
             pattern,
             new SearchParticipant[] { SearchEngine.getDefaultSearchParticipant() },
-            scope,
+            ofClassFile ? sourceScope : scope,
             requestor,
             new NullProgressMonitor()
         );
 
-        log.debug("Reference search for {} found {} results (total encountered={})",
-            element.getElementName(), requestor.getMatches().size(), requestor.getTotalEncountered());
-
         SearchResult result = requestor.toResult();
+        log.debug("Reference search for {} found {} results (total encountered={}, potential={})",
+            element.getElementName(), result.matches().size(), result.totalEncountered(), result.potentialTotal());
 
         // JDT's indexed reference search misses constructor delegations
         // (super(...)/this(...)) that are NOT the first statement of a constructor —
@@ -232,6 +254,18 @@ public class SearchService {
         } catch (CoreException e) {
             return false;
         }
+    }
+
+    /** Whether {@code element} belongs to a class file: it lies in a binary package fragment root. */
+    private static boolean isOfClassFile(IJavaElement element) throws JavaModelException {
+        return element.getAncestor(IJavaElement.PACKAGE_FRAGMENT_ROOT) instanceof IPackageFragmentRoot root
+            && root.getKind() == IPackageFragmentRoot.K_BINARY;
+    }
+
+    /** Whether {@code match} lies in one of the project's {@code .java} files. */
+    private static boolean isInJavaFile(SearchMatch match) {
+        return match.getResource() instanceof org.eclipse.core.resources.IFile f
+            && "java".equalsIgnoreCase(f.getFileExtension());
     }
 
     /**
@@ -333,7 +367,8 @@ public class SearchService {
             }
             log.debug("Supplemented constructor {} with {} flexible-body delegation match(es)",
                 constructor.getElementName(), added.size());
-            return new SearchResult(merged, base.totalEncountered() + added.size());
+            return new SearchResult(merged, base.totalEncountered() + added.size(),
+                base.potentialMatches(), base.potentialTotal());
         } catch (Exception e) {
             log.warn("Could not supplement constructor delegations for {}: {}",
                 constructor.getElementName(), e.getMessage());
@@ -390,7 +425,9 @@ public class SearchService {
      * find_reflection_usage) therefore reports only the project's own call
      * sites, never matches harvested from the classpath or the workspace. The
      * references of a constructor include its delegations that are not the first
-     * statement of a constructor body, as {@link #findReferences} reports them.
+     * statement of a constructor body, as {@link #findReferences} reports them. The
+     * places the search reports but cannot confirm are kept apart, as
+     * {@link SearchResult#potentialMatches()}.
      */
     public SearchResult findAllReferencesInSources(IJavaElement element, int maxResults) throws CoreException {
         SearchPattern pattern = SearchPattern.createPattern(element, IJavaSearchConstants.REFERENCES);
@@ -399,29 +436,17 @@ public class SearchService {
             return new SearchResult(List.of(), 0);
         }
 
-        List<SearchMatch> filtered = new ArrayList<>();
-        int[] totalEncountered = { 0 };
+        CollectingSearchRequestor requestor = new CollectingSearchRequestor(maxResults, true);
         engine.search(
             pattern,
             new SearchParticipant[] { SearchEngine.getDefaultSearchParticipant() },
             sourceScope,
-            new SearchRequestor() {
-                @Override
-                public void acceptSearchMatch(SearchMatch match) {
-                    if (match.getResource() instanceof org.eclipse.core.resources.IFile f
-                        && "java".equalsIgnoreCase(f.getFileExtension())) {
-                        totalEncountered[0]++;
-                        if (filtered.size() < maxResults) {
-                            filtered.add(withModelElement(match));
-                        }
-                    }
-                }
-            },
+            requestor,
             new NullProgressMonitor()
         );
-        log.debug("Source-scoped reference search for {} found {} (.java total={})",
-            element.getElementName(), filtered.size(), totalEncountered[0]);
-        SearchResult result = new SearchResult(filtered, totalEncountered[0]);
+        SearchResult result = requestor.toResult();
+        log.debug("Source-scoped reference search for {} found {} (.java total={}, potential={})",
+            element.getElementName(), result.matches().size(), result.totalEncountered(), result.potentialTotal());
         if (element instanceof IMethod m && isConstructor(m)) {
             return supplementConstructorDelegations(m, result, maxResults);
         }
@@ -445,7 +470,8 @@ public class SearchService {
     }
 
     /**
-     * Find implementations of an interface or overrides of a method.
+     * Find implementations of an interface or overrides of a method; the places the search
+     * reports but cannot confirm are kept apart, as {@link SearchResult#potentialMatches()}.
      */
     public SearchResult findImplementations(IJavaElement element, int maxResults) throws CoreException {
         SearchPattern pattern = SearchPattern.createPattern(
@@ -458,7 +484,7 @@ public class SearchService {
             return new SearchResult(List.of(), 0);
         }
 
-        CollectingSearchRequestor requestor = new CollectingSearchRequestor(maxResults);
+        CollectingSearchRequestor requestor = new CollectingSearchRequestor(maxResults, false);
 
         engine.search(
             pattern,
@@ -619,38 +645,24 @@ public class SearchService {
             return new SearchResult(List.of(), 0);
         }
 
-        // Inline filtering requestor: drop matches whose resource isn't a .java IFile
-        // (linked-folder roots, binary entries, JDK jars). Use sourceScope (project
-        // sources only) so common JDK types don't pull every JDK match through.
-        //
-        // Track the total .java matches separately from the (clipped-at-maxResults)
-        // visible list so callers can detect truncation accurately. Comparing the
-        // post-clip list size to maxResults misreports the false-positive case where
-        // actual matches == maxResults exactly.
-        List<SearchMatch> filtered = new ArrayList<>();
-        int[] totalEncountered = { 0 };
+        // Keep only matches in .java files (not linked-folder roots, binary entries, JDK jars),
+        // searching sourceScope (project sources only) so common JDK types don't pull every JDK
+        // match through. The totals count every match, beyond the clipped lists, so callers
+        // detect truncation exactly; places the search cannot confirm are kept apart.
+        CollectingSearchRequestor requestor = new CollectingSearchRequestor(maxResults, true);
         engine.search(
             pattern,
             new SearchParticipant[] { SearchEngine.getDefaultSearchParticipant() },
             sourceScope,
-            new SearchRequestor() {
-                @Override
-                public void acceptSearchMatch(SearchMatch match) {
-                    if (match.getResource() instanceof org.eclipse.core.resources.IFile f
-                        && "java".equalsIgnoreCase(f.getFileExtension())) {
-                        totalEncountered[0]++;
-                        if (filtered.size() < maxResults) {
-                            filtered.add(withModelElement(match));
-                        }
-                    }
-                }
-            },
+            requestor,
             new NullProgressMonitor()
         );
 
-        log.debug("Fine-grain search for {} (type={}) found {} after .java filter (total={})",
-            type.getFullyQualifiedName(), referenceType, filtered.size(), totalEncountered[0]);
-        return new SearchResult(filtered, totalEncountered[0]);
+        SearchResult result = requestor.toResult();
+        log.debug("Fine-grain search for {} (type={}) found {} after .java filter (total={}, potential={})",
+            type.getFullyQualifiedName(), referenceType, result.matches().size(), result.totalEncountered(),
+            result.potentialTotal());
+        return result;
     }
 
     /**
@@ -758,38 +770,46 @@ public class SearchService {
     }
 
     /**
-     * SearchRequestor that collects matches into a list AND counts the total number of
-     * encountered matches (including those beyond the cap). The total enables correct
-     * truncation semantics: comparing the post-clip list size to maxResults misreports
-     * truncation when the actual count exactly equals the cap.
+     * SearchRequestor that keeps the accurate matches and the potential ones
+     * ({@link SearchMatch#A_INACCURATE}: the search could not confirm them) apart, each in a
+     * list clipped at {@code maxResults} and with a count of all of them (including those beyond
+     * the cap). The totals enable correct truncation semantics: comparing the post-clip list size
+     * to maxResults misreports truncation when the actual count exactly equals the cap. With
+     * {@code javaFilesOnly}, only matches in the project's {@code .java} files are kept.
      */
     private static class CollectingSearchRequestor extends SearchRequestor {
         private final List<SearchMatch> matches = new ArrayList<>();
+        private final List<SearchMatch> potentialMatches = new ArrayList<>();
         private final int maxResults;
+        private final boolean javaFilesOnly;
         private int totalEncountered = 0;
+        private int potentialTotal = 0;
 
-        CollectingSearchRequestor(int maxResults) {
+        CollectingSearchRequestor(int maxResults, boolean javaFilesOnly) {
             this.maxResults = maxResults;
+            this.javaFilesOnly = javaFilesOnly;
         }
 
         @Override
         public void acceptSearchMatch(SearchMatch match) {
+            if (javaFilesOnly && !isInJavaFile(match)) {
+                return;
+            }
+            if (match.getAccuracy() == SearchMatch.A_INACCURATE) {
+                potentialTotal++;
+                if (potentialMatches.size() < maxResults) {
+                    potentialMatches.add(withModelElement(match));
+                }
+                return;
+            }
             totalEncountered++;
             if (matches.size() < maxResults) {
                 matches.add(withModelElement(match));
             }
         }
 
-        List<SearchMatch> getMatches() {
-            return matches;
-        }
-
-        int getTotalEncountered() {
-            return totalEncountered;
-        }
-
         SearchResult toResult() {
-            return new SearchResult(matches, totalEncountered);
+            return new SearchResult(matches, totalEncountered, potentialMatches, potentialTotal);
         }
     }
 }

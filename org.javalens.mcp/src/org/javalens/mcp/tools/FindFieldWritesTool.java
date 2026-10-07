@@ -55,6 +55,7 @@ public class FindFieldWritesTool extends AbstractTool {
             locations where the field value is changed (assignments, increments, etc).
             Useful for data flow analysis and understanding state mutations.
 
+            """ + POTENTIAL_MATCHES + """
             Requires load_project to be called first.
             """;
     }
@@ -137,6 +138,7 @@ public class FindFieldWritesTool extends AbstractTool {
 
             data.put("totalWriteLocations", result.totalEncountered());
             data.put("writeLocations", writeLocations);
+            putPotentialMatches(data, result, service);
 
             return ToolResponse.success(data, ResponseMeta.builder()
                 .totalCount(result.totalEncountered())

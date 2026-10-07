@@ -42,6 +42,7 @@ public class FindAnnotationUsagesTool extends AbstractFineGrainReferenceTool {
             - find_annotation_usages(typeName="org.junit.jupiter.api.Test")
             - find_annotation_usages(typeName="javax.persistence.Entity")
 
+            """ + POTENTIAL_MATCHES + """
             Requires load_project to be called first.
             """;
     }

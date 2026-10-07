@@ -19,6 +19,7 @@ import org.eclipse.jdt.core.dom.TypeDeclaration;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
 import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.IJdtService;
+import org.javalens.core.search.SearchResult;
 import org.javalens.core.search.SearchService;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
@@ -78,9 +79,14 @@ public class GetJpaModelTool extends AbstractTool {
 
             Projects without JPA on the classpath return an empty model.
 
+            potentialMatches lists, the first maxResults by file and position, the
+            @Entity annotations JDT could not confirm, each with the annotation it
+            names; none is an entity.
+
             Options:
             - maxResults: cap the reported entities (default 100)
 
+            """ + POTENTIAL_MATCHES + """
             Requires load_project to be called first.
             """;
     }
@@ -100,7 +106,8 @@ public class GetJpaModelTool extends AbstractTool {
         }
 
         try {
-            List<IType> entityTypes = findEntityTypes(service);
+            List<Map<String, Object>> potential = new ArrayList<>();
+            List<IType> entityTypes = findEntityTypes(service, potential);
             entityTypes.sort(Comparator.comparing(ElementNames::qualifiedName));
 
             List<Map<String, Object>> entities = new ArrayList<>();
@@ -118,6 +125,15 @@ public class GetJpaModelTool extends AbstractTool {
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("entityCount", total);
             data.put("entities", returned);
+            if (!potential.isEmpty()) {
+                potential.sort(Comparator
+                    .comparing((Map<String, Object> place) -> String.valueOf(place.get("filePath")))
+                    .thenComparing(place -> (Integer) place.get("offset")));
+                Map<String, Object> potentialMatches = new LinkedHashMap<>();
+                potentialMatches.put("count", potential.size());
+                potentialMatches.put("locations", potential.subList(0, Math.min(maxResults, potential.size())));
+                data.put("potentialMatches", potentialMatches);
+            }
 
             return ToolResponse.success(data, ResponseMeta.builder()
                 .totalCount(total)
@@ -134,7 +150,7 @@ public class GetJpaModelTool extends AbstractTool {
         }
     }
 
-    private List<IType> findEntityTypes(IJdtService service) {
+    private List<IType> findEntityTypes(IJdtService service, List<Map<String, Object>> potential) {
         Set<String> seen = new LinkedHashSet<>();
         List<IType> types = new ArrayList<>();
         for (String fqn : ENTITY_ANNOTATIONS) {
@@ -143,9 +159,15 @@ public class GetJpaModelTool extends AbstractTool {
                 if (annotationType == null) {
                     continue;
                 }
-                // Every use of the annotation: only those on types are entities.
-                List<SearchMatch> matches = service.getSearchService().findReferences(
-                    annotationType, SearchService.ReferenceKind.ANNOTATION, SearchService.ALL_MATCHES).matches();
+                // Every use of the annotation: only those on types are entities. A use the search
+                // could not confirm makes no entity; it is a potential match.
+                SearchResult found = service.getSearchService().findReferences(
+                    annotationType, SearchService.ReferenceKind.ANNOTATION, SearchService.ALL_MATCHES);
+                for (Map<String, Object> place : formatMatches(found.potentialMatches(), service)) {
+                    place.put("annotation", "@" + annotationType.getElementName());
+                    potential.add(place);
+                }
+                List<SearchMatch> matches = found.matches();
                 for (SearchMatch match : matches) {
                     if (match.getElement() instanceof IType type
                         && seen.add(type.getHandleIdentifier())) {

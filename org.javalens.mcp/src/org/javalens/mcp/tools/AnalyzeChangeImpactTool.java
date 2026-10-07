@@ -10,6 +10,7 @@ import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.IJdtService;
 import org.javalens.core.graph.ProjectGraph;
 import org.javalens.core.graph.ProjectGraph.GraphNode;
+import org.javalens.core.search.SearchResult;
 import org.javalens.core.search.SearchService;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
@@ -50,7 +51,9 @@ public class AnalyzeChangeImpactTool extends AbstractTool {
 
             USAGE: analyze_change_impact(filePath="path/to/File.java", line=10, column=5)
             OUTPUT: All files and call sites affected, grouped by file. Every
-            reference at every depth is listed and counted; nothing is cut.
+            reference at every depth is listed and counted; nothing is cut. A place
+            JDT could not confirm is listed in potentialMatches with its depth, and
+            the member holding it is followed no further.
 
             Options:
             - depth: How many levels of callers to follow (default 1, max 3)
@@ -65,6 +68,7 @@ public class AnalyzeChangeImpactTool extends AbstractTool {
               fields, and types.
             - maxResults: cap on affectedMethods in transitive mode (default 200)
 
+            """ + POTENTIAL_MATCHES + """
             Requires load_project to be called first.
             """;
     }
@@ -110,6 +114,8 @@ public class AnalyzeChangeImpactTool extends AbstractTool {
 
             Set<String> visited = new HashSet<>();
             List<IJavaElement> currentLevel = List.of(element);
+            List<Map<String, Object>> potentialSites = new ArrayList<>();
+            int potentialTotal = 0;
 
             for (int d = 0; d < depth && !currentLevel.isEmpty(); d++) {
                 List<IJavaElement> nextLevel = new ArrayList<>();
@@ -120,9 +126,19 @@ public class AnalyzeChangeImpactTool extends AbstractTool {
                     visited.add(key);
 
                     // Every reference: the call sites, the counts and the next level's callers
-                    // all come from the complete list.
-                    List<SearchMatch> matches = service.getSearchService()
-                        .findAllReferences(target, SearchService.ALL_MATCHES).matches();
+                    // all come from the complete list. A place the search could not confirm is
+                    // listed apart, with its depth, and its member is followed no further.
+                    SearchResult found = service.getSearchService()
+                        .findAllReferences(target, SearchService.ALL_MATCHES);
+                    potentialTotal += found.potentialTotal();
+                    for (SearchMatch potential : found.potentialMatches()) {
+                        Map<String, Object> place = formatMatch(potential, service);
+                        if (place != null) {
+                            place.put("depth", d + 1);
+                            potentialSites.add(place);
+                        }
+                    }
+                    List<SearchMatch> matches = found.matches();
 
                     for (SearchMatch match : matches) {
                         Map<String, Object> callSite = formatMatch(match, service);
@@ -179,6 +195,12 @@ public class AnalyzeChangeImpactTool extends AbstractTool {
             data.put("totalReferences", allCallSites.size());
             data.put("affectedFiles", affectedFiles);
             data.put("callSites", allCallSites);
+            if (potentialTotal > 0) {
+                Map<String, Object> potentialMatches = new LinkedHashMap<>();
+                potentialMatches.put("count", potentialTotal);
+                potentialMatches.put("locations", potentialSites);
+                data.put("potentialMatches", potentialMatches);
+            }
 
             return ToolResponse.success(data, ResponseMeta.builder()
                 .totalCount(allCallSites.size())

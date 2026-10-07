@@ -53,6 +53,11 @@ public class FindImplementationsTool extends AbstractTool {
 
             IMPORTANT: Uses ZERO-BASED coordinates.
 
+            potentialMatches are the places naming the type, or one of its subtypes,
+            as a supertype that JDT could not confirm: the class declaring each may
+            be an implementation, and, for a method, may override it.
+
+            """ + POTENTIAL_MATCHES + """
             Requires load_project to be called first.
             """;
     }
@@ -163,6 +168,10 @@ public class FindImplementationsTool extends AbstractTool {
 
             data.put("totalImplementations", eligibleCount);
             data.put("implementations", implementations);
+            Map<String, Object> potential = potentialSubtypes(hierarchy, maxResults, service);
+            if (potential != null) {
+                data.put("potentialMatches", potential);
+            }
 
             return ToolResponse.success(data, ResponseMeta.builder()
                 .totalCount(eligibleCount)

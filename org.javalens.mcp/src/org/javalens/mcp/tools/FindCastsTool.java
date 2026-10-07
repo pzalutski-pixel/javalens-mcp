@@ -38,6 +38,7 @@ public class FindCastsTool extends AbstractFineGrainReferenceTool {
             - Finding refactoring opportunities (replace cast with polymorphism)
             - Understanding type conversion patterns
 
+            """ + POTENTIAL_MATCHES + """
             Requires load_project to be called first.
             """;
     }

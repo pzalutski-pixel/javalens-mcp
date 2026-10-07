@@ -49,6 +49,7 @@ public class FindMethodReferencesTool extends AbstractTool {
 
             IMPORTANT: Uses ZERO-BASED coordinates.
 
+            """ + POTENTIAL_MATCHES + """
             Requires load_project to be called first.
             """;
     }
@@ -101,6 +102,7 @@ public class FindMethodReferencesTool extends AbstractTool {
             data.put("declaringType", method.getDeclaringType().getFullyQualifiedName());
             data.put("totalCount", result.totalEncountered());
             data.put("locations", methodRefs);
+            putPotentialMatches(data, result, service);
 
             return ToolResponse.success(data, ResponseMeta.builder()
                 .totalCount(result.totalEncountered())

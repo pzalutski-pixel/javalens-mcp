@@ -39,6 +39,7 @@ public class FindInstanceofChecksTool extends AbstractFineGrainReferenceTool {
             - Finding polymorphism opportunities (replace instanceof with virtual dispatch)
             - Understanding type discrimination logic
 
+            """ + POTENTIAL_MATCHES + """
             Requires load_project to be called first.
             """;
     }

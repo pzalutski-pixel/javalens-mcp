@@ -1,8 +1,8 @@
 package org.javalens.mcp.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IPath;
+import org.eclipse.jdt.core.Flags;
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IMethod;
@@ -11,6 +11,7 @@ import org.eclipse.jdt.core.JavaModelException;
 import org.javalens.core.IJdtService;
 import org.javalens.core.MethodFormatter;
 import org.javalens.core.ModifierFormatter;
+import org.javalens.core.search.ModelHierarchy;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
 import org.slf4j.Logger;
@@ -46,6 +47,14 @@ public class GetSuperMethodTool extends AbstractTool {
 
             USAGE: Position on a method that overrides/implements another
             OUTPUT: The superclass/interface method being overridden
+
+            The overridden method is the one the compiler binds: the nearest
+            declaration in the superclass chain, else in the interfaces, visible
+            from the method's package. unresolvedSupertypes, present only when
+            there are any, names each supertype of the declaring type the compiler
+            cannot resolve (a missing dependency), as the declaration writes it,
+            with the type whose declaration names it: the method may override a
+            method of one of them.
 
             IMPORTANT: Uses ZERO-BASED coordinates.
 
@@ -98,8 +107,16 @@ public class GetSuperMethodTool extends AbstractTool {
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("method", createMethodInfo(method, service));
 
-            // Find overridden method
-            IMethod superMethod = findSuperMethod(method, service);
+            // Find overridden method, over the hierarchy the Java model holds
+            ModelHierarchy hierarchy = method.getDeclaringType() == null ? null
+                : service.getSearchService().hierarchyOf(method.getDeclaringType());
+            IMethod superMethod = hierarchy == null ? null : hierarchy.overridden(method);
+            // A constructor, a static and a private method override nothing, whatever supertype
+            // does not resolve.
+            boolean overrides = !method.isConstructor() && !Flags.isStatic(method.getFlags())
+                && !Flags.isPrivate(method.getFlags());
+            List<Map<String, Object>> unresolved = hierarchy == null || !overrides ? null
+                : unresolvedSupertypes(hierarchy);
 
             if (superMethod != null) {
                 data.put("overrides", createMethodInfo(superMethod, service));
@@ -110,7 +127,13 @@ public class GetSuperMethodTool extends AbstractTool {
                 }
             } else {
                 data.put("overrides", null);
-                data.put("message", "This method does not override or implement any method");
+                data.put("message", unresolved == null
+                    ? "This method does not override or implement any method"
+                    : "This method does not override or implement a method of a supertype that resolves; "
+                        + "the supertypes in unresolvedSupertypes do not resolve");
+            }
+            if (unresolved != null) {
+                data.put("unresolvedSupertypes", unresolved);
             }
 
             return ToolResponse.success(data, ResponseMeta.builder()
@@ -124,20 +147,6 @@ public class GetSuperMethodTool extends AbstractTool {
             log.error("Error getting super method: {}", e.getMessage(), e);
             return ToolResponse.internalError(e);
         }
-    }
-
-    /**
-     * The method {@code method} overrides as the compiler binds it ({@code Bindings.findOverriddenMethod}
-     * through SearchService.hierarchyOf): the nearest declaration in the superclass chain, else in
-     * the interfaces, visible from its package; null for a static or private method, a constructor
-     * and a method overriding none.
-     */
-    private IMethod findSuperMethod(IMethod method, IJdtService service) throws CoreException {
-        IType declaringType = method.getDeclaringType();
-        if (declaringType == null) {
-            return null;
-        }
-        return service.getSearchService().hierarchyOf(declaringType).overridden(method);
     }
 
     private Map<String, Object> createMethodInfo(IMethod method, IJdtService service) throws JavaModelException {

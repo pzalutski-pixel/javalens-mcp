@@ -30,6 +30,7 @@ import org.slf4j.LoggerFactory;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.LinkedHashSet;
@@ -82,8 +83,14 @@ public class RenameSymbolTool extends AbstractTool {
             A method of a class file, or a method renamed together with one, is
             refused, naming that method: it cannot be renamed.
 
+            A place JDT's search reports but cannot confirm as a reference, where a
+            type or name does not resolve, is never edited: potentialMatches lists
+            every one, to review by hand. A position on a name the compiler cannot
+            resolve has no symbol to rename: SYMBOL_NOT_FOUND.
+
             IMPORTANT: Uses ZERO-BASED coordinates.
 
+            """ + POTENTIAL_MATCHES + """
             Requires load_project to be called first.
             """;
     }
@@ -194,6 +201,8 @@ public class RenameSymbolTool extends AbstractTool {
         Map<String, List<Map<String, Object>>> editsByFile = new LinkedHashMap<>();
         Set<String> emittedKeys = new LinkedHashSet<>();
         int totalEdits = 0;
+        List<SearchMatch> potential = new ArrayList<>();
+        Set<String> potentialKeys = new HashSet<>();
 
         for (IMember member : members) {
             // Declaration site (SearchEngine REFERENCES omits the declaration itself).
@@ -224,6 +233,14 @@ public class RenameSymbolTool extends AbstractTool {
             SearchResult result = member instanceof IMethod
                 ? service.getSearchService().findAllReferencesInSources(member, SearchService.ALL_MATCHES)
                 : service.getSearchService().findAllReferences(member, SearchService.ALL_MATCHES);
+            // A place the search could not confirm is never edited: it is reported, once.
+            for (SearchMatch match : result.potentialMatches()) {
+                String at = (match.getResource() == null ? "" : match.getResource().getFullPath().toString())
+                    + "@" + match.getOffset();
+                if (potentialKeys.add(at)) {
+                    potential.add(match);
+                }
+            }
             for (SearchMatch match : result.matches()) {
                 ICompilationUnit matchCu = MatchResolver.resolveCu(match);
                 if (matchCu == null) continue;
@@ -264,6 +281,10 @@ public class RenameSymbolTool extends AbstractTool {
         data.put("totalEdits", totalEdits);
         data.put("filesAffected", editsByFile.size());
         data.put("editsByFile", editsByFile);
+        Map<String, Object> potentialMatches = potentialMatches(potential, potential.size(), service);
+        if (potentialMatches != null) {
+            data.put("potentialMatches", potentialMatches);
+        }
 
         if (target instanceof IType) {
             data.put("note", "Renaming a type may require renaming the file as well");

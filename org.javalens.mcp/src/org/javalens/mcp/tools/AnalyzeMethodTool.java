@@ -35,6 +35,7 @@ import org.javalens.core.IJdtService;
 import org.javalens.core.MethodFormatter;
 import org.javalens.core.ModifierFormatter;
 import org.javalens.core.search.ModelHierarchy;
+import org.javalens.core.search.SearchResult;
 import org.javalens.core.search.SearchService;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
@@ -92,10 +93,23 @@ public class AnalyzeMethodTool extends AbstractTool {
             in source order. meta.totalCount counts both, meta.returnedCount those
             listed, and meta.truncated is true when either list is cut.
 
+            The method is the one the position names, wherever it is declared: its
+            file and line are those of its declaration, and its callees are read
+            there. A method of a class file reports no file, line or callees (there
+            is no source to read them from); its callers are those in the project's
+            source files. callers.potentialMatches holds the references JDT could not
+            confirm, the first maxCallers of them; overrides.potentialMatches the
+            places naming the declaring type, or a subtype, as a supertype that JDT
+            could not confirm. overrides.unresolvedSupertypes, present only when
+            there are any, names each supertype of the declaring type the compiler
+            cannot resolve, with the type whose declaration names it: the method may
+            override a method of one of them.
+
             Use this instead of multiple calls to get_method_at_position + call hierarchy tools.
 
             IMPORTANT: Uses ZERO-BASED coordinates.
 
+            """ + POTENTIAL_MATCHES + """
             Requires load_project to be called first.
             """;
     }
@@ -145,8 +159,8 @@ public class AnalyzeMethodTool extends AbstractTool {
 
             Map<String, Object> data = new LinkedHashMap<>();
 
-            // Method info
-            data.put("method", createMethodInfo(method, service, cu));
+            // Method info, where the method is declared
+            data.put("method", createMethodInfo(method, service));
 
             // Parameters
             data.put("parameters", createParameterInfo(method));
@@ -161,16 +175,26 @@ public class AnalyzeMethodTool extends AbstractTool {
                 data.put("exceptions", exceptionNames);
             }
 
-            // Incoming calls (callers)
-            List<Map<String, Object>> callers = findCallers(method, service);
-            data.put("callers", calls(callers, maxCallers));
+            // Incoming calls (callers), and the references the search could not confirm
+            SearchResult references = service.getSearchService().findAllReferences(method, SearchService.ALL_MATCHES);
+            List<Map<String, Object>> callers = findCallers(references, service);
+            Map<String, Object> callerBlock = calls(callers, maxCallers);
+            List<SearchMatch> potential = references.potentialMatches();
+            Map<String, Object> potentialCallers = potentialMatches(
+                potential.subList(0, Math.max(0, Math.min(maxCallers, potential.size()))), references.potentialTotal(),
+                service);
+            if (potentialCallers != null) {
+                callerBlock.put("potentialMatches", potentialCallers);
+            }
+            data.put("callers", callerBlock);
 
-            // The method's declaration, with bindings: its callees are read from it.
-            MethodDeclaration declaration = findDeclaration(method, cu);
-
-            // Outgoing calls (callees)
-            List<Map<String, Object>> callees = findCallees(declaration);
-            data.put("callees", calls(callees, maxCallees));
+            // Outgoing calls (callees), read from the method's own declaration; a method of a
+            // class file has no source to read them from.
+            List<Map<String, Object>> callees = List.of();
+            if (method.getCompilationUnit() != null) {
+                callees = findCallees(findDeclaration(method));
+                data.put("callees", calls(callees, maxCallees));
+            }
 
             // Override info
             data.put("overrides", findOverrideInfo(method, service));
@@ -194,7 +218,7 @@ public class AnalyzeMethodTool extends AbstractTool {
         }
     }
 
-    private Map<String, Object> createMethodInfo(IMethod method, IJdtService service, ICompilationUnit cu)
+    private Map<String, Object> createMethodInfo(IMethod method, IJdtService service)
             throws Exception {
         Map<String, Object> info = new LinkedHashMap<>();
         info.put("name", method.getElementName());
@@ -226,10 +250,14 @@ public class AnalyzeMethodTool extends AbstractTool {
             info.put("typeParameterBounds", tpBounds);
         }
 
-        // Location
-        info.put("file", service.getPathUtils().formatPath(
-            cu.getResource().getLocation().toOSString()));
-        info.put("line", service.getLineNumber(cu, method.getSourceRange().getOffset()));
+        // Location: the file and line of the declaration; none for a method of a class file, as
+        // get_super_method and get_method_at_position render one (no compilation unit)
+        ICompilationUnit declaring = method.getCompilationUnit();
+        if (declaring != null && declaring.getResource() != null) {
+            info.put("file", service.getPathUtils().formatPath(
+                declaring.getResource().getLocation().toOSString()));
+            info.put("line", service.getLineNumber(declaring, method.getSourceRange().getOffset()));
+        }
 
         return info;
     }
@@ -264,15 +292,14 @@ public class AnalyzeMethodTool extends AbstractTool {
         return all.subList(0, Math.max(0, Math.min(max, all.size())));
     }
 
-    /** Every distinct caller of {@code method}, in search order. */
-    private List<Map<String, Object>> findCallers(IMethod method, IJdtService service) {
+    /** Every distinct caller in {@code found}, every reference to the method, in search order. */
+    private List<Map<String, Object>> findCallers(SearchResult found, IJdtService service) {
         List<Map<String, Object>> callers = new ArrayList<>();
 
         try {
             // Every reference: callers are the distinct enclosing methods, and each is
             // counted however many references it holds.
-            List<SearchMatch> references = service.getSearchService()
-                .findAllReferences(method, SearchService.ALL_MATCHES).matches();
+            List<SearchMatch> references = found.matches();
 
             Set<String> seenCallers = new HashSet<>();
 
@@ -312,13 +339,13 @@ public class AnalyzeMethodTool extends AbstractTool {
     }
 
     /**
-     * The declaration of {@code method} in {@code cu}, parsed with bindings, or null when the
-     * unit does not parse.
+     * The declaration of {@code method}, a method with source, in its own compilation unit,
+     * parsed with bindings, or null when the unit does not parse.
      */
-    private MethodDeclaration findDeclaration(IMethod method, ICompilationUnit cu) {
+    private MethodDeclaration findDeclaration(IMethod method) {
         try {
             ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
-            parser.setSource(cu);
+            parser.setSource(method.getCompilationUnit());
             parser.setResolveBindings(true);
             parser.setBindingsRecovery(true);
 
@@ -518,6 +545,20 @@ public class AnalyzeMethodTool extends AbstractTool {
                     overriderList.add(info);
                 }
                 result.put("overriddenBy", overriderList);
+            }
+            // A constructor, a static and a private method override nothing and are overridden by
+            // nothing: a type that may be a subtype, or a supertype that does not resolve, cannot
+            // change that.
+            int flags = subject.getFlags();
+            if (!subject.isConstructor() && !Flags.isStatic(flags) && !Flags.isPrivate(flags)) {
+                Map<String, Object> potential = potentialSubtypes(hierarchy, Integer.MAX_VALUE, service);
+                if (potential != null) {
+                    result.put("potentialMatches", potential);
+                }
+                List<Map<String, Object>> unresolved = unresolvedSupertypes(hierarchy);
+                if (unresolved != null) {
+                    result.put("unresolvedSupertypes", unresolved);
+                }
             }
         } catch (Exception e) {
             log.debug("Error finding override info: {}", e.getMessage());

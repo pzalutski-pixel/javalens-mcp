@@ -1,6 +1,7 @@
 package org.javalens.mcp.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.eclipse.core.runtime.CoreException;
 import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IMember;
 import org.eclipse.jdt.core.IType;
@@ -16,9 +17,11 @@ import org.slf4j.LoggerFactory;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Supplier;
 
 /**
@@ -59,6 +62,12 @@ public class PullUpTool extends AbstractTool {
             same name), naming it: JDT's pull up would act on another class. A
             member is also refused when the superclass has a subclass declared
             in a lambda body, naming it: JDT's pull up cannot read that class.
+            And a member is refused when JDT's own type hierarchy of the
+            superclass does not hold every subtype with source as the Java model
+            does (a class declared in a lambda body at any depth, a local class
+            held by the handle of another of the same name), naming each type it
+            leaves out and each it holds that is no subtype: JDT's pull up reads
+            the subtypes from that hierarchy.
 
             IMPORTANT: Uses ZERO-BASED coordinates.
 
@@ -136,6 +145,21 @@ public class PullUpTool extends AbstractTool {
                     + " the subclasses of " + ElementNames.qualifiedName(superclass) + " from a search that names "
                     + String.join(", ", unopened) + " by a handle the Java model does not hold");
             }
+            // JDT's pull up reads every subtype of the superclass from its own type hierarchy of it
+            // (PullUpRefactoringProcessor.getDestinationTypeHierarchy :2234-2242): the units it
+            // changes (getAffectedCompilationUnits :2162-2172), the members it checks
+            // (getMatchingMembers :2271-2276, through checkMembersInTypeAndAllSubtypes :1538-1559)
+            // and the supertypes it skips (getSkippedSuperTypes :2372-2386). That hierarchy leaves
+            // out a class declared in a lambda body at any depth and can hold a local class by the
+            // handle of another of the same name (HierarchyResolver.rememberAllTypes :511-541):
+            // where it differs from the Java model's subtypes, JDT's pull up acts on other classes.
+            String divergence = subtypesJdtMisreads(superclass, service);
+            if (divergence != null) {
+                return ToolResponse.invalidParameter("position", "Member at position, " + member.getElementName()
+                    + " in " + ElementNames.qualifiedName(declaringType) + ", cannot be pulled up: JDT's pull up reads"
+                    + " the subtypes of " + ElementNames.qualifiedName(superclass) + " from its own type hierarchy, which "
+                    + divergence);
+            }
 
             // Script argument layout: the pulled members are element1..N with
             // their count in "pull"; the members deleted from subclasses follow
@@ -190,5 +214,50 @@ public class PullUpTool extends AbstractTool {
             log.error("Error pulling up member: {}", e.getMessage(), e);
             return ToolResponse.internalError(e);
         }
+    }
+
+    /**
+     * How JDT's type hierarchy of {@code superclass} differs from the Java model's subtypes of it,
+     * by handle, among the types with source (those JDT's pull up can change; a lambda expression
+     * is no type of the model): {@code "leaves out A, B"} for the model's subtypes it does not hold,
+     * {@code "holds C, which is no subtype of D"} for the handles it holds that the model does not
+     * hold as subtypes, joined by {@code " and "}, each list in name order; null when they agree.
+     */
+    private static String subtypesJdtMisreads(IType superclass, IJdtService service) throws CoreException {
+        Set<IType> model = new HashSet<>();
+        for (IType subtype : service.getSearchService().hierarchyOf(superclass).allSubtypes()) {
+            if (!subtype.isBinary()) {
+                model.add(subtype);
+            }
+        }
+        Set<IType> jdt = new HashSet<>();
+        for (IType subtype : superclass.newTypeHierarchy(null).getAllSubtypes(superclass)) {
+            if (!subtype.isBinary() && !subtype.isLambda()) {
+                jdt.add(subtype);
+            }
+        }
+        List<String> leftOut = new ArrayList<>();
+        for (IType subtype : model) {
+            if (!jdt.contains(subtype)) {
+                leftOut.add(ElementNames.qualifiedName(subtype));
+            }
+        }
+        List<String> misread = new ArrayList<>();
+        for (IType subtype : jdt) {
+            if (!model.contains(subtype)) {
+                misread.add(ElementNames.qualifiedName(subtype));
+            }
+        }
+        leftOut.sort(null);
+        misread.sort(null);
+        List<String> parts = new ArrayList<>();
+        if (!leftOut.isEmpty()) {
+            parts.add("leaves out " + String.join(", ", leftOut));
+        }
+        if (!misread.isEmpty()) {
+            parts.add("holds " + String.join(", ", misread) + (misread.size() == 1 ? ", which is no subtype of "
+                : ", which are no subtypes of ") + ElementNames.qualifiedName(superclass));
+        }
+        return parts.isEmpty() ? null : String.join(" and ", parts);
     }
 }

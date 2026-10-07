@@ -23,6 +23,7 @@ import org.eclipse.jdt.core.dom.SingleMemberAnnotation;
 import org.eclipse.jdt.core.dom.StringLiteral;
 import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.IJdtService;
+import org.javalens.core.search.SearchResult;
 import org.javalens.core.search.SearchService;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
@@ -103,9 +104,14 @@ public class GetHttpEndpointsTool extends AbstractTool {
 
             Projects without these frameworks return an empty table.
 
+            potentialMatches lists, the first maxResults by file and position, the
+            verb annotations JDT could not confirm, each with the annotation it
+            names; none is a route.
+
             Options:
             - maxResults: cap the reported endpoints (default 200)
 
+            """ + POTENTIAL_MATCHES + """
             Requires load_project to be called first.
             """;
     }
@@ -128,14 +134,15 @@ public class GetHttpEndpointsTool extends AbstractTool {
             List<Map<String, Object>> endpoints = new ArrayList<>();
             Map<String, CompilationUnit> astCache = new HashMap<>();
             Set<String> seenHandlers = new LinkedHashSet<>();
+            List<Map<String, Object>> potential = new ArrayList<>();
 
             for (Map.Entry<String, String> entry : SPRING_VERBS.entrySet()) {
                 collectEndpoints(service, entry.getKey(), entry.getValue(), "spring",
-                    endpoints, astCache, seenHandlers);
+                    endpoints, astCache, seenHandlers, potential);
             }
             for (Map.Entry<String, String> entry : JAXRS_VERBS.entrySet()) {
                 collectEndpoints(service, entry.getKey(), entry.getValue(), "jaxrs",
-                    endpoints, astCache, seenHandlers);
+                    endpoints, astCache, seenHandlers, potential);
             }
 
             endpoints.sort(Comparator
@@ -149,6 +156,15 @@ public class GetHttpEndpointsTool extends AbstractTool {
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("endpointCount", total);
             data.put("endpoints", returned);
+            if (!potential.isEmpty()) {
+                potential.sort(Comparator
+                    .comparing((Map<String, Object> place) -> String.valueOf(place.get("filePath")))
+                    .thenComparing(place -> (Integer) place.get("offset")));
+                Map<String, Object> potentialMatches = new LinkedHashMap<>();
+                potentialMatches.put("count", potential.size());
+                potentialMatches.put("locations", potential.subList(0, Math.min(maxResults, potential.size())));
+                data.put("potentialMatches", potentialMatches);
+            }
 
             return ToolResponse.success(data, ResponseMeta.builder()
                 .totalCount(total)
@@ -167,15 +183,22 @@ public class GetHttpEndpointsTool extends AbstractTool {
 
     private void collectEndpoints(IJdtService service, String annotationFqn, String httpMethod,
                                   String framework, List<Map<String, Object>> endpoints,
-                                  Map<String, CompilationUnit> astCache, Set<String> seenHandlers) {
+                                  Map<String, CompilationUnit> astCache, Set<String> seenHandlers,
+                                  List<Map<String, Object>> potential) {
         try {
             IType annotationType = service.findType(annotationFqn);
             if (annotationType == null) {
                 return;
             }
-            // Every use of the annotation: only those on methods are handlers.
-            List<SearchMatch> matches = service.getSearchService().findReferences(
-                annotationType, SearchService.ReferenceKind.ANNOTATION, SearchService.ALL_MATCHES).matches();
+            // Every use of the annotation: only those on methods are handlers. A use the search
+            // could not confirm registers no route; it is a potential match.
+            SearchResult found = service.getSearchService().findReferences(
+                annotationType, SearchService.ReferenceKind.ANNOTATION, SearchService.ALL_MATCHES);
+            for (Map<String, Object> place : formatMatches(found.potentialMatches(), service)) {
+                place.put("annotation", "@" + annotationType.getElementName());
+                potential.add(place);
+            }
+            List<SearchMatch> matches = found.matches();
             for (SearchMatch match : matches) {
                 if (!(match.getElement() instanceof IMethod handler)) {
                     continue;

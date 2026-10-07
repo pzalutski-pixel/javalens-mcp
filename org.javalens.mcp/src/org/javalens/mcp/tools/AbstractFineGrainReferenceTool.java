@@ -99,6 +99,7 @@ public abstract class AbstractFineGrainReferenceTool extends AbstractTool {
             if (advice != null && !locations.isEmpty()) {
                 data.put("advice", advice);
             }
+            putPotentialMatches(data, result, service);
 
             return ToolResponse.success(data, ResponseMeta.builder()
                 .totalCount(result.totalEncountered())

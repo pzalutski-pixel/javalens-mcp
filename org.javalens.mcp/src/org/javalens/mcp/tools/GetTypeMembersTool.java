@@ -62,6 +62,11 @@ public class GetTypeMembersTool extends AbstractTool {
               final constants and enum constants; each field's kind is field, constant or
               enumConstant. Any other value is rejected with INVALID_PARAMETER.
 
+            With includeInherited, unresolvedSupertypes, present only when there are
+            any, names each supertype the compiler cannot resolve (a missing
+            dependency), as the declaration writes it, with the type whose
+            declaration names it: the members it would give are not listed.
+
             Requires load_project to be called first.
             """;
     }
@@ -117,10 +122,12 @@ public class GetTypeMembersTool extends AbstractTool {
             }
 
             // Collect inherited members if requested
+            List<Map<String, Object>> unresolved = null;
             if (includeInherited) {
                 // Superclasses from the nearest, then the interfaces of every supertype, as the
                 // Java model holds them, for local and anonymous classes too
                 ModelHierarchy hierarchy = service.getSearchService().hierarchyOf(type);
+                unresolved = unresolvedSupertypes(hierarchy);
 
                 for (IType supertype : hierarchy.allSuperclasses()) {
                     String declaredIn = ElementNames.qualifiedName(supertype);
@@ -153,6 +160,9 @@ public class GetTypeMembersTool extends AbstractTool {
 
             int totalMembers = methods.size() + fields.size() + nestedTypes.size();
             data.put("totalMembers", totalMembers);
+            if (unresolved != null) {
+                data.put("unresolvedSupertypes", unresolved);
+            }
 
             return ToolResponse.success(data, ResponseMeta.builder()
                 .totalCount(totalMembers)

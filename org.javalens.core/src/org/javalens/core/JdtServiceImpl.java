@@ -813,7 +813,15 @@ public class JdtServiceImpl implements IJdtService {
                 return elements[0];
             }
 
-            // Fallback: try to find element at offset using getElementAt
+            // A name written as a reference that codeSelect cannot resolve (its type is on no
+            // classpath entry, say) names no element: the member enclosing it is another symbol.
+            if (isUnresolvedReferenceName(cu, offset)) {
+                log.debug("Offset {} is on a name that does not resolve; returning null", offset);
+                return null;
+            }
+
+            // Fallback: a position on no name (indentation, a keyword, punctuation) belongs to
+            // the element enclosing it
             IJavaElement element = cu.getElementAt(offset);
             if (element != null) {
                 log.debug("Found element via getElementAt: {} ({})", element.getElementName(), element.getClass().getSimpleName());
@@ -825,6 +833,25 @@ public class JdtServiceImpl implements IJdtService {
         } catch (JavaModelException e) {
             log.warn("Error getting element at position: {}", e.getMessage());
             return null;
+        }
+    }
+
+    /**
+     * Whether {@code offset} lies on a simple name that is not the name a declaration declares:
+     * a reference, which names a symbol of its own. Read from a syntax tree without bindings.
+     */
+    private boolean isUnresolvedReferenceName(ICompilationUnit cu, int offset) {
+        try {
+            org.eclipse.jdt.core.dom.ASTParser parser =
+                org.eclipse.jdt.core.dom.ASTParser.newParser(org.eclipse.jdt.core.dom.AST.getJLSLatest());
+            parser.setSource(cu);
+            parser.setResolveBindings(false);
+            org.eclipse.jdt.core.dom.ASTNode covering =
+                new org.eclipse.jdt.core.dom.NodeFinder(parser.createAST(null), offset, 0).getCoveringNode();
+            return covering instanceof org.eclipse.jdt.core.dom.SimpleName name && !name.isDeclaration();
+        } catch (RuntimeException e) {
+            log.debug("Could not read the name at offset {}: {}", offset, e.getMessage());
+            return false;
         }
     }
 

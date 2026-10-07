@@ -39,6 +39,7 @@ public class FindTypeArgumentsTool extends AbstractFineGrainReferenceTool {
             - Finding all collections/containers of a type
             - API design analysis
 
+            """ + POTENTIAL_MATCHES + """
             Requires load_project to be called first.
             """;
     }

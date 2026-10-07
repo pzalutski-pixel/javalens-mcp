@@ -203,6 +203,74 @@ public abstract class AbstractTool implements Tool {
     // ========== SearchMatch formatting helpers ==========
 
     /**
+     * The description every tool whose results come from JDT's search gives its potentialMatches
+     * block ({@link #potentialMatches}).
+     */
+    protected static final String POTENTIAL_MATCHES = """
+        potentialMatches, present only when there are any, holds the places JDT's
+        search reports as possible matches but cannot confirm, because a type or
+        name there does not resolve (a missing dependency or a compile error):
+        count is their exact number, and locations lists them, as many as the
+        results it stands beside may list. They are never counted or listed as
+        results.
+
+        """;
+
+    /**
+     * The potentialMatches block for the places a search reported but could not confirm: the
+     * exact count of them, {@code total}, and the locations of {@code listed}, those kept; null
+     * when there are none.
+     */
+    protected Map<String, Object> potentialMatches(List<SearchMatch> listed, int total, IJdtService service) {
+        if (total == 0) {
+            return null;
+        }
+        Map<String, Object> block = new LinkedHashMap<>();
+        block.put("count", total);
+        block.put("locations", formatMatches(listed, service));
+        return block;
+    }
+
+    /**
+     * The potentialMatches block of {@code hierarchy}'s potential subtypes, the first {@code limit}
+     * of them listed; null when there are none.
+     */
+    protected Map<String, Object> potentialSubtypes(org.javalens.core.search.ModelHierarchy hierarchy, int limit,
+                                                    IJdtService service) throws org.eclipse.core.runtime.CoreException {
+        List<SearchMatch> potential = hierarchy.potentialSubtypes();
+        return potentialMatches(potential.subList(0, Math.max(0, Math.min(limit, potential.size()))),
+            potential.size(), service);
+    }
+
+    /**
+     * The supertypes the compiler cannot resolve in {@code hierarchy}, each its name as written and
+     * the type whose declaration names it ({@code declaringType}, fully qualified); null when every
+     * supertype resolves.
+     */
+    protected static List<Map<String, Object>> unresolvedSupertypes(org.javalens.core.search.ModelHierarchy hierarchy) {
+        if (hierarchy.unresolvedSupertypes().isEmpty()) {
+            return null;
+        }
+        List<Map<String, Object>> unresolved = new ArrayList<>();
+        for (org.javalens.core.search.ModelHierarchy.UnresolvedSupertype supertype : hierarchy.unresolvedSupertypes()) {
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("name", supertype.name());
+            entry.put("declaringType", ElementNames.qualifiedName(supertype.declaringType()));
+            unresolved.add(entry);
+        }
+        return unresolved;
+    }
+
+    /** Puts the potentialMatches block of {@code result} into {@code data} when it has any. */
+    protected void putPotentialMatches(Map<String, Object> data, org.javalens.core.search.SearchResult result,
+                                       IJdtService service) {
+        Map<String, Object> block = potentialMatches(result.potentialMatches(), result.potentialTotal(), service);
+        if (block != null) {
+            data.put("potentialMatches", block);
+        }
+    }
+
+    /**
      * Format a list of SearchMatch results into structured output.
      * Extracts file path, line, column, and context for each match.
      *

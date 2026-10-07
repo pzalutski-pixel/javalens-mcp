@@ -33,6 +33,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -53,16 +54,31 @@ import java.util.Set;
  * Read from the compiler's bindings at the type's declaration: its superclass
  * ({@code ITypeBinding.getSuperclass()}: none for an interface, for {@code java.lang.Object} and
  * for an annotation type) and its interfaces ({@code getInterfaces()}), each mapped to its model
- * element ({@link ModelElements}). A supertype the compiler cannot resolve is left out.
+ * element ({@link ModelElements}).
+ *
+ * <p>A supertype the compiler cannot resolve, such as a type of a missing dependency, has no
+ * binding: the binding of the type naming it holds no superclass, or java.lang.Object, in its place
+ * and leaves it out of its interfaces (DefaultBindingResolver.getTypeBinding answers no binding for
+ * a type not found, and TypeBinding.getInterfaces drops it). Each is found by comparing the names
+ * the type's declaration writes ({@code IType.getSuperclassName}, {@code getSuperInterfaceNames}:
+ * as written for a source type, qualified for a class file, the name after {@code new} for an
+ * anonymous class) with the supertypes its binding holds, by simple name without type arguments,
+ * and is reported by that name with the type that names it ({@link #unresolvedSupertypes}), for the
+ * type and every supertype it reaches. The superclasses then run to the last that resolves and end
+ * with java.lang.Object, the superclass of every class (JLS 8.1.4); the type's own superclass is
+ * none when its declaration names one that does not resolve.
  *
  * <h2>Subtypes</h2>
  * A direct subtype names the type as its superclass or one of its interfaces. They are found by an
  * {@code IMPLEMENTORS} search for the type, which reports every class or interface naming it in
  * its {@code extends} or {@code implements} clause and every anonymous class created from it
  * (SuperTypeReferenceLocator), each match moved to the model's element at the match position
- * ({@link SearchService#withModelElement}); a lambda it reports is left out, and so is a match the
- * search could not resolve and a class-file copy of a type an earlier classpath entry declares (a
- * module's installed jar beside its sources), which the project's name lookup never resolves to.
+ * ({@link SearchService#withModelElement}); a lambda it reports is left out, and so is a class-file
+ * copy of a type an earlier classpath entry declares (a module's installed jar beside its sources),
+ * which the project's name lookup never resolves to. A match the search reports but cannot confirm
+ * (A_INACCURATE: an extends or implements clause naming the type by a name the compiler cannot
+ * resolve, SuperTypeReferenceLocator.resolveLevel(ASTNode) :115) is no subtype: it is kept as a
+ * potential subtype ({@link #potentialSubtypes}) and searched no further.
  * A local class can be named only within its own compilation unit: its
  * direct subtypes are the type declarations of that unit whose bindings name it. The body of an
  * enum constant names no type, so a source enum's constant bodies are read from the model. All
@@ -123,9 +139,22 @@ public final class ModelHierarchy {
     private final List<IType> allSuperclasses;
     private final List<IType> allSuperInterfaces;
     private final List<IType> allSupertypes;
+    private final List<UnresolvedSupertype> unresolvedSupertypes;
 
     private List<IType> subtypes;
     private List<IType> allSubtypes;
+    private List<SearchMatch> potentialSubtypes;
+
+    /** java.lang.Object as the project resolves it, once looked up. */
+    private IType object;
+
+    /**
+     * A supertype the compiler cannot resolve: its {@code name} as the declaration of
+     * {@code declaringType} writes it (type arguments included), and that type, this hierarchy's
+     * type or one of its supertypes.
+     */
+    public record UnresolvedSupertype(String name, IType declaringType) {
+    }
 
     ModelHierarchy(IType type, IJavaProject project, SearchEngine engine, IJavaSearchScope scope) throws CoreException {
         if (type.isLambda()) {
@@ -141,6 +170,7 @@ public final class ModelHierarchy {
         this.allSuperclasses = supertypes.allSuperclasses();
         this.allSuperInterfaces = supertypes.allSuperInterfaces();
         this.allSupertypes = supertypes.allSupertypes();
+        this.unresolvedSupertypes = supertypes.unresolved();
     }
 
     /** The type this hierarchy is of. */
@@ -148,7 +178,10 @@ public final class ModelHierarchy {
         return type;
     }
 
-    /** The direct superclass, or null for an interface, an annotation type and java.lang.Object. */
+    /**
+     * The direct superclass, or null for an interface, an annotation type and java.lang.Object, and
+     * when the declaration names a superclass the compiler cannot resolve.
+     */
     public IType superclass() {
         return superclass;
     }
@@ -158,7 +191,10 @@ public final class ModelHierarchy {
         return superInterfaces;
     }
 
-    /** Every superclass, from the nearest. */
+    /**
+     * Every superclass, from the nearest; when one does not resolve, those before it, then
+     * java.lang.Object.
+     */
     public List<IType> allSuperclasses() {
         return allSuperclasses;
     }
@@ -171,6 +207,15 @@ public final class ModelHierarchy {
     /** Every superclass and interface, each once, in the order the class comment gives. */
     public List<IType> allSupertypes() {
         return allSupertypes;
+    }
+
+    /**
+     * The supertypes the compiler cannot resolve that this type's declaration names, then those
+     * each of its supertypes names, in the order of {@link #allSupertypes}; within one declaration,
+     * the superclass, then the interfaces in declaration order. Empty when every supertype resolves.
+     */
+    public List<UnresolvedSupertype> unresolvedSupertypes() {
+        return unresolvedSupertypes;
     }
 
     /** The direct subclasses: the direct subtypes of a class; none for an interface. */
@@ -188,6 +233,17 @@ public final class ModelHierarchy {
     public List<IType> allSubtypes() throws CoreException {
         computeSubtypes();
         return allSubtypes;
+    }
+
+    /**
+     * The places the search for this type's subtypes, or those of a subtype, reports but cannot
+     * confirm: an extends or implements clause naming one of them by a name the compiler cannot
+     * resolve, so the class declaring it may be a subtype or not. None is among the subtypes. By
+     * file and position.
+     */
+    public List<SearchMatch> potentialSubtypes() throws CoreException {
+        computeSubtypes();
+        return potentialSubtypes;
     }
 
     /**
@@ -409,7 +465,17 @@ public final class ModelHierarchy {
     // ---------------------------------------------------------------- supertypes
 
     private record Supertypes(IType superclass, List<IType> superInterfaces, List<IType> allSuperclasses,
-                              List<IType> allSuperInterfaces, List<IType> allSupertypes) {
+                              List<IType> allSuperInterfaces, List<IType> allSupertypes,
+                              List<UnresolvedSupertype> unresolved) {
+    }
+
+    /**
+     * The direct supertypes of one type as its binding holds them, and those its declaration names
+     * that do not resolve: {@code superclass} is null when it names an unresolved superclass
+     * ({@code superclassUnresolved}), whatever the binding holds in its place.
+     */
+    private record Declared(ITypeBinding superclass, boolean superclassUnresolved, List<ITypeBinding> interfaces,
+                            List<String> unresolved) {
     }
 
     private Supertypes supertypesOf(IType declared) throws CoreException {
@@ -447,60 +513,160 @@ public final class ModelHierarchy {
         return read[0];
     }
 
-    private static Supertypes supertypesOf(ITypeBinding binding, ModelElements elements) throws JavaModelException {
-        IType superclass = binding.getSuperclass() == null ? null : elements.typeOf(binding.getSuperclass());
+    private Supertypes supertypesOf(ITypeBinding binding, ModelElements elements) throws JavaModelException {
+        Map<String, Declared> declarations = new HashMap<>();
+        Declared own = declared(binding, elements, declarations);
+        IType superclass = own.superclass() == null ? null : elements.typeOf(own.superclass());
         List<IType> superInterfaces = new ArrayList<>();
-        for (ITypeBinding superInterface : binding.getInterfaces()) {
+        for (ITypeBinding superInterface : own.interfaces()) {
             IType element = elements.typeOf(superInterface);
             if (element != null) {
                 superInterfaces.add(element);
             }
         }
         Set<IType> allSuperclasses = new LinkedHashSet<>();
-        for (ITypeBinding current = binding.getSuperclass(); current != null; current = current.getSuperclass()) {
-            IType element = elements.typeOf(current);
+        Declared current = own;
+        while (current.superclass() != null) {
+            IType element = elements.typeOf(current.superclass());
             if (element != null) {
                 allSuperclasses.add(element);
             }
+            current = declared(current.superclass(), elements, declarations);
         }
-        Set<IType> allSuperInterfaces = new LinkedHashSet<>();
-        addSuperInterfaces(binding, elements, allSuperInterfaces);
-        Set<IType> allSupertypes = new LinkedHashSet<>();
-        addSupertypes(binding, elements, allSupertypes);
+        Map<IType, ITypeBinding> allSuperInterfaces = new LinkedHashMap<>();
+        addSuperInterfaces(own, elements, declarations, allSuperInterfaces);
+        Map<IType, ITypeBinding> allSupertypes = new LinkedHashMap<>();
+        addSupertypes(own, elements, declarations, allSupertypes);
+
+        List<UnresolvedSupertype> unresolved = new ArrayList<>();
+        IType declaring = elements.typeOf(binding);
+        for (String name : own.unresolved()) {
+            unresolved.add(new UnresolvedSupertype(name, declaring));
+        }
+        for (Map.Entry<IType, ITypeBinding> supertype : allSupertypes.entrySet()) {
+            for (String name : declared(supertype.getValue(), elements, declarations).unresolved()) {
+                unresolved.add(new UnresolvedSupertype(name, supertype.getKey()));
+            }
+        }
+        List<IType> supertypes = new ArrayList<>(allSupertypes.keySet());
+        // Every class extends java.lang.Object (JLS 8.1.4), past a superclass that does not resolve too.
+        if (current.superclassUnresolved() && object() != null) {
+            allSuperclasses.add(object());
+            if (!supertypes.contains(object())) {
+                supertypes.add(object());
+            }
+        }
         return new Supertypes(superclass, List.copyOf(superInterfaces), List.copyOf(allSuperclasses),
-            List.copyOf(allSuperInterfaces), List.copyOf(allSupertypes));
+            List.copyOf(allSuperInterfaces.keySet()), List.copyOf(supertypes), List.copyOf(unresolved));
+    }
+
+    /** java.lang.Object as the project resolves it, or null when it resolves none. */
+    private IType object() throws JavaModelException {
+        if (object == null) {
+            object = project.findType("java.lang.Object");
+        }
+        return object;
+    }
+
+    /**
+     * The direct supertypes of {@code binding}: those its binding holds, and the names its
+     * declaration writes that none of them answers (the class comment gives the comparison). An
+     * interface or annotation type has no superclass to compare: its model reports java.lang.Object
+     * as the superclass of an interface (IType.getSuperclassName). Read once per type and kept in
+     * {@code declarations} by binding key.
+     */
+    private static Declared declared(ITypeBinding binding, ModelElements elements, Map<String, Declared> declarations)
+            throws JavaModelException {
+        Declared known = declarations.get(binding.getKey());
+        if (known != null) {
+            return known;
+        }
+        ITypeBinding superclass = binding.getSuperclass();
+        List<ITypeBinding> interfaces = List.of(binding.getInterfaces());
+        IType element = elements.typeOf(binding);
+        Declared declared;
+        if (element == null) {
+            declared = new Declared(superclass, false, interfaces, List.of());
+        } else if (element.isAnonymous()) {
+            // The name after `new` is the class extended or the interface implemented.
+            String written = element.getSuperclassName();
+            boolean resolved = written == null || names(written, superclass)
+                || interfaces.stream().anyMatch(superInterface -> names(written, superInterface));
+            declared = resolved
+                ? new Declared(superclass, false, interfaces, List.of())
+                : new Declared(null, true, interfaces, List.of(written));
+        } else {
+            List<String> unresolved = new ArrayList<>();
+            boolean superclassUnresolved = false;
+            if (!element.isInterface()) {
+                String written = element.getSuperclassName();
+                if (written != null && !names(written, superclass)) {
+                    unresolved.add(written);
+                    superclassUnresolved = true;
+                }
+            }
+            List<ITypeBinding> unmatched = new ArrayList<>(interfaces);
+            for (String written : element.getSuperInterfaceNames()) {
+                ITypeBinding match = unmatched.stream().filter(superInterface -> names(written, superInterface))
+                    .findFirst().orElse(null);
+                if (match == null) {
+                    unresolved.add(written);
+                } else {
+                    unmatched.remove(match);
+                }
+            }
+            declared = new Declared(superclassUnresolved ? null : superclass, superclassUnresolved, interfaces,
+                List.copyOf(unresolved));
+        }
+        declarations.put(binding.getKey(), declared);
+        return declared;
+    }
+
+    /**
+     * Whether {@code written}, a supertype's name as a declaration writes it, names
+     * {@code binding}: the same simple name, type arguments and qualification aside.
+     */
+    private static boolean names(String written, ITypeBinding binding) {
+        if (binding == null) {
+            return false;
+        }
+        int arguments = written.indexOf('<');
+        String raw = (arguments < 0 ? written : written.substring(0, arguments)).trim();
+        String simple = raw.substring(Math.max(raw.lastIndexOf('.'), raw.lastIndexOf('$')) + 1);
+        return simple.equals(binding.getErasure().getName());
     }
 
     /** TypeHierarchy.getAllSuperInterfaces0's order: each interface, then its own; then the superclass's. */
-    private static void addSuperInterfaces(ITypeBinding binding, ModelElements elements, Set<IType> into)
+    private static void addSuperInterfaces(Declared declared, ModelElements elements,
+                                           Map<String, Declared> declarations, Map<IType, ITypeBinding> into)
             throws JavaModelException {
-        for (ITypeBinding superInterface : binding.getInterfaces()) {
+        for (ITypeBinding superInterface : declared.interfaces()) {
             IType element = elements.typeOf(superInterface);
-            if (element != null && into.add(element)) {
-                addSuperInterfaces(superInterface, elements, into);
+            if (element != null && into.putIfAbsent(element, superInterface) == null) {
+                addSuperInterfaces(declared(superInterface, elements, declarations), elements, declarations, into);
             }
         }
-        if (binding.getSuperclass() != null) {
-            addSuperInterfaces(binding.getSuperclass(), elements, into);
+        if (declared.superclass() != null) {
+            addSuperInterfaces(declared(declared.superclass(), elements, declarations), elements, declarations, into);
         }
     }
 
     /** TypeHierarchy.getAllSupertypes0's order: the interfaces as above, then the superclass and its supertypes. */
-    private static void addSupertypes(ITypeBinding binding, ModelElements elements, Set<IType> into)
-            throws JavaModelException {
-        for (ITypeBinding superInterface : binding.getInterfaces()) {
+    private static void addSupertypes(Declared declared, ModelElements elements, Map<String, Declared> declarations,
+                                      Map<IType, ITypeBinding> into) throws JavaModelException {
+        for (ITypeBinding superInterface : declared.interfaces()) {
             IType element = elements.typeOf(superInterface);
-            if (element != null && into.add(element)) {
-                addSuperInterfaces(superInterface, elements, into);
+            if (element != null && into.putIfAbsent(element, superInterface) == null) {
+                addSuperInterfaces(declared(superInterface, elements, declarations), elements, declarations, into);
             }
         }
-        ITypeBinding superclass = binding.getSuperclass();
+        ITypeBinding superclass = declared.superclass();
         if (superclass != null) {
             IType element = elements.typeOf(superclass);
             if (element != null) {
-                into.add(element);
+                into.putIfAbsent(element, superclass);
             }
-            addSupertypes(superclass, elements, into);
+            addSupertypes(declared(superclass, elements, declarations), elements, declarations, into);
         }
     }
 
@@ -514,15 +680,19 @@ public final class ModelHierarchy {
             // No class can name an anonymous class: it has no subtype.
             subtypes = List.of();
             allSubtypes = List.of();
+            potentialSubtypes = List.of();
             return;
         }
         if (isImplicitRoot(type)) {
+            // Read from bindings and class files, never from a search match: nothing to confirm.
             RootSubtypes root = rootSubtypes(type);
             subtypes = sorted(root.direct());
             allSubtypes = sorted(root.all());
+            potentialSubtypes = List.of();
             return;
         }
-        Set<IType> direct = directSubtypes(List.of(type));
+        List<SearchMatch> potential = new ArrayList<>();
+        Set<IType> direct = directSubtypes(List.of(type), potential);
         Set<IType> all = new LinkedHashSet<>(direct);
         List<IType> frontier = new ArrayList<>(direct);
         while (!frontier.isEmpty()) {
@@ -537,7 +707,7 @@ public final class ModelHierarchy {
                 }
             }
             List<IType> next = new ArrayList<>();
-            for (IType found : directSubtypes(searched)) {
+            for (IType found : directSubtypes(searched, potential)) {
                 if (all.add(found)) {
                     next.add(found);
                 }
@@ -546,13 +716,22 @@ public final class ModelHierarchy {
         }
         subtypes = sorted(direct);
         allSubtypes = sorted(all);
+        potential.sort(MATCH_ORDER);
+        potentialSubtypes = List.copyOf(potential);
     }
+
+    /** Matches by their file's path, then by offset. */
+    private static final Comparator<SearchMatch> MATCH_ORDER = Comparator
+        .comparing((SearchMatch match) -> match.getResource() == null ? "" : match.getResource().getFullPath().toString())
+        .thenComparingInt(SearchMatch::getOffset);
 
     /**
      * The types naming one of {@code supertypes}, none an implicit root or anonymous, as their
-     * superclass or interface, with the constant bodies of those that are source enums.
+     * superclass or interface, with the constant bodies of those that are source enums. A match
+     * the search reports but cannot confirm goes to {@code potential} instead, unless it is a lambda
+     * expression, which is no type.
      */
-    private Set<IType> directSubtypes(Collection<IType> supertypes) throws CoreException {
+    private Set<IType> directSubtypes(Collection<IType> supertypes, List<SearchMatch> potential) throws CoreException {
         Set<IType> found = new LinkedHashSet<>();
         SearchPattern pattern = null;
         Map<ICompilationUnit, Set<IType>> local = new LinkedHashMap<>();
@@ -575,9 +754,13 @@ public final class ModelHierarchy {
             new SearchRequestor() {
                 @Override
                 public void acceptSearchMatch(SearchMatch match) throws CoreException {
-                    if (match.getAccuracy() == SearchMatch.A_ACCURATE
-                            && SearchService.withModelElement(match).getElement() instanceof IType subtype
-                            && !subtype.isLambda() && (!subtype.isBinary() || isResolvedTo(subtype))) {
+                    Object element = SearchService.withModelElement(match).getElement();
+                    if (element instanceof IType subtype && subtype.isLambda()) {
+                        return;
+                    }
+                    if (match.getAccuracy() == SearchMatch.A_INACCURATE) {
+                        potential.add(match);
+                    } else if (element instanceof IType subtype && (!subtype.isBinary() || isResolvedTo(subtype))) {
                         found.add(subtype);
                     }
                 }

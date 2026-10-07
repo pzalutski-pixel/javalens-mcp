@@ -80,8 +80,11 @@ public class FindReflectionUsageTool extends AbstractTool {
             overloads together (default 100), in source order: by file, then
             position. summary counts every call of each reflection method, and
             totalCalls and meta.totalCount count every call; meta.truncated is true
-            when calls are left out.
+            when calls are left out. potentialMatches lists, the first maxResults
+            of each reflection method in source order, the calls JDT could not
+            confirm, each with its reflection method.
 
+            """ + POTENTIAL_MATCHES + """
             Requires load_project to be called first.
             """;
     }
@@ -104,8 +107,10 @@ public class FindReflectionUsageTool extends AbstractTool {
 
         try {
             List<Map<String, Object>> allCalls = new ArrayList<>();
+            List<Map<String, Object>> potentialCalls = new ArrayList<>();
             Map<String, Integer> summary = new LinkedHashMap<>();
             int grandTotalEncountered = 0;
+            int potentialTotal = 0;
 
             for (String[] entry : REFLECTION_METHODS) {
                 String typeName = entry[0];
@@ -120,6 +125,7 @@ public class FindReflectionUsageTool extends AbstractTool {
                     // the calls listed per reflection method (per label), not per overload,
                     // and the label's count is every call.
                     List<SearchMatch> labelMatches = new ArrayList<>();
+                    List<SearchMatch> labelPotential = new ArrayList<>();
                     int labelTotal = 0;
                     for (IMethod method : type.getMethods()) {
                         if (!methodName.equals(method.getElementName())) continue;
@@ -132,16 +138,19 @@ public class FindReflectionUsageTool extends AbstractTool {
                             .findAllReferencesInSources(method, SearchService.ALL_MATCHES);
                         labelTotal += result.totalEncountered();
                         labelMatches.addAll(result.matches());
+                        labelPotential.addAll(result.potentialMatches());
+                        potentialTotal += result.potentialTotal();
                     }
 
-                    // The first maxResults calls in source order, whatever overload each calls
-                    labelMatches.sort(Comparator
-                        .comparing((SearchMatch match) -> match.getResource().getFullPath().toString())
-                        .thenComparingInt(SearchMatch::getOffset));
-                    List<SearchMatch> listed = labelMatches.subList(0, Math.min(maxResults, labelMatches.size()));
-                    for (Map<String, Object> match : formatMatches(listed, service)) {
+                    // The first maxResults calls in source order, whatever overload each calls,
+                    // and as many of the calls the search could not confirm
+                    for (Map<String, Object> match : formatMatches(firstInSourceOrder(labelMatches, maxResults), service)) {
                         match.put("reflectionMethod", label);
                         allCalls.add(match);
+                    }
+                    for (Map<String, Object> match : formatMatches(firstInSourceOrder(labelPotential, maxResults), service)) {
+                        match.put("reflectionMethod", label);
+                        potentialCalls.add(match);
                     }
 
                     if (labelTotal > 0) {
@@ -159,6 +168,12 @@ public class FindReflectionUsageTool extends AbstractTool {
             data.put("totalCalls", grandTotalEncountered);
             data.put("summary", summary);
             data.put("reflectionCalls", allCalls);
+            if (potentialTotal > 0) {
+                Map<String, Object> potentialMatches = new LinkedHashMap<>();
+                potentialMatches.put("count", potentialTotal);
+                potentialMatches.put("locations", potentialCalls);
+                data.put("potentialMatches", potentialMatches);
+            }
 
             return ToolResponse.success(data, ResponseMeta.builder()
                 .totalCount(grandTotalEncountered)
@@ -173,5 +188,13 @@ public class FindReflectionUsageTool extends AbstractTool {
         } catch (Exception e) {
             return ToolResponse.internalError(e);
         }
+    }
+
+    /** The first {@code max} of {@code matches} in source order: by file, then position. */
+    private static List<SearchMatch> firstInSourceOrder(List<SearchMatch> matches, int max) {
+        matches.sort(Comparator
+            .comparing((SearchMatch match) -> match.getResource().getFullPath().toString())
+            .thenComparingInt(SearchMatch::getOffset));
+        return matches.subList(0, Math.min(max, matches.size()));
     }
 }

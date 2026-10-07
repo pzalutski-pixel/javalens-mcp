@@ -53,6 +53,15 @@ public class GetTypeHierarchyTool extends AbstractTool {
 
             IMPORTANT: Uses ZERO-BASED coordinates when using file position.
 
+            unresolvedSupertypes, present only when there are any, names each
+            supertype the compiler cannot resolve (a missing dependency), as the
+            declaration writes it, with the type whose declaration names it: this
+            type or one of its supertypes. The superclasses then run to the last
+            that resolves and end with java.lang.Object. potentialMatches are the
+            places naming the type, or a subtype, as a supertype that JDT could not
+            confirm.
+
+            """ + POTENTIAL_MATCHES + """
             Requires load_project to be called first.
             """;
     }
@@ -128,6 +137,12 @@ public class GetTypeHierarchyTool extends AbstractTool {
             }
             data.put("interfaces", interfaceList);
 
+            // Supertypes the compiler cannot resolve, by name, with the type naming each
+            List<Map<String, Object>> unresolved = unresolvedSupertypes(hierarchy);
+            if (unresolved != null) {
+                data.put("unresolvedSupertypes", unresolved);
+            }
+
             // Every subtype, by file and position
             List<IType> subtypes = hierarchy.allSubtypes();
             List<Map<String, Object>> subtypeList = new ArrayList<>();
@@ -136,6 +151,10 @@ public class GetTypeHierarchyTool extends AbstractTool {
                 subtypeList.add(createTypeInfo(subtype, service));
             }
             data.put("subtypes", subtypeList);
+            Map<String, Object> potential = potentialSubtypes(hierarchy, maxDepth, service);
+            if (potential != null) {
+                data.put("potentialMatches", potential);
+            }
 
             data.put("totalSuperclasses", superclasses.size());
             data.put("totalInterfaces", interfaces.size());

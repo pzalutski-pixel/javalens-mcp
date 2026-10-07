@@ -44,6 +44,7 @@ public class FindThrowsDeclarationsTool extends AbstractFineGrainReferenceTool {
             - Finding all methods that can throw a specific exception
             - Exception handling analysis
 
+            """ + POTENTIAL_MATCHES + """
             Requires load_project to be called first.
             """;
     }

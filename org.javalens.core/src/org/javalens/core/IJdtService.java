@@ -115,6 +115,10 @@ public interface IJdtService {
      * Get the IJavaElement at a specific position in a file.
      * Uses zero-based line and column numbers.
      *
+     * <p>A position on a name is the element the name denotes; a name written as a reference
+     * that the compiler cannot resolve denotes none, and the answer is null. A position on no
+     * name (indentation, a keyword) is the element enclosing it.
+     *
      * @param filePath Path to the source file
      * @param line Zero-based line number
      * @param column Zero-based column number

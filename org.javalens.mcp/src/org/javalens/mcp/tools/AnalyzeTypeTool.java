@@ -37,6 +37,9 @@ public class AnalyzeTypeTool extends AbstractTool {
 
     private static final Logger log = LoggerFactory.getLogger(AnalyzeTypeTool.class);
 
+    /** The most subtypes, and potential subtypes, the hierarchy lists. */
+    private static final int MAX_SUBTYPES = 20;
+
     public AnalyzeTypeTool(Supplier<IJdtService> serviceSupplier) {
         super(serviceSupplier);
     }
@@ -63,6 +66,15 @@ public class AnalyzeTypeTool extends AbstractTool {
 
             Use this instead of multiple calls to get_type_members + get_type_hierarchy + get_type_usage_summary.
 
+            hierarchy.unresolvedSupertypes, present only when there are any, names
+            each supertype the compiler cannot resolve (a missing dependency), as the
+            declaration writes it, with the type whose declaration names it: this
+            type or one of its supertypes. The hierarchy's potentialMatches are
+            places naming the type as a supertype that JDT could not confirm; the
+            usage summary's are uses it could not confirm, the first maxUsages of
+            each category.
+
+            """ + POTENTIAL_MATCHES + """
             Requires load_project to be called first.
             """;
     }
@@ -286,12 +298,18 @@ public class AnalyzeTypeTool extends AbstractTool {
                 hierarchy.put("interfaces", interfaceList);
             }
 
+            // Supertypes the compiler cannot resolve, by name, with the type naming each
+            List<Map<String, Object>> unresolved = unresolvedSupertypes(typeHierarchy);
+            if (unresolved != null) {
+                hierarchy.put("unresolvedSupertypes", unresolved);
+            }
+
             // Subtypes, by file and position
             List<IType> subtypes = typeHierarchy.allSubtypes();
             if (!subtypes.isEmpty()) {
                 List<Map<String, Object>> subtypeList = new ArrayList<>();
                 for (IType subtype : subtypes) {
-                    if (subtypeList.size() >= 20) break; // Limit subtypes
+                    if (subtypeList.size() >= MAX_SUBTYPES) break;
                     subtypeList.add(Map.of(
                         "name", ElementNames.typeName(subtype),
                         "qualifiedName", ElementNames.qualifiedName(subtype)
@@ -299,6 +317,10 @@ public class AnalyzeTypeTool extends AbstractTool {
                 }
                 hierarchy.put("subtypes", subtypeList);
                 hierarchy.put("subtypeCount", subtypes.size());
+            }
+            Map<String, Object> potential = potentialSubtypes(typeHierarchy, MAX_SUBTYPES, service);
+            if (potential != null) {
+                hierarchy.put("potentialMatches", potential);
             }
 
         } catch (Exception e) {
@@ -315,43 +337,35 @@ public class AnalyzeTypeTool extends AbstractTool {
         try {
             org.javalens.core.search.SearchService search = service.getSearchService();
 
-            // Instantiations — use totalEncountered (pre-clip count) so the aggregate
-            // reflects all uses, not just the maxUsages-clipped sample.
-            int instantiations = search.findReferences(
-                type, org.javalens.core.search.SearchService.ReferenceKind.INSTANTIATION, maxUsages).totalEncountered();
-            usages.put("instantiations", instantiations);
-            total += instantiations;
-
-            // Casts
-            int casts = search.findReferences(
-                type, org.javalens.core.search.SearchService.ReferenceKind.CAST, maxUsages).totalEncountered();
-            usages.put("casts", casts);
-            total += casts;
-
-            // Instanceof
-            int instanceofs = search.findReferences(
-                type, org.javalens.core.search.SearchService.ReferenceKind.INSTANCEOF, maxUsages).totalEncountered();
-            usages.put("instanceofChecks", instanceofs);
-            total += instanceofs;
-
-            // Type arguments
-            int typeArgs = search.findReferences(
-                type, org.javalens.core.search.SearchService.ReferenceKind.TYPE_ARGUMENT, maxUsages).totalEncountered();
-            usages.put("typeArguments", typeArgs);
-            total += typeArgs;
-
-            // Annotation usages (only meaningful for annotation types; @interface
-            // can't be instantiated/cast/etc., so the four categories above are all
-            // empty for it). Mirrors GetTypeUsageSummaryTool's annotation branch so
-            // the two analyzer tools surface the same vocabulary.
+            // Each category's count is its totalEncountered (pre-clip count), so the aggregate
+            // reflects all uses, not just the maxUsages-clipped sample. Annotation usages count
+            // only for an annotation type, which cannot be instantiated, cast and so on; this
+            // mirrors GetTypeUsageSummaryTool so the two tools surface the same vocabulary.
+            Map<String, org.javalens.core.search.SearchService.ReferenceKind> categories = new LinkedHashMap<>();
+            categories.put("instantiations", org.javalens.core.search.SearchService.ReferenceKind.INSTANTIATION);
+            categories.put("casts", org.javalens.core.search.SearchService.ReferenceKind.CAST);
+            categories.put("instanceofChecks", org.javalens.core.search.SearchService.ReferenceKind.INSTANCEOF);
+            categories.put("typeArguments", org.javalens.core.search.SearchService.ReferenceKind.TYPE_ARGUMENT);
             if (type.isAnnotation()) {
-                int annotations = search.findReferences(
-                    type, org.javalens.core.search.SearchService.ReferenceKind.ANNOTATION, maxUsages).totalEncountered();
-                usages.put("annotationUsages", annotations);
-                total += annotations;
+                categories.put("annotationUsages", org.javalens.core.search.SearchService.ReferenceKind.ANNOTATION);
+            }
+
+            // The places each category's search could not confirm, the first maxUsages of each
+            List<org.eclipse.jdt.core.search.SearchMatch> potential = new ArrayList<>();
+            int potentialTotal = 0;
+            for (Map.Entry<String, org.javalens.core.search.SearchService.ReferenceKind> category : categories.entrySet()) {
+                org.javalens.core.search.SearchResult result = search.findReferences(type, category.getValue(), maxUsages);
+                usages.put(category.getKey(), result.totalEncountered());
+                total += result.totalEncountered();
+                potential.addAll(result.potentialMatches());
+                potentialTotal += result.potentialTotal();
             }
 
             usages.put("total", total);
+            Map<String, Object> potentialMatches = potentialMatches(potential, potentialTotal, service);
+            if (potentialMatches != null) {
+                usages.put("potentialMatches", potentialMatches);
+            }
 
         } catch (Exception e) {
             log.debug("Error getting usages: {}", e.getMessage());

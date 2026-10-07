@@ -91,7 +91,10 @@ public class ChangeMethodSignatureTool extends AbstractTool {
             with it, as rename_symbol renames them: one declaration edit each,
             each keeping its own parameter names and unchanged parameter types,
             and every call of any of them. A method related to a method of a
-            class file is refused, naming that method: it cannot change.
+            class file is refused, naming that method: it cannot change. A place
+            JDT's search reports but cannot confirm as a call, where a type or name
+            does not resolve, is never rewritten: potentialMatches lists every one,
+            to review by hand.
 
             PARAMETER OPERATIONS:
             - Add new parameter with default value for existing calls
@@ -101,6 +104,7 @@ public class ChangeMethodSignatureTool extends AbstractTool {
 
             IMPORTANT: Uses ZERO-BASED coordinates.
 
+            """ + POTENTIAL_MATCHES + """
             Requires load_project to be called first.
             """;
     }
@@ -228,15 +232,22 @@ public class ChangeMethodSignatureTool extends AbstractTool {
 
             // Every call site of each of them must be rewritten, each once. The calls are
             // searched in the project's sources only, where the edits are made.
+            // A place the search could not confirm is never rewritten: it is reported, once.
             List<SearchMatch> references = new ArrayList<>();
             Set<String> referenced = new HashSet<>();
+            List<SearchMatch> potential = new ArrayList<>();
+            Set<String> potentialPlaces = new HashSet<>();
             for (IMethod declared : ripple) {
-                for (SearchMatch match : service.getSearchService().findAllReferencesInSources(
-                        declared, SearchService.ALL_MATCHES).matches()) {
-                    String at = (match.getResource() == null ? "" : match.getResource().getFullPath().toString())
-                        + "@" + match.getOffset();
-                    if (referenced.add(at)) {
+                org.javalens.core.search.SearchResult found = service.getSearchService().findAllReferencesInSources(
+                    declared, SearchService.ALL_MATCHES);
+                for (SearchMatch match : found.matches()) {
+                    if (referenced.add(placeOf(match))) {
                         references.add(match);
+                    }
+                }
+                for (SearchMatch match : found.potentialMatches()) {
+                    if (potentialPlaces.add(placeOf(match))) {
+                        potential.add(match);
                     }
                 }
             }
@@ -314,6 +325,10 @@ public class ChangeMethodSignatureTool extends AbstractTool {
                         "the functional-interface signature.");
                 }
                 data.put("warnings", warnings);
+            }
+            Map<String, Object> potentialMatches = potentialMatches(potential, potential.size(), service);
+            if (potentialMatches != null) {
+                data.put("potentialMatches", potentialMatches);
             }
 
             return ToolResponse.success(data, ResponseMeta.builder()
@@ -466,6 +481,11 @@ public class ChangeMethodSignatureTool extends AbstractTool {
         }
 
         return result[0];
+    }
+
+    /** A match's place: its file and offset. */
+    private static String placeOf(SearchMatch match) {
+        return (match.getResource() == null ? "" : match.getResource().getFullPath().toString()) + "@" + match.getOffset();
     }
 
     private int getSignatureStart(MethodDeclaration decl, CompilationUnit ast) {

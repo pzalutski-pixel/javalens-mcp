@@ -55,6 +55,10 @@ public class GetCallHierarchyIncomingTool extends AbstractTool {
 
             Useful for understanding who depends on a method before changing it.
 
+            The callers of a method of a class file, such as a JDK method, are those
+            in the project's source files.
+
+            """ + POTENTIAL_MATCHES + """
             Requires load_project to be called first.
             """;
     }
@@ -141,6 +145,12 @@ public class GetCallHierarchyIncomingTool extends AbstractTool {
             data.put("signature", signature);
             data.put("totalCallers", totalCallers);
             data.put("callers", callers);
+            List<SearchMatch> potential = result.potentialMatches();
+            Map<String, Object> potentialMatches = potentialMatches(
+                potential.subList(0, Math.min(maxResults, potential.size())), result.potentialTotal(), service);
+            if (potentialMatches != null) {
+                data.put("potentialMatches", potentialMatches);
+            }
 
             return ToolResponse.success(data, ResponseMeta.builder()
                 .totalCount(totalCallers)

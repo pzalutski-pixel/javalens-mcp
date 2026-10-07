@@ -58,10 +58,12 @@ public class GetTypeUsageSummaryTool extends AbstractTool {
             other value is rejected with INVALID_PARAMETER). totalUsages and
             meta.totalCount count every usage, meta.returnedCount the locations
             listed, and meta.truncated is true when a category lists fewer
-            locations than its count.
+            locations than its count. A category's potentialMatches stand beside
+            its locations.
 
             Use this to understand how a type is used throughout the project.
 
+            """ + POTENTIAL_MATCHES + """
             Requires load_project to be called first.
             """;
     }
@@ -148,11 +150,15 @@ public class GetTypeUsageSummaryTool extends AbstractTool {
         }
     }
 
-    /** A usage category: the exact count of its usages and the locations of those listed. */
+    /**
+     * A usage category: the exact count of its usages and the locations of those listed, and the
+     * category's potential matches beside them when it has any.
+     */
     private Map<String, Object> category(SearchResult result, IJdtService service) {
         Map<String, Object> category = new LinkedHashMap<>();
         category.put("count", result.totalEncountered());
         category.put("locations", formatMatches(result.matches(), service));
+        putPotentialMatches(category, result, service);
         return category;
     }
 

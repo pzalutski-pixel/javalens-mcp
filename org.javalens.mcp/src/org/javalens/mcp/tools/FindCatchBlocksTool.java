@@ -41,6 +41,7 @@ public class FindCatchBlocksTool extends AbstractFineGrainReferenceTool {
             - Finding all handlers for a specific exception
             - Exception handling analysis and refactoring
 
+            """ + POTENTIAL_MATCHES + """
             Requires load_project to be called first.
             """;
     }
