@@ -2,6 +2,7 @@ package org.javalens.core.jdt;
 
 import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.jdt.core.ICompilationUnit;
+import org.eclipse.jdt.core.IJavaProject;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTParser;
@@ -31,6 +32,7 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 import java.util.ArrayList;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -67,16 +69,28 @@ class JdtContractTest {
     }
 
     @Test
-    @DisplayName("findType does NOT accept $-form for nested types — only dotted")
-    void findType_nestedDollar_returnsNull() {
-        // JDT contract: IJavaProject.findType accepts only dotted FQN, not $-form.
-        // The $-form is exclusive to SearchPattern.createPattern(typeName, ...) strings,
-        // where SearchService.findFineGrainReferences passes type.getFullyQualifiedName('$').
-        // If JDT ever changes this and accepts $-form via findType, our callers don't break
-        // — but the test will surface the change.
-        IType color = service.findType("com.example.TypeKindsFixture$Color");
-        org.junit.jupiter.api.Assertions.assertNull(color,
-            "JDT contract: findType accepts only dotted form. $-form must return null.");
+    @DisplayName("findType resolves a member type by its $-form, the name every tool reports it by, to the type its dotted name resolves to")
+    void findType_nestedDollar_resolves() {
+        IType dotted = service.findType("com.example.TypeKindsFixture.Color");
+        IType dollar = service.findType("com.example.TypeKindsFixture$Color");
+        assertAll(
+            () -> assertEquals("com.example.TypeKindsFixture$Color", dollar.getFullyQualifiedName()),
+            () -> assertEquals(dotted, dollar, "both forms name the one member type"));
+    }
+
+    @Test
+    @DisplayName("JDT: IJavaProject.findType resolves a member type by its $-form, of a source type and of a class file")
+    void javaProjectFindType_dollarForm_resolves() throws Exception {
+        // NameLookup.seekTypes (jdt.core 3.44) reads a source type name with '$' as dotted
+        // member names, and a class file name with '.' as '$' (the class file Map$Entry).
+        IJavaProject project = service.getJavaProject();
+        IType color = project.findType("com.example.TypeKindsFixture$Color");
+        IType entry = project.findType("java.util.Map$Entry");
+        assertAll(
+            () -> assertEquals("com.example.TypeKindsFixture$Color", color.getFullyQualifiedName()),
+            () -> assertTrue(color.exists(), "the source member type Color exists"),
+            () -> assertEquals("java.util.Map$Entry", entry.getFullyQualifiedName()),
+            () -> assertTrue(entry.exists(), "the class file member type Entry exists"));
     }
 
     // ========== isAnnotation / isInterface ordering quirk ==========
@@ -460,22 +474,15 @@ class JdtContractTest {
         }
     }
 
-    // ========== B3-6: IType.findType(String) accepts dotted nested-type form ==========
+    // ========== B3-6: findType accepts both forms of a library member type ==========
     @Test
-    @DisplayName("B3-6: findType accepts dotted nested-type form, returns null for $-form")
-    void findType_dottedForm_acceptedDollarFormRejected() throws Exception {
-        // Covered structurally by findType_nestedDotted_resolves and findType_nestedDollar_returnsNull
-        // earlier in this file; this explicit case ties the assertion to the B3-6 label so
-        // changes in JDT's findType naming convention surface here. Calculator nested type
-        // doesn't exist in the fixture; use a known-good form: java.util.Map$Entry
-        // (dotted form: java.util.Map.Entry).
+    @DisplayName("B3-6: findType resolves the library member type java.util.Map.Entry by its dotted and by its $-form")
+    void findType_dottedAndDollarForm_resolveLibraryMemberType() throws Exception {
         IType dottedForm = service.findType("java.util.Map.Entry");
-        assertNotNull(dottedForm, "JDT contract: dotted form java.util.Map.Entry resolves via findType");
-
         IType dollarForm = service.findType("java.util.Map$Entry");
-        assertEquals(null, dollarForm,
-            "JDT contract: $-form java.util.Map$Entry does NOT resolve via findType — "
-                + "JDT's findType only accepts the dotted form");
+        assertAll(
+            () -> assertEquals("java.util.Map$Entry", dottedForm.getFullyQualifiedName()),
+            () -> assertEquals(dottedForm, dollarForm, "both forms name the one member type"));
     }
 
     // ========== B3-5: codeSelect at the package keyword ==========

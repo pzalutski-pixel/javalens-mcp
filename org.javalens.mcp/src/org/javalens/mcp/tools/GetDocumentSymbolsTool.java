@@ -6,13 +6,16 @@ import org.eclipse.jdt.core.Flags;
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IField;
 import org.eclipse.jdt.core.IMethod;
+import org.eclipse.jdt.core.ISourceRange;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.Signature;
 import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTParser;
 import org.eclipse.jdt.core.dom.CompilationUnit;
+import org.eclipse.jdt.core.dom.NodeFinder;
 import org.eclipse.jdt.core.dom.RecordDeclaration;
+import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
 import org.javalens.core.ElementKindResolver;
 import org.javalens.core.IJdtService;
@@ -57,6 +60,11 @@ public class GetDocumentSymbolsTool extends AbstractTool {
             OUTPUT: Hierarchical list of all types, methods, fields, and nested types
 
             Returns symbols with their locations, kinds, and modifiers.
+            A record's components are listed as its first children.
+
+            Types are listed as declared at top level and as members of other
+            types. Local and anonymous classes, those declared in method, field
+            or initializer bodies, are not listed.
 
             Requires load_project to be called first.
             """;
@@ -281,7 +289,7 @@ public class GetDocumentSymbolsTool extends AbstractTool {
             parser.setSource(cu);
             parser.setResolveBindings(false);
             CompilationUnit ast = (CompilationUnit) parser.createAST(null);
-            RecordDeclaration record = findRecordDeclaration(ast, type.getElementName());
+            RecordDeclaration record = findRecordDeclaration(ast, type);
             if (record == null) return result;
             for (Object component : record.recordComponents()) {
                 if (symbolCount[0] >= maxResults) break;
@@ -309,18 +317,25 @@ public class GetDocumentSymbolsTool extends AbstractTool {
             parser.setSource(cu);
             parser.setResolveBindings(false);
             CompilationUnit ast = (CompilationUnit) parser.createAST(null);
-            RecordDeclaration record = findRecordDeclaration(ast, type.getElementName());
+            RecordDeclaration record = findRecordDeclaration(ast, type);
             return record == null ? 0 : record.recordComponents().size();
         } catch (Exception e) {
             return 0;
         }
     }
 
-    private RecordDeclaration findRecordDeclaration(CompilationUnit ast, String typeName) {
-        for (Object t : ast.types()) {
-            if (t instanceof RecordDeclaration rec && typeName.equals(rec.getName().getIdentifier())) {
-                return rec;
-            }
+    /**
+     * The declaration of the record {@code type} in {@code ast}, the compilation unit that
+     * declares it: the record declaration whose name lies at the type's name range, at top level,
+     * as a member, or local to a method body; null when none does.
+     */
+    private RecordDeclaration findRecordDeclaration(CompilationUnit ast, IType type) throws JavaModelException {
+        ISourceRange name = type.getNameRange();
+        if (name != null && name.getOffset() >= 0
+                && NodeFinder.perform(ast, name.getOffset(), name.getLength()) instanceof SimpleName simpleName
+                && simpleName.getParent() instanceof RecordDeclaration declaration
+                && declaration.getName() == simpleName) {
+            return declaration;
         }
         return null;
     }

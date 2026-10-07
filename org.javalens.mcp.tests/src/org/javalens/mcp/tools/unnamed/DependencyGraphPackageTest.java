@@ -24,8 +24,9 @@ import static org.javalens.mcp.tools.unnamed.UnnamedElements.success;
 /**
  * get_dependency_graph gives each node that denotes a type, or a member of one, the package of
  * that type as its binding resolves it, and gives no package to a node that denotes a package.
- * A type reached by a name written qualified in the source is named by its resolved fully
- * qualified name, as a type reached by a simple name is. At package scope each import counts
+ * A node that denotes a type is named by the type's fully qualified name with '$' between nested
+ * types, whether an import, a simple name or a name written qualified reaches it, so a member
+ * type reached by its import and by a field is one node. At package scope each import counts
  * toward the package its binding resolves to. A dependency is external when the package it
  * denotes or lies in is a JDK package (java., javax., ...), the package node's own name being
  * that package.
@@ -73,20 +74,20 @@ class DependencyGraphPackageTest {
             "nodes", List.of(
                 map("name", graph, "kind", "class", "package", "com.example.nested"),
                 map("name", "com.example.nested.Shelf", "kind", "class", "package", "com.example.nested"),
-                map("name", "com.example.nested.Shelf.Folio", "kind", "type", "package", "com.example.nested"),
+                map("name", "com.example.nested.Shelf$Folio", "kind", "type", "package", "com.example.nested"),
                 map("name", "com.example.util", "kind", "import"),
                 map("name", "com.example.util.Tools", "kind", "type", "package", "com.example.util"),
                 map("name", "com.example.util.Tools.trim", "kind", "import", "package", "com.example.util"),
                 map("name", "java.lang.Runnable", "kind", "interface", "package", "java.lang"),
-                map("name", "java.util.Map.Entry", "kind", "import", "package", "java.util")),
+                map("name", "java.util.Map$Entry", "kind", "import", "package", "java.util")),
             "edges", List.of(
                 map("from", graph, "to", "com.example.nested.Shelf", "count", 1),
-                map("from", graph, "to", "com.example.nested.Shelf.Folio", "count", 1),
+                map("from", graph, "to", "com.example.nested.Shelf$Folio", "count", 1),
                 map("from", graph, "to", "com.example.util", "count", 1),
                 map("from", graph, "to", "com.example.util.Tools", "count", 1),
                 map("from", graph, "to", "com.example.util.Tools.trim", "count", 1),
                 map("from", graph, "to", "java.lang.Runnable", "count", 1),
-                map("from", graph, "to", "java.util.Map.Entry", "count", 2)),
+                map("from", graph, "to", "java.util.Map$Entry", "count", 2)),
             "summary", map("totalNodes", 8, "totalEdges", 7, "internalDependencies", 5, "externalDependencies", 2));
         assertPayload(mapper, new GetDependencyGraphTool(() -> service), envelope, typeArgs(graph),
             success(data, meta(8)), sorted());

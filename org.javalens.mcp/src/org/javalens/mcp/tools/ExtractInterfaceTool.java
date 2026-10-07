@@ -12,12 +12,23 @@ import org.eclipse.jdt.core.Signature;
 import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTParser;
+import org.eclipse.jdt.core.dom.ASTVisitor;
 import org.eclipse.jdt.core.dom.AbstractTypeDeclaration;
 import org.eclipse.jdt.core.dom.CompilationUnit;
+import org.eclipse.jdt.core.dom.ITypeBinding;
+import org.eclipse.jdt.core.dom.MethodDeclaration;
+import org.eclipse.jdt.core.dom.Name;
+import org.eclipse.jdt.core.dom.NameQualifiedType;
 import org.eclipse.jdt.core.dom.NodeFinder;
+import org.eclipse.jdt.core.dom.QualifiedName;
+import org.eclipse.jdt.core.dom.QualifiedType;
 import org.eclipse.jdt.core.dom.RecordDeclaration;
 import org.eclipse.jdt.core.dom.SimpleName;
+import org.eclipse.jdt.core.dom.SimpleType;
+import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
+import org.eclipse.jdt.core.dom.Type;
 import org.eclipse.jdt.core.dom.TypeDeclaration;
+import org.eclipse.jdt.core.dom.TypeParameter;
 import org.eclipse.jdt.core.dom.rewrite.ASTRewrite;
 import org.eclipse.jdt.core.dom.rewrite.ListRewrite;
 import org.javalens.core.IJdtService;
@@ -33,6 +44,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -68,7 +80,9 @@ public class ExtractInterfaceTool extends AbstractTool {
             Extract an interface from a class containing selected public methods.
 
             Returns the text for a new interface file and edits to add 'implements'
-            clause to the original class.
+            clause to the original class. The interface imports each type its
+            signatures name that it cannot see unimported, a member type by its
+            canonical name (import pkg.Outer.Inner).
 
             USAGE: Position on class, provide interface name, optionally specify methods
             OUTPUT: Interface file content and class modification edit
@@ -205,6 +219,33 @@ public class ExtractInterfaceTool extends AbstractTool {
             String classTypeParamClause = formatTypeParameterDeclaration(classTypeParams);
             String classTypeArguments = formatTypeArgumentList(classTypeParams);
 
+            // Parse the class's own source: its declaration takes the 'implements' clause, and the
+            // types its declarations name tell the interface what to import.
+            ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
+            parser.setSource(declaringUnit);
+            parser.setResolveBindings(true);
+            CompilationUnit ast = (CompilationUnit) parser.createAST(null);
+            AbstractTypeDeclaration typeDecl = findTypeDeclaration(ast, type);
+
+            // The types the interface's text names: the class's type parameter bounds, and each
+            // extracted method's type parameter bounds, return type, parameter types and thrown
+            // types.
+            List<Type> namedTypes = typeParameterBounds(typeParameters(typeDecl));
+
+            // Method signatures
+            StringBuilder body = new StringBuilder();
+            List<Map<String, Object>> extractedMethods = new ArrayList<>();
+            for (IMethod method : methodsToExtract) {
+                String signature = buildMethodSignature(method);
+                body.append("    ").append(signature).append(";\n\n");
+                namedTypes.addAll(signatureTypes(findMethodDeclaration(ast, method)));
+
+                Map<String, Object> methodInfo = new LinkedHashMap<>();
+                methodInfo.put("name", method.getElementName());
+                methodInfo.put("signature", signature);
+                extractedMethods.add(methodInfo);
+            }
+
             // Build interface content
             StringBuilder interfaceContent = new StringBuilder();
 
@@ -213,30 +254,20 @@ public class ExtractInterfaceTool extends AbstractTool {
                 interfaceContent.append("package ").append(packageName).append(";\n\n");
             }
 
+            // Import declarations
+            Set<String> imports = requiredImports(namedTypes, packageName);
+            for (String imported : imports) {
+                interfaceContent.append("import ").append(imported).append(";\n");
+            }
+            if (!imports.isEmpty()) {
+                interfaceContent.append("\n");
+            }
+
             // Interface declaration
             interfaceContent.append("public interface ").append(interfaceName)
                 .append(classTypeParamClause).append(" {\n\n");
-
-            // Method signatures
-            List<Map<String, Object>> extractedMethods = new ArrayList<>();
-            for (IMethod method : methodsToExtract) {
-                String signature = buildMethodSignature(method);
-                interfaceContent.append("    ").append(signature).append(";\n\n");
-
-                Map<String, Object> methodInfo = new LinkedHashMap<>();
-                methodInfo.put("name", method.getElementName());
-                methodInfo.put("signature", signature);
-                extractedMethods.add(methodInfo);
-            }
-
+            interfaceContent.append(body);
             interfaceContent.append("}\n");
-
-            // Parse the class's own source to find its declaration for the 'implements' clause
-            ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
-            parser.setSource(declaringUnit);
-            parser.setResolveBindings(true);
-            CompilationUnit ast = (CompilationUnit) parser.createAST(null);
-            AbstractTypeDeclaration typeDecl = findTypeDeclaration(ast, type);
 
             // Build the implements-clause edit with ASTRewrite: appending to the
             // type's super-interface list renders either a new ` implements X`
@@ -350,6 +381,114 @@ public class ExtractInterfaceTool extends AbstractTool {
         }
         throw new IllegalStateException("No declaration of " + ElementNames.qualifiedName(type)
             + " at its name in " + type.getCompilationUnit().getElementName());
+    }
+
+    /**
+     * The declaration of {@code method} in {@code ast}, the compilation unit of its class: the
+     * method declaration whose name lies at the method's name range.
+     */
+    private MethodDeclaration findMethodDeclaration(CompilationUnit ast, IMethod method) throws JavaModelException {
+        ISourceRange name = method.getNameRange();
+        if (NodeFinder.perform(ast, name.getOffset(), name.getLength()) instanceof SimpleName simpleName
+                && simpleName.getParent() instanceof MethodDeclaration declaration
+                && declaration.getName() == simpleName) {
+            return declaration;
+        }
+        throw new IllegalStateException("No declaration of " + method.getElementName()
+            + " at its name in " + method.getCompilationUnit().getElementName());
+    }
+
+    /** The type parameters {@code declaration} declares, a class's or a record's. */
+    private static List<?> typeParameters(AbstractTypeDeclaration declaration) {
+        if (declaration instanceof TypeDeclaration type) {
+            return type.typeParameters();
+        }
+        if (declaration instanceof RecordDeclaration record) {
+            return record.typeParameters();
+        }
+        return List.of();
+    }
+
+    /** The bounds of each of {@code typeParameters}, in order. */
+    private static List<Type> typeParameterBounds(List<?> typeParameters) {
+        List<Type> bounds = new ArrayList<>();
+        for (Object parameter : typeParameters) {
+            for (Object bound : ((TypeParameter) parameter).typeBounds()) {
+                bounds.add((Type) bound);
+            }
+        }
+        return bounds;
+    }
+
+    /**
+     * The types the signature of {@code method} names: its type parameter bounds, its return
+     * type, its parameter types and its thrown types.
+     */
+    private static List<Type> signatureTypes(MethodDeclaration method) {
+        List<Type> types = typeParameterBounds(method.typeParameters());
+        if (method.getReturnType2() != null) {
+            types.add(method.getReturnType2());
+        }
+        for (Object parameter : method.parameters()) {
+            types.add(((SingleVariableDeclaration) parameter).getType());
+        }
+        for (Object thrown : method.thrownExceptionTypes()) {
+            types.add((Type) thrown);
+        }
+        return types;
+    }
+
+    /**
+     * The import declarations an interface in the package {@code packageName} needs for the
+     * types {@code types} name, sorted by name, collected as JDT's extract interface collects
+     * them (ExtractInterfaceProcessor :651 through ImportRewriteUtil.collectImports and
+     * ImportReferencesCollector): for each type written, its type arguments included, the type
+     * its first name denotes, imported by its canonical name (JLS 6.7, 7.5.1). There is none for
+     * a name that starts with a package, for a type variable, or for a top-level type of
+     * java.lang or of the interface's own package, which the interface sees without an import
+     * (JLS 6.3, 7.3); a member type is imported whatever its package. A type of the default
+     * package, which an import cannot name (JLS 7.5), and a name that does not resolve give none.
+     */
+    private static Set<String> requiredImports(List<Type> types, String packageName) {
+        Set<String> imports = new TreeSet<>();
+        ASTVisitor visitor = new ASTVisitor() {
+            @Override
+            public boolean visit(SimpleType node) {
+                typeReference(node.getName());
+                return false;
+            }
+
+            @Override
+            public boolean visit(NameQualifiedType node) {
+                typeReference(node.getQualifier());
+                return false;
+            }
+
+            @Override
+            public boolean visit(QualifiedType node) {
+                node.getQualifier().accept(this);
+                return false;
+            }
+
+            private void typeReference(Name name) {
+                Name first = name;
+                while (first instanceof QualifiedName qualified) {
+                    first = qualified.getQualifier();
+                }
+                if (!(first.resolveBinding() instanceof ITypeBinding binding) || binding.isTypeVariable()) {
+                    return;
+                }
+                ITypeBinding type = binding.getErasure();
+                String pkg = type.getPackage() == null ? "" : type.getPackage().getName();
+                boolean visibleUnimported = type.getDeclaringClass() == null
+                    && (pkg.equals("java.lang") || pkg.equals(packageName));
+                if (!pkg.isEmpty() && !type.getQualifiedName().isEmpty() && !visibleUnimported) {
+                    imports.add(type.getQualifiedName());
+                }
+            }
+        };
+        types.forEach(type -> type.accept(visitor));
+        return imports;
     }
 
     /**

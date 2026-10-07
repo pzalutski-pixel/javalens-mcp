@@ -67,7 +67,10 @@ public class GetQuickFixesTool extends AbstractTool {
             OUTPUT: List of quick fixes with fixId, label, and category
 
             Supported fixes:
-            - UndefinedType: Suggest imports for unresolved types
+            - UndefinedType: Suggest imports for unresolved types, each fixId
+              naming the type as an import does (add_import:pkg.Outer.Inner for a
+              member type); a type in the default package cannot be imported
+              and is never suggested
             - UnusedImport: Remove unused import
             - UnhandledException: Add throws or surround with try-catch
 
@@ -335,8 +338,13 @@ public class GetQuickFixesTool extends AbstractTool {
 
                     try {
                         IType type = match.getType();
-                        String fqn = type.getFullyQualifiedName();
                         String packageName = type.getPackageFragment().getElementName();
+
+                        // An import names a type by its package (JLS 7.5): a type in the
+                        // default package cannot be imported.
+                        if (packageName.isEmpty()) {
+                            return;
+                        }
 
                         // Skip internal packages
                         if (packageName.contains(".internal.") ||
@@ -348,7 +356,10 @@ public class GetQuickFixesTool extends AbstractTool {
                         int relevance = calculateRelevance(packageName);
 
                         Map<String, Object> candidate = new LinkedHashMap<>();
-                        candidate.put("fqn", fqn);
+                        // An import names a member type by its canonical name, dots between
+                        // the enclosing type and the member type (JLS 6.7, 7.5.1).
+                        candidate.put("importName", type.getFullyQualifiedName('.'));
+                        candidate.put("packageName", packageName);
                         candidate.put("relevance", relevance);
                         candidates.add(candidate);
                     } catch (Exception e) {
@@ -375,14 +386,11 @@ public class GetQuickFixesTool extends AbstractTool {
 
             // Create fixes
             for (Map<String, Object> candidate : candidates) {
-                String fqn = (String) candidate.get("fqn");
                 int relevance = (int) candidate.get("relevance");
 
-                String simplePkg = fqn.substring(0, fqn.lastIndexOf('.'));
-
                 Map<String, Object> fix = new LinkedHashMap<>();
-                fix.put("fixId", "add_import:" + fqn);
-                fix.put("label", "Import '" + typeName + "' (" + simplePkg + ")");
+                fix.put("fixId", "add_import:" + candidate.get("importName"));
+                fix.put("label", "Import '" + typeName + "' (" + candidate.get("packageName") + ")");
                 fix.put("category", "IMPORT");
                 fix.put("relevance", relevance);
                 fix.put("problemId", problem.getID());

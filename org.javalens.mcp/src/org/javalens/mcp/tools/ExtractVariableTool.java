@@ -17,6 +17,7 @@ import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.InfixExpression;
 import org.eclipse.jdt.core.dom.MethodInvocation;
 import org.eclipse.jdt.core.dom.NodeFinder;
+import org.eclipse.jdt.core.dom.NullLiteral;
 import org.eclipse.jdt.core.dom.Statement;
 import org.eclipse.jdt.core.dom.Type;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
@@ -76,6 +77,9 @@ public class ExtractVariableTool extends AbstractTool {
 
             USAGE: Select expression by providing start and end positions
             OUTPUT: Variable declaration and replacement edits
+
+            An expression of type void, or a null literal alone, is refused
+            (INVALID_PARAMETER): no variable can be declared for it.
 
             IMPORTANT: Uses ZERO-BASED coordinates.
 
@@ -150,9 +154,21 @@ public class ExtractVariableTool extends AbstractTool {
                 return ToolResponse.invalidParameter("selection", "No extractable expression at selection");
             }
 
+            // No variable can be declared for a null literal alone or for an expression of type
+            // void; JDT's extract local variable refuses both (ExtractTempRefactoring
+            // .checkExpression :668-669, .checkExpressionFragmentIsRValue :697-699).
+            if (expression instanceof NullLiteral) {
+                return ToolResponse.invalidParameter("selection", "Expression at selection is the null literal "
+                    + "alone, which has no type to declare the variable with");
+            }
+            ITypeBinding expressionType = expression.resolveTypeBinding();
+            if (expressionType != null && "void".equals(expressionType.getName())) {
+                return ToolResponse.invalidParameter("selection", "Expression at selection is of type void, "
+                    + "which has no value to hold in a variable");
+            }
+
             // The variable's declared type: the expression's type as a declaration can name it,
             // an anonymous class's direct supertype, a captured wildcard's bound.
-            ITypeBinding expressionType = expression.resolveTypeBinding();
             ITypeBinding typeBinding = ElementNames.declarableType(expressionType, ast.getAST());
             String typeName = typeBinding != null ? ElementNames.typeExpression(typeBinding) : "var";
 

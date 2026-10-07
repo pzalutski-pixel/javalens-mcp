@@ -67,9 +67,12 @@ public class GetDependencyGraphTool extends AbstractTool {
             USAGE: get_dependency_graph(scope="package", name="com.example.service")
             OUTPUT: Dependency graph with nodes and edges
 
-            Each node has a name and a kind. A node that denotes a type, or a
-            member of one (a static import), also has the package of that type
-            as JDT resolves it ("(default package)" for the default package).
+            Each node has a name and a kind. A node that denotes a type is named
+            by the type's fully qualified name with '$' between nested types
+            (com.example.Outer$Inner), however the source names it, so each
+            type is one node. A node that denotes a type, or a member of one (a
+            static import), also has the package of that type as JDT resolves
+            it ("(default package)" for the default package).
             A node that denotes a package (every node at package scope, and an
             on-demand package import) has no package; neither has a name that
             does not resolve.
@@ -389,12 +392,16 @@ public class GetDependencyGraphTool extends AbstractTool {
     /**
      * What the import node {@code name} denotes, from the import's {@code binding}: the package
      * an on-demand package import names; the type a type import or a type-import-on-demand names,
-     * in its package; the static member a static import names, in its declaring type's package.
-     * A name that does not resolve keeps no package.
+     * in its package, named as every type node is ({@link ElementNames#qualifiedName(ITypeBinding)},
+     * '$' between nested types); the static member a static import names, as the import writes
+     * it, in its declaring type's package. A name that does not resolve keeps no package.
      */
     private static Target importTarget(String name, IBinding binding) {
         if (binding instanceof IPackageBinding) {
             return Target.ofPackage(name);
+        }
+        if (binding instanceof ITypeBinding type) {
+            return new Target(ElementNames.qualifiedName(type), packageOf(type), false);
         }
         return new Target(name, packageOf(binding), false);
     }
@@ -474,10 +481,11 @@ public class GetDependencyGraphTool extends AbstractTool {
      * What a type name written in a signature of {@code context} denotes: the type it resolves
      * to through {@link IType#resolveType} (which honours imports, the enclosing package,
      * implicit {@code java.lang} and a qualified name's segments), named fully qualified with
-     * dots between nested types and carrying its package; or null when it is not a project or
-     * library type dependency. Primitives and {@code void} carry no dependency; a simple name
-     * that does not resolve contributes none rather than a fabricated same-package type, and a
-     * qualified name that does not resolve is kept as written, its package unknown.
+     * '$' between nested types, as the type's own node is named, and carrying its package; or
+     * null when it is not a project or library type dependency. Primitives and {@code void}
+     * carry no dependency; a simple name that does not resolve contributes none rather than a
+     * fabricated same-package type, and a qualified name that does not resolve is kept as
+     * written, its package unknown.
      */
     private Target resolveTypeName(IType context, String typeName) {
         // Remove array brackets and generics
@@ -491,8 +499,9 @@ public class GetDependencyGraphTool extends AbstractTool {
             String[][] resolved = context.resolveType(baseName);
             if (resolved != null && resolved.length > 0) {
                 String pkg = resolved[0][0] == null ? "" : resolved[0][0];
-                String simple = resolved[0][1];
-                return new Target(pkg.isEmpty() ? simple : pkg + "." + simple, pkg, false);
+                // The type-qualified name, dots between nested types (Outer.Inner).
+                String nested = resolved[0][1].replace('.', '$');
+                return new Target(pkg.isEmpty() ? nested : pkg + "." + nested, pkg, false);
             }
         } catch (Exception e) {
             // Fall through: unresolved names contribute no dependency.

@@ -72,9 +72,13 @@ class ExtractInterfaceToolTest {
 
         assertEquals("IExtractTarget", data.get("interfaceName"));
         String content = ((String) data.get("interfaceContent")).replace("\r\n", "\n");
-        // Exact generated interface: 4-space indent, blank-line separated, source order.
+        // Exact generated interface: 4-space indent, blank-line separated, source order. getItems()
+        // returns List<String>: java.util.List is imported, String (java.lang) and
+        // InterfaceExtractTarget (the interface's own package) are not.
         assertEquals(
             "package com.example;\n"
+            + "\n"
+            + "import java.util.List;\n"
             + "\n"
             + "public interface IExtractTarget {\n"
             + "\n"

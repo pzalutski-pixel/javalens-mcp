@@ -388,7 +388,9 @@ public class SearchService {
      * Eclipse workspace-metadata copies under {@code target/work}. A reference
      * search for a JDK method (e.g. {@code java.lang.reflect.Field.get} from
      * find_reflection_usage) therefore reports only the project's own call
-     * sites, never matches harvested from the classpath or the workspace.
+     * sites, never matches harvested from the classpath or the workspace. The
+     * references of a constructor include its delegations that are not the first
+     * statement of a constructor body, as {@link #findReferences} reports them.
      */
     public SearchResult findAllReferencesInSources(IJavaElement element, int maxResults) throws CoreException {
         SearchPattern pattern = SearchPattern.createPattern(element, IJavaSearchConstants.REFERENCES);
@@ -419,7 +421,11 @@ public class SearchService {
         );
         log.debug("Source-scoped reference search for {} found {} (.java total={})",
             element.getElementName(), filtered.size(), totalEncountered[0]);
-        return new SearchResult(filtered, totalEncountered[0]);
+        SearchResult result = new SearchResult(filtered, totalEncountered[0]);
+        if (element instanceof IMethod m && isConstructor(m)) {
+            return supplementConstructorDelegations(m, result, maxResults);
+        }
+        return result;
     }
 
     /**

@@ -22,6 +22,7 @@ import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.ElementKindResolver;
 import org.javalens.core.IJdtService;
 import org.javalens.core.search.SearchResult;
+import org.javalens.core.search.SearchService;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
 import org.slf4j.Logger;
@@ -218,8 +219,12 @@ public class RenameSymbolTool extends AbstractTool {
             // Reference sites via SearchEngine. The cap is high so the rename surfaces
             // every site; per-tool maxResults capping doesn't apply here because rename
             // edits are not paginated — applying a partial rename would break compilation.
-            SearchResult result = service.getSearchService()
-                .findAllReferences(member, 1_000_000);
+            // A method's references are searched in the project's sources only: the edits
+            // are made only there, and a search of the JDK resolves each JDK call of a
+            // method of the same name, for every method of the ripple.
+            SearchResult result = member instanceof IMethod
+                ? service.getSearchService().findAllReferencesInSources(member, SearchService.ALL_MATCHES)
+                : service.getSearchService().findAllReferences(member, 1_000_000);
             for (SearchMatch match : result.matches()) {
                 ICompilationUnit matchCu = MatchResolver.resolveCu(match);
                 if (matchCu == null) continue;

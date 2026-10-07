@@ -766,18 +766,18 @@ public class JdtServiceImpl implements IJdtService {
         }
 
         try {
-            // First try as fully qualified name
+            // First try as fully qualified name. JDT reads a member type's dotted name and its
+            // '$' form alike (NameLookup.seekTypes reads p.Outer$Inner as the member Inner of
+            // p.Outer), the form every tool reports a member type in. JDT can return the OUTER
+            // type when asked for a nested type via dotted form (e.g. findType("p.Outer.Inner")
+            // may return Outer), so the type found must carry the name asked for, in either
+            // form; if not, force the nested-resolution path. JDT can also answer with a handle
+            // the model does not hold (a member "1" of Outer for p.Outer.1), so the type must
+            // exist.
             IType type = javaProject.findType(typeName);
-            // JDT can return the OUTER type when asked for a nested type via dotted form
-            // (e.g. findType("p.Outer.Inner") may return Outer). Validate that the simple
-            // name matches the last segment; if not, force the nested-resolution path. JDT can
-            // also answer with a handle the model does not hold (a member "1" of Outer for
-            // p.Outer.1), so the type must exist.
-            if (type != null && type.exists()) {
-                String lastSeg = typeName.substring(typeName.lastIndexOf('.') + 1);
-                if (type.getElementName().equals(lastSeg)) {
-                    return type;
-                }
+            if (type != null && type.exists()
+                    && (typeName.equals(type.getFullyQualifiedName('.')) || typeName.equals(type.getFullyQualifiedName()))) {
+                return type;
             }
 
             // Nested-type fallback: replace dots between segments with $ from the right.

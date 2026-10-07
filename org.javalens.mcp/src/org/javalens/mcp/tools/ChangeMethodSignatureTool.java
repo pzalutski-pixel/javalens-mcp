@@ -30,7 +30,6 @@ import org.eclipse.jdt.core.dom.Type;
 import org.eclipse.jdt.core.dom.TypeMethodReference;
 import org.eclipse.jdt.core.dom.rewrite.ASTRewrite;
 import org.eclipse.jdt.core.dom.rewrite.ListRewrite;
-import org.eclipse.jdt.core.search.IJavaSearchConstants;
 import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.IJdtService;
 import org.javalens.core.search.SearchService;
@@ -227,12 +226,13 @@ public class ChangeMethodSignatureTool extends AbstractTool {
                     + ElementNames.qualifiedName(method.getDeclaringType()) + ", cannot be changed: " + binary);
             }
 
-            // Every call site of each of them must be rewritten, each once.
+            // Every call site of each of them must be rewritten, each once. The calls are
+            // searched in the project's sources only, where the edits are made.
             List<SearchMatch> references = new ArrayList<>();
             Set<String> referenced = new HashSet<>();
             for (IMethod declared : ripple) {
-                for (SearchMatch match : service.getSearchService().findReferences(
-                        declared, IJavaSearchConstants.REFERENCES, SearchService.ALL_MATCHES).matches()) {
+                for (SearchMatch match : service.getSearchService().findAllReferencesInSources(
+                        declared, SearchService.ALL_MATCHES).matches()) {
                     String at = (match.getResource() == null ? "" : match.getResource().getFullPath().toString())
                         + "@" + match.getOffset();
                     if (referenced.add(at)) {
