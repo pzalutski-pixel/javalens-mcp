@@ -5,7 +5,6 @@ import org.eclipse.jdt.core.Flags;
 import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IMember;
 import org.eclipse.jdt.core.IType;
-import org.eclipse.jdt.core.ITypeHierarchy;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.refactoring.descriptors.PushDownDescriptor;
 import org.eclipse.jdt.internal.corext.refactoring.RefactoringAvailabilityTesterCore;
@@ -19,16 +18,22 @@ import org.slf4j.LoggerFactory;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Supplier;
 
 /**
  * Push a member down into the direct subclasses, removing it from the
  * declaring class. Drives JDT's push-down refactoring via its public
- * descriptor; edits are returned as text, never applied.
+ * descriptor; edits are returned as text, never applied. The direct
+ * subclasses are the Java model's ({@code SearchService.hierarchyOf}); JDT's
+ * push down acts on its own type hierarchy, so a member is refused where the
+ * two differ.
  */
 public class PushDownTool extends AbstractTool {
 
@@ -54,9 +59,15 @@ public class PushDownTool extends AbstractTool {
             subclass (member added); warnings from JDT's condition checking.
             Edits are returned as text - apply them yourself.
 
-            A member whose class has an anonymous direct subclass is refused,
-            naming each anonymous subclass: push down cannot add a member to an
-            anonymous class.
+            The direct subclasses are those of the Java model, local and anonymous
+            classes in and after lambda bodies included. A member whose class has
+            an anonymous direct subclass is refused, naming each anonymous
+            subclass: push down cannot add a member to an anonymous class. A
+            member whose class has a direct subclass that JDT's own type
+            hierarchy leaves out (a class declared in a lambda body, a local
+            class read by the handle of another of the same name) is refused,
+            naming each such subclass: JDT's push down would not write the
+            member into it.
 
             IMPORTANT: Uses ZERO-BASED coordinates.
 
@@ -109,9 +120,8 @@ public class PushDownTool extends AbstractTool {
             if (!RefactoringAvailabilityTesterCore.isPushDownAvailable(member)) {
                 return ToolResponse.invalidParameter("position", pushDownUnavailable(member, declaringType));
             }
-            ITypeHierarchy hierarchy = declaringType.newTypeHierarchy(null);
-            IType[] subclasses = hierarchy.getSubclasses(declaringType);
-            if (subclasses == null || subclasses.length == 0) {
+            List<IType> subclasses = service.getSearchService().hierarchyOf(declaringType).subclasses();
+            if (subclasses.isEmpty()) {
                 return ToolResponse.invalidParameter("member",
                     "Declaring type has no subclasses to push into");
             }
@@ -121,6 +131,13 @@ public class PushDownTool extends AbstractTool {
                     + " in " + ElementNames.qualifiedName(declaringType) + ", cannot be pushed down into the anonymous "
                     + (anonymousSubclasses.size() == 1 ? "subclass " : "subclasses ")
                     + String.join(", ", anonymousSubclasses) + ", which push down cannot add a member to");
+            }
+            List<String> unread = subclassesJdtLeavesOut(declaringType, subclasses);
+            if (!unread.isEmpty()) {
+                return ToolResponse.invalidParameter("position", "Member at position, " + member.getElementName()
+                    + " in " + ElementNames.qualifiedName(declaringType) + ", cannot be pushed down: JDT's push down reads"
+                    + " the subclasses of " + ElementNames.qualifiedName(declaringType) + " from its own type hierarchy,"
+                    + " which leaves out " + String.join(", ", unread));
             }
 
             Map<String, String> descriptorArguments = new HashMap<>();
@@ -180,10 +197,34 @@ public class PushDownTool extends AbstractTool {
      * ASTNodeSearchUtil.getAbstractTypeDeclarationNode): for an anonymous class, that is the
      * class the anonymous class is written in, so the member would land there instead.
      */
-    private static List<String> anonymousSubclasses(IType[] subclasses) throws JavaModelException {
+    private static List<String> anonymousSubclasses(List<IType> subclasses) throws JavaModelException {
         List<String> names = new ArrayList<>();
         for (IType subclass : subclasses) {
             if (subclass.isAnonymous()) {
+                names.add(ElementNames.qualifiedName(subclass));
+            }
+        }
+        names.sort(null);
+        return names;
+    }
+
+    /**
+     * The qualified names, in name order, of the direct subclasses among {@code subclasses}, those
+     * of the Java model, that JDT's type hierarchy of {@code declaringType} does not hold under
+     * their own handles. JDT's push down writes the member into the subclasses of that hierarchy
+     * (PushDownRefactoringProcessor.getHierarchyOfDeclaringClass :1329-1338 and
+     * getAbstractDestinations :1266-1274), which leaves out a class declared in a lambda body and
+     * can read a local class by the handle of another class of the same name
+     * (HierarchyResolver.rememberAllTypes :511-541 and remember :442-450, numbering through
+     * HandleFactory :216-229): such a subclass would lose the member, or another class would gain
+     * it.
+     */
+    private static List<String> subclassesJdtLeavesOut(IType declaringType, List<IType> subclasses)
+            throws JavaModelException {
+        Set<IType> read = new HashSet<>(Arrays.asList(declaringType.newTypeHierarchy(null).getSubclasses(declaringType)));
+        List<String> names = new ArrayList<>();
+        for (IType subclass : subclasses) {
+            if (!read.contains(subclass)) {
                 names.add(ElementNames.qualifiedName(subclass));
             }
         }

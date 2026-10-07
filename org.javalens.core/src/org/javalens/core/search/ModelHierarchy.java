@@ -18,6 +18,7 @@ import org.eclipse.jdt.core.ITypeHierarchy;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.dom.IMethodBinding;
 import org.eclipse.jdt.core.dom.ITypeBinding;
+import org.eclipse.jdt.core.dom.Modifier;
 import org.eclipse.jdt.core.search.IJavaSearchConstants;
 import org.eclipse.jdt.core.search.IJavaSearchScope;
 import org.eclipse.jdt.core.search.SearchEngine;
@@ -82,8 +83,11 @@ import java.util.Set;
  * arguments applied, visible, neither static nor private). {@link #overridden} is the method the
  * given method overrides, as JDT's own quick fixes find it ({@code Bindings.findOverriddenMethod}):
  * the nearest declaration in the superclass chain, else in the interfaces, visible from the
- * method's package. A method the compiler resolves no binding for is refused with a
- * JavaModelException, never answered as overriding nothing.
+ * method's package. {@link #allOverridden} is every method the given method overrides, in the
+ * superclass chain and the interfaces alike. {@link #joinedInSubtypes} is every method a subtype
+ * inherits together with the given method as one method, though neither overrides the other. A
+ * method the compiler resolves no binding for is refused with a JavaModelException, never
+ * answered as overriding nothing.
  *
  * <h2>Order</h2>
  * Superclasses run from the nearest. Interfaces of all supertypes come in declaration order, each
@@ -193,6 +197,21 @@ public final class ModelHierarchy {
     public IMethod overridden(IMethod method) throws CoreException {
         requireDeclared(method);
         IMethod[] overridden = { null };
+        readDeclaration(method, (declaration, elements) -> overridden[0] = overriddenOf(declaration, elements));
+        return overridden[0];
+    }
+
+    /** Reads the compiler's binding of {@code method}, declared in this hierarchy's type. */
+    private interface DeclarationReader {
+        void read(IMethodBinding declaration, ModelElements elements) throws CoreException;
+    }
+
+    /**
+     * Gives {@code reader} the compiler's binding of {@code method}, declared in this hierarchy's
+     * type, read from its class file or its compilation unit; a method the compiler resolves no
+     * binding for is refused with a JavaModelException.
+     */
+    private void readDeclaration(IMethod method, DeclarationReader reader) throws CoreException {
         CoreException[] failure = { null };
         if (method.isBinary()) {
             ModelElements.parse(project, List.of(), List.of(type.getKey()), (unit, ast) -> { }, (key, binding) -> {
@@ -200,7 +219,7 @@ public final class ModelHierarchy {
                     ModelElements elements = new ModelElements(null, null);
                     IMethodBinding declaration = binding instanceof ITypeBinding typeBinding
                         ? declaredBinding(typeBinding, method, elements) : null;
-                    overridden[0] = overriddenOf(required(declaration, method), elements);
+                    reader.read(required(declaration, method), elements);
                 } catch (CoreException e) {
                     failure[0] = e;
                 }
@@ -210,7 +229,7 @@ public final class ModelHierarchy {
             ModelElements.parse(project, List.of(unit), List.of(), (source, ast) -> {
                 try {
                     ModelElements elements = new ModelElements(source, ast);
-                    overridden[0] = overriddenOf(required(elements.declarationOf(method), method), elements);
+                    reader.read(required(elements.declarationOf(method), method), elements);
                 } catch (CoreException e) {
                     failure[0] = e;
                 }
@@ -219,7 +238,6 @@ public final class ModelHierarchy {
         if (failure[0] != null) {
             throw failure[0];
         }
-        return overridden[0];
     }
 
     /** {@code binding}, the compiler's binding of {@code method}, which must have one. */
@@ -285,6 +303,107 @@ public final class ModelHierarchy {
         }
         overriders.sort(METHOD_ORDER);
         return List.copyOf(overriders);
+    }
+
+    /**
+     * Every method {@code method}, declared in this hierarchy's type, overrides, as the compiler
+     * decides it ({@code IMethodBinding.overrides}): the methods of every superclass and
+     * interface, each reached with the type arguments the supertypes give, by file and position.
+     * A constructor, a static and a private method override none.
+     */
+    public List<IMethod> allOverridden(IMethod method) throws CoreException {
+        requireDeclared(method);
+        int flags = method.getFlags();
+        if (method.isConstructor() || Flags.isStatic(flags) || Flags.isPrivate(flags)) {
+            return List.of();
+        }
+        Set<IMethod> overridden = new LinkedHashSet<>();
+        readDeclaration(method, (declaration, elements) -> {
+            Deque<ITypeBinding> pending = new ArrayDeque<>();
+            Set<String> seen = new HashSet<>();
+            addSupertypeBindings(declaration.getDeclaringClass(), pending);
+            while (!pending.isEmpty()) {
+                ITypeBinding supertype = pending.removeFirst();
+                if (!seen.add(supertype.getKey())) {
+                    continue;
+                }
+                for (IMethodBinding candidate : supertype.getDeclaredMethods()) {
+                    IMethod element = declaration.overrides(candidate) ? elements.methodOf(candidate) : null;
+                    if (element != null) {
+                        overridden.add(element);
+                    }
+                }
+                addSupertypeBindings(supertype, pending);
+            }
+        });
+        return sortedMethods(overridden);
+    }
+
+    /**
+     * Every method that a subtype of this hierarchy's type inherits together with {@code method},
+     * declared in this type, as one method, though neither overrides the other: as when a class
+     * inherits {@code method} from its superclass and with it implements a method of an interface
+     * it names, declaring neither (JLS 8.4.8.1, 8.4.8.4), the pairs JDT's rename finds as "married"
+     * types (RippleMethodFinder2.getAllRippleMethods :274-330). Within the subtype both are
+     * inherited, neither static nor private, and have the same name and, as the subtype sees them
+     * with the type arguments its supertypes give, the same erasure of parameter types: inherited
+     * methods of the same erasure are override-equivalent in a type that compiles (JLS 8.4.2,
+     * 8.4.8.3). The erasure is compared, not {@code IMethodBinding.isSubsignature}, which reads a
+     * method of a parameterized type as its generic declaration (MethodVerifier15.isMethodSubsignature
+     * :956-966) and so misses {@code Peg<T>.hang(T)} implementing {@code Hook.hang(String)} in a
+     * {@code Peg<String>}. By file and position; none for a constructor, a static and a private
+     * method.
+     */
+    public List<IMethod> joinedInSubtypes(IMethod method) throws CoreException {
+        requireDeclared(method);
+        int flags = method.getFlags();
+        if (method.isConstructor() || Flags.isStatic(flags) || Flags.isPrivate(flags)) {
+            return List.of();
+        }
+        Map<ICompilationUnit, Set<IType>> sources = new LinkedHashMap<>();
+        Map<String, IType> classFiles = new LinkedHashMap<>();
+        for (IType subtype : allSubtypes()) {
+            if (subtype.isBinary()) {
+                classFiles.put(subtype.getKey(), subtype);
+            } else {
+                sources.computeIfAbsent(subtype.getCompilationUnit(), unit -> new HashSet<>()).add(subtype);
+            }
+        }
+        Set<IMethod> joined = new LinkedHashSet<>();
+        CoreException[] failure = { null };
+        ModelElements.parse(project, sources.keySet(), classFiles.keySet(), (unit, ast) -> {
+            ModelElements elements = new ModelElements(unit, ast);
+            Set<IType> candidates = sources.get(unit);
+            ModelElements.forEachTypeDeclaration(ast, node -> {
+                try {
+                    IType subtype = failure[0] == null ? elements.typeAt(node) : null;
+                    if (subtype != null && candidates.contains(subtype)) {
+                        ITypeBinding binding = ModelElements.bindingOf(node);
+                        if (binding == null) {
+                            throw unresolved(subtype);
+                        }
+                        addJoined(binding, method, elements, joined);
+                    }
+                } catch (CoreException e) {
+                    failure[0] = e;
+                }
+            });
+        }, (key, binding) -> {
+            try {
+                if (failure[0] == null && binding instanceof ITypeBinding subtype) {
+                    addJoined(subtype, method, new ModelElements(null, null), joined);
+                } else if (failure[0] == null) {
+                    failure[0] = unresolved(classFiles.get(key));
+                }
+            } catch (CoreException e) {
+                failure[0] = e;
+            }
+        });
+        if (failure[0] != null) {
+            throw failure[0];
+        }
+        joined.remove(method);
+        return sortedMethods(joined);
     }
 
     // ---------------------------------------------------------------- supertypes
@@ -648,6 +767,78 @@ public final class ModelHierarchy {
                 }
             }
         }
+    }
+
+    /**
+     * Adds every method of a supertype of {@code subtype} that {@code subtype} inherits together
+     * with {@code method} as one method, neither overriding the other ({@link #joinedInSubtypes}).
+     */
+    private void addJoined(ITypeBinding subtype, IMethod method, ModelElements elements, Set<IMethod> into)
+            throws CoreException {
+        IMethodBinding inherited = required(inheritedBinding(subtype, method, elements), method);
+        if (!isInheritedBy(inherited, subtype)) {
+            return;
+        }
+        Deque<ITypeBinding> pending = new ArrayDeque<>();
+        Set<String> seen = new HashSet<>();
+        addSupertypeBindings(subtype, pending);
+        while (!pending.isEmpty()) {
+            ITypeBinding supertype = pending.removeFirst();
+            if (!seen.add(supertype.getKey())) {
+                continue;
+            }
+            for (IMethodBinding candidate : supertype.getDeclaredMethods()) {
+                IMethod element = isJoined(inherited, candidate, subtype) ? elements.methodOf(candidate) : null;
+                if (element != null) {
+                    into.add(element);
+                }
+            }
+            addSupertypeBindings(supertype, pending);
+        }
+    }
+
+    /**
+     * Whether {@code subtype} inherits {@code candidate} with {@code inherited} as one method:
+     * the same name and erasure of parameter types, neither a constructor, static or private,
+     * and neither overriding the other.
+     */
+    private static boolean isJoined(IMethodBinding inherited, IMethodBinding candidate, ITypeBinding subtype) {
+        int modifiers = candidate.getModifiers();
+        return !candidate.isConstructor() && !Modifier.isStatic(modifiers) && !Modifier.isPrivate(modifiers)
+            && candidate.getName().equals(inherited.getName())
+            && isInheritedBy(candidate, subtype)
+            && sameErasures(inherited.getParameterTypes(), candidate.getParameterTypes())
+            && !inherited.overrides(candidate) && !candidate.overrides(inherited);
+    }
+
+    /**
+     * Whether {@code subtype} can inherit {@code method}: a method of package access only within
+     * its own package (JLS 8.4.8).
+     */
+    private static boolean isInheritedBy(IMethodBinding method, ITypeBinding subtype) {
+        int modifiers = method.getModifiers();
+        if (Modifier.isPublic(modifiers) || Modifier.isProtected(modifiers) || method.getDeclaringClass().isInterface()) {
+            return true;
+        }
+        return method.getDeclaringClass().getPackage().getKey().equals(subtype.getPackage().getKey());
+    }
+
+    private static boolean sameErasures(ITypeBinding[] left, ITypeBinding[] right) {
+        if (left.length != right.length) {
+            return false;
+        }
+        for (int i = 0; i < left.length; i++) {
+            if (!left[i].getErasure().isEqualTo(right[i].getErasure())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static List<IMethod> sortedMethods(Collection<IMethod> methods) {
+        List<IMethod> sorted = new ArrayList<>(methods);
+        sorted.sort(METHOD_ORDER);
+        return List.copyOf(sorted);
     }
 
     /**

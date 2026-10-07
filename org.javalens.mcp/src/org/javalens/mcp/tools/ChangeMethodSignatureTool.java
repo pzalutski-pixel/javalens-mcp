@@ -42,6 +42,7 @@ import org.slf4j.LoggerFactory;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -49,7 +50,8 @@ import java.util.Set;
 import java.util.function.Supplier;
 
 /**
- * Change method signature (parameters, return type, name) and update all call sites.
+ * Change method signature (parameters, return type, name) and update all call sites, together
+ * with every method related to it ({@code SearchService.rippleOf}), as rename_symbol renames them.
  */
 public class ChangeMethodSignatureTool extends AbstractTool {
 
@@ -84,6 +86,13 @@ public class ChangeMethodSignatureTool extends AbstractTool {
 
             USAGE: Position on method declaration, provide changes
             OUTPUT: Edits for declaration and all call sites
+
+            The method changes together with every method it overrides, every
+            method that overrides it and every method a subtype inherits together
+            with it, as rename_symbol renames them: one declaration edit each,
+            each keeping its own parameter names and unchanged parameter types,
+            and every call of any of them. A method related to a method of a
+            class file is refused, naming that method: it cannot change.
 
             PARAMETER OPERATIONS:
             - Add new parameter with default value for existing calls
@@ -203,82 +212,56 @@ public class ChangeMethodSignatureTool extends AbstractTool {
             // Map old param index -> new param index (or -1 if removed)
             int[] paramMapping = buildParameterMapping(oldParamNames, newParameters);
 
-            // Get all references to this method: every call site must be rewritten
-            List<SearchMatch> references = service.getSearchService().findReferences(
-                method, IJavaSearchConstants.REFERENCES, SearchService.ALL_MATCHES).matches();
-
-            // Collect all edits
-            Map<String, List<Map<String, Object>>> editsByFile = new LinkedHashMap<>();
-
-            // Edit 1: Update method declaration
             ICompilationUnit methodCu = method.getCompilationUnit();
             if (methodCu == null) {
                 return ToolResponse.invalidParameter("method", "Cannot access method source");
             }
 
-            ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
-            parser.setSource(methodCu);
-            parser.setResolveBindings(true);
-            CompilationUnit ast = (CompilationUnit) parser.createAST(null);
-
-            MethodDeclaration methodDecl = findMethodDeclaration(ast, method);
-            if (methodDecl == null) {
-                return ToolResponse.invalidParameter("method", "Cannot find method in AST");
+            // The method changes together with every method it overrides, every method that
+            // overrides it and every method a subtype inherits together with it; a method of a
+            // class file cannot change, so neither can a method related to one.
+            List<IMethod> ripple = service.getSearchService().rippleOf(method);
+            String binary = RelatedMethods.binaryRefusal(method, ripple);
+            if (binary != null) {
+                return ToolResponse.invalidParameter("position", "Method at position, " + oldName + " in "
+                    + ElementNames.qualifiedName(method.getDeclaringType()) + ", cannot be changed: " + binary);
             }
 
-            // Synthesize the declaration change with ASTRewrite: name and (for
-            // non-constructors — they have no return-type prefix) return type are
-            // node replacements, and the parameter list is rebuilt through a
-            // ListRewrite, so separators and spacing render by construction.
-            // The contract pins ONE edit spanning the whole signature; the
-            // fine-grained rewrite edits are aggregated onto that span below.
+            // Every call site of each of them must be rewritten, each once.
+            List<SearchMatch> references = new ArrayList<>();
+            Set<String> referenced = new HashSet<>();
+            for (IMethod declared : ripple) {
+                for (SearchMatch match : service.getSearchService().findReferences(
+                        declared, IJavaSearchConstants.REFERENCES, SearchService.ALL_MATCHES).matches()) {
+                    String at = (match.getResource() == null ? "" : match.getResource().getFullPath().toString())
+                        + "@" + match.getOffset();
+                    if (referenced.add(at)) {
+                        references.add(match);
+                    }
+                }
+            }
+
+            // Collect all edits
+            Map<String, List<Map<String, Object>>> editsByFile = new LinkedHashMap<>();
+
+            // Edit 1: Update each declaration, in the order of their types by file and position
             boolean methodIsConstructor = method.isConstructor();
-            AST declFactory = ast.getAST();
-            ASTRewrite declRewrite = ASTRewrite.create(declFactory);
-            if (!newName.equals(oldName)) {
-                declRewrite.replace(methodDecl.getName(),
-                    declRewrite.createStringPlaceholder(newName, ASTNode.SIMPLE_NAME), null);
-            }
-            if (!methodIsConstructor && methodDecl.getReturnType2() != null
-                    && !newReturnType.equals(oldReturnType)) {
-                declRewrite.replace(methodDecl.getReturnType2(),
-                    declRewrite.createStringPlaceholder(newReturnType, ASTNode.SIMPLE_TYPE), null);
-            }
-            ListRewrite paramsRewrite = declRewrite.getListRewrite(methodDecl,
-                MethodDeclaration.PARAMETERS_PROPERTY);
-            for (Object oldParam : methodDecl.parameters()) {
-                paramsRewrite.remove((ASTNode) oldParam, null);
-            }
-            for (ParameterInfo param : newParameters) {
-                SingleVariableDeclaration svd = declFactory.newSingleVariableDeclaration();
-                svd.setType((Type) declRewrite.createStringPlaceholder(param.type, ASTNode.SIMPLE_TYPE));
-                svd.setName(declFactory.newSimpleName(param.name));
-                paramsRewrite.insertLast(svd, null);
-            }
+            for (IMethod declared : ripple) {
+                ICompilationUnit declaredCu = declared.getCompilationUnit();
+                ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
+                parser.setSource(declaredCu);
+                parser.setResolveBindings(true);
+                CompilationUnit ast = (CompilationUnit) parser.createAST(null);
 
-            int sigStart = getSignatureStart(methodDecl, ast);
-            int sigEnd = getSignatureEnd(methodDecl);
-            String methodSource = methodCu.getSource();
-            String newSignature = TextEditConverter.applyToSlice(
-                TextEditConverter.toEditMaps(declRewrite.rewriteAST(), methodSource, ast),
-                sigStart, sigEnd, methodSource);
-
-            String methodFilePath = service.getPathUtils().formatPath(
-                Path.of(methodCu.getResource().getLocation().toOSString()));
-
-            Map<String, Object> declEdit = new LinkedHashMap<>();
-            declEdit.put("type", "replace");
-            declEdit.put("startLine", ast.getLineNumber(sigStart) - 1);
-            declEdit.put("startColumn", ast.getColumnNumber(sigStart));
-            declEdit.put("endLine", ast.getLineNumber(sigEnd) - 1);
-            declEdit.put("endColumn", ast.getColumnNumber(sigEnd));
-            declEdit.put("startOffset", sigStart);
-            declEdit.put("endOffset", sigEnd);
-            declEdit.put("oldSignature", methodSource.substring(sigStart, sigEnd));
-            declEdit.put("newSignature", newSignature);
-            declEdit.put("isDeclaration", true);
-
-            editsByFile.computeIfAbsent(methodFilePath, k -> new ArrayList<>()).add(declEdit);
+                MethodDeclaration methodDecl = findMethodDeclaration(ast, declared);
+                if (methodDecl == null) {
+                    return ToolResponse.invalidParameter("method", "Cannot find method in AST");
+                }
+                editsByFile.computeIfAbsent(service.getPathUtils().formatPath(
+                        Path.of(declaredCu.getResource().getLocation().toOSString())), k -> new ArrayList<>())
+                    .add(declarationEdit(declaredCu, ast, methodDecl, declared.equals(method), oldName, newName,
+                        oldReturnType, newReturnType, oldParamTypes, newParameters, paramMapping, methodIsConstructor));
+            }
 
             // Edit 2: Update all call sites
             boolean isConstructor = method.isConstructor();
@@ -364,6 +347,95 @@ public class ChangeMethodSignatureTool extends AbstractTool {
         }
 
         return mapping;
+    }
+
+    /**
+     * The edit of one declaration: from its return type (its name, for a constructor) to the end
+     * of its parameter list. The name and a changed return type are replaced, and the parameter
+     * list is rebuilt through a ListRewrite, so separators and spacing render by construction;
+     * the fine-grained rewrite edits are aggregated onto that one span. The method at position
+     * takes the requested parameters as given. A method changed with it keeps each parameter
+     * kept from the method at position as it declares it, with its own name and its own type
+     * unless that type is changed (an overrider declares {@code String} where the method it
+     * overrides declares {@code T}); a new parameter is the requested one.
+     */
+    private Map<String, Object> declarationEdit(ICompilationUnit unit, CompilationUnit ast, MethodDeclaration methodDecl,
+                                                boolean atPosition, String oldName, String newName,
+                                                String oldReturnType, String newReturnType, String[] oldParamTypes,
+                                                List<ParameterInfo> newParameters, int[] paramMapping,
+                                                boolean methodIsConstructor) throws Exception {
+        String source = unit.getSource();
+        AST declFactory = ast.getAST();
+        ASTRewrite declRewrite = ASTRewrite.create(declFactory);
+        if (!newName.equals(oldName)) {
+            declRewrite.replace(methodDecl.getName(),
+                declRewrite.createStringPlaceholder(newName, ASTNode.SIMPLE_NAME), null);
+        }
+        if (!methodIsConstructor && methodDecl.getReturnType2() != null
+                && !newReturnType.equals(oldReturnType)) {
+            declRewrite.replace(methodDecl.getReturnType2(),
+                declRewrite.createStringPlaceholder(newReturnType, ASTNode.SIMPLE_TYPE), null);
+        }
+        ListRewrite paramsRewrite = declRewrite.getListRewrite(methodDecl,
+            MethodDeclaration.PARAMETERS_PROPERTY);
+        @SuppressWarnings("unchecked")
+        List<SingleVariableDeclaration> declared = methodDecl.parameters();
+        for (SingleVariableDeclaration oldParam : declared) {
+            paramsRewrite.remove(oldParam, null);
+        }
+        for (int newIdx = 0; newIdx < newParameters.size(); newIdx++) {
+            ParameterInfo param = newParameters.get(newIdx);
+            int oldIdx = oldIndexOf(paramMapping, newIdx);
+            if (!atPosition && oldIdx >= 0 && oldIdx < declared.size()) {
+                SingleVariableDeclaration own = declared.get(oldIdx);
+                if (param.type.equals(Signature.toString(oldParamTypes[oldIdx]))) {
+                    paramsRewrite.insertLast(declRewrite.createStringPlaceholder(
+                        source.substring(own.getStartPosition(), own.getStartPosition() + own.getLength()),
+                        ASTNode.SINGLE_VARIABLE_DECLARATION), null);
+                    continue;
+                }
+                paramsRewrite.insertLast(newParameter(declFactory, declRewrite, param.type,
+                    own.getName().getIdentifier()), null);
+                continue;
+            }
+            paramsRewrite.insertLast(newParameter(declFactory, declRewrite, param.type, param.name), null);
+        }
+
+        int sigStart = getSignatureStart(methodDecl, ast);
+        int sigEnd = getSignatureEnd(methodDecl);
+        String newSignature = TextEditConverter.applyToSlice(
+            TextEditConverter.toEditMaps(declRewrite.rewriteAST(), source, ast),
+            sigStart, sigEnd, source);
+
+        Map<String, Object> declEdit = new LinkedHashMap<>();
+        declEdit.put("type", "replace");
+        declEdit.put("startLine", ast.getLineNumber(sigStart) - 1);
+        declEdit.put("startColumn", ast.getColumnNumber(sigStart));
+        declEdit.put("endLine", ast.getLineNumber(sigEnd) - 1);
+        declEdit.put("endColumn", ast.getColumnNumber(sigEnd));
+        declEdit.put("startOffset", sigStart);
+        declEdit.put("endOffset", sigEnd);
+        declEdit.put("oldSignature", source.substring(sigStart, sigEnd));
+        declEdit.put("newSignature", newSignature);
+        declEdit.put("isDeclaration", true);
+        return declEdit;
+    }
+
+    private static SingleVariableDeclaration newParameter(AST factory, ASTRewrite rewrite, String type, String name) {
+        SingleVariableDeclaration svd = factory.newSingleVariableDeclaration();
+        svd.setType((Type) rewrite.createStringPlaceholder(type, ASTNode.SIMPLE_TYPE));
+        svd.setName(factory.newSimpleName(name));
+        return svd;
+    }
+
+    /** The old index of the parameter at {@code newIdx}, or -1 for a new parameter. */
+    private static int oldIndexOf(int[] paramMapping, int newIdx) {
+        for (int i = 0; i < paramMapping.length; i++) {
+            if (paramMapping[i] == newIdx) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     private MethodDeclaration findMethodDeclaration(CompilationUnit ast, IMethod method) {

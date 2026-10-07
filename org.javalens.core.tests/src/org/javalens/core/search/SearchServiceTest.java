@@ -3,7 +3,6 @@ package org.javalens.core.search;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.jdt.core.IJavaProject;
 import org.eclipse.jdt.core.IType;
-import org.eclipse.jdt.core.ITypeHierarchy;
 import org.eclipse.jdt.core.search.IJavaSearchConstants;
 import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.JdtServiceImpl;
@@ -19,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Integration tests for SearchService.
- * Tests symbol search, reference finding, and type hierarchy operations.
+ * Tests symbol search and reference finding; SearchServiceHierarchyTest tests hierarchyOf.
  */
 class SearchServiceTest {
 
@@ -125,48 +124,6 @@ class SearchServiceTest {
             assertTrue(resourcePath.endsWith("HelloWorld.java"),
                 "All HelloWorld references must be in HelloWorld.java; got: " + resourcePath);
         }
-    }
-
-    // ========== Type Hierarchy Tests ==========
-
-    @Test
-    @DisplayName("getTypeHierarchy should return hierarchy for type")
-    void getTypeHierarchy_returnsHierarchy() throws CoreException {
-        IType calculatorType = jdtService.findType("com.example.Calculator");
-        assertNotNull(calculatorType, "Should find Calculator type");
-
-        ITypeHierarchy hierarchy = searchService.getTypeHierarchy(calculatorType);
-
-        assertNotNull(hierarchy, "Should return a type hierarchy");
-        // Calculator extends Object
-        IType[] supertypes = hierarchy.getAllSuperclasses(calculatorType);
-        assertTrue(supertypes.length >= 1, "Should have at least Object as supertype");
-    }
-
-    @Test
-    @DisplayName("getAllSupertypes should return superclasses")
-    void getAllSupertypes_returnsSuperclasses() throws CoreException {
-        IType calculatorType = jdtService.findType("com.example.Calculator");
-        assertNotNull(calculatorType, "Should find Calculator type");
-
-        IType[] supertypes = searchService.getAllSupertypes(calculatorType);
-
-        // Should include Object at minimum
-        assertNotNull(supertypes, "Should return supertypes array");
-        assertTrue(supertypes.length >= 1, "Should have Object as supertype");
-    }
-
-    @Test
-    @DisplayName("getAllSubtypes should return subclasses")
-    void getAllSubtypes_returnsSubclasses() throws CoreException {
-        IType calculatorType = jdtService.findType("com.example.Calculator");
-        assertNotNull(calculatorType, "Should find Calculator type");
-
-        IType[] subtypes = searchService.getAllSubtypes(calculatorType);
-
-        // Calculator has no subclasses in the fixture
-        assertNotNull(subtypes, "Should return subtypes array");
-        assertEquals(0, subtypes.length, "Calculator should have no subtypes");
     }
 
     // ========== Accessor Tests ==========
@@ -297,48 +254,6 @@ class SearchServiceTest {
         List<SearchMatch> impls = searchService.findImplementations(iShape, 100).matches();
         assertTrue(impls.size() >= 1,
             "IShape must have at least one IMPLEMENTORS-search hit; got: " + impls.size());
-    }
-
-    @Test
-    @DisplayName("findOverridingMethods on Animal.speak finds Dog's override")
-    void findOverridingMethods_findsOverride() throws CoreException {
-        // Animal.java declares both Animal (parent class with speak()) and Dog (extends
-        // Animal, overrides speak()). The search is scoped to subtypes only, so the
-        // result must be Dog.speak — not Animal.speak itself.
-        IType animal = jdtService.findType("com.example.Animal");
-        assertNotNull(animal);
-        var speakMethods = animal.getMethods();
-        org.eclipse.jdt.core.IMethod speak = null;
-        for (org.eclipse.jdt.core.IMethod m : speakMethods) {
-            if ("speak".equals(m.getElementName())) { speak = m; break; }
-        }
-        assertNotNull(speak, "Animal.speak must exist");
-        List<SearchMatch> overrides = searchService.findOverridingMethods(speak, 100).matches();
-        assertTrue(overrides.size() >= 1,
-            "Animal.speak has at least one override (Dog.speak); got: " + overrides.size());
-        // Pin that the override is in Dog (in subtype scope), not Animal (excluded).
-        boolean inSubtype = overrides.stream().anyMatch(m -> {
-            String path = m.getResource() != null ? m.getResource().getFullPath().toString() : "";
-            return path.contains("Animal.java"); // Dog is also declared in Animal.java
-        });
-        assertTrue(inSubtype,
-            "Override must come from a subtype of Animal; got: " + overrides);
-    }
-
-    @Test
-    @DisplayName("findOverridingMethods on a method with no subtypes returns empty")
-    void findOverridingMethods_noSubtypes_returnsEmpty() throws CoreException {
-        // Calculator has no subclasses in the fixture, so its methods have no overrides.
-        // The source short-circuits at `subtypes.length == 0` and returns empty.
-        IType calculator = jdtService.findType("com.example.Calculator");
-        org.eclipse.jdt.core.IMethod add = null;
-        for (org.eclipse.jdt.core.IMethod m : calculator.getMethods()) {
-            if ("add".equals(m.getElementName())) { add = m; break; }
-        }
-        assertNotNull(add);
-        List<SearchMatch> overrides = searchService.findOverridingMethods(add, 100).matches();
-        assertTrue(overrides.isEmpty(),
-            "Calculator has no subtypes — findOverridingMethods must yield empty; got: " + overrides);
     }
 
     @Test

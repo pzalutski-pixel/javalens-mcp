@@ -50,6 +50,43 @@ import static org.javalens.mcp.tools.unnamed.UnnamedElements.map;
  *   <li>Ledger.java: the top-level record {@code Ledger}, alone in its file.</li>
  *   <li>Twins.java: {@code Twins} declares a local class {@code Echo} in {@code first()} (line 5)
  *       and another in {@code second()} (line 11).</li>
+ *   <li>Yard.java: {@code Yard} (line 5) declares the static member class {@code Brick} (line 7,
+ *       column 17; {@code heft()} at line 8, column 12) and {@code bricks()}, whose lambda creates
+ *       anonymous class 1, a Brick (line 14); the static member class {@code Beam} (line 18, column
+ *       17; {@code load()} at line 19, column 12) and {@code beams()}, declaring the local classes
+ *       {@code Joist extends Beam} (line 25, column 14) and {@code Rafter extends Beam} (line 27,
+ *       column 14), both with empty bodies; the static member class {@code Slab} (line 32, column 17;
+ *       {@code depth()} at line 33, column 12) and {@code slabs()}, declaring in a lambda body the
+ *       local class {@code Wet extends Slab} (line 40, column 18; {@code wetness()} at line 41,
+ *       column 20), then directly the local class {@code Dry extends Slab} (line 47, column 14;
+ *       {@code grade()} at line 48, column 16); the static member class {@code Post} (line 55), with
+ *       an empty body, and {@code posts()}, declaring the local class {@code Pillar extends Post}
+ *       (line 59, column 14; {@code rise()} at line 60, column 16). Members are indented by four
+ *       spaces a level.</li>
+ *   <li>Mosaic.java: {@code Mosaic} declares the static member class {@code Tile} (line 4, column
+ *       17; {@code span()} at line 5, column 12, {@code grout()} at line 9) and, in {@code pieces()},
+ *       two local classes named {@code Echo} in sibling blocks: the first extends Tile (line 17,
+ *       column 18; {@code glaze()} at line 18, column 20), the second extends nothing (line 26,
+ *       column 18). JDT's type hierarchy names the local classes of a unit in the hash order of
+ *       their name positions (HierarchyResolver.rememberAllTypes :511-541 over
+ *       CompilationUnitDeclaration.localTypes, a HashMap keyed by sourceStart), numbering each name
+ *       by its first unused occurrence (HandleFactory :216-229): it reaches the second Echo first,
+ *       with LF and with CRLF line ends alike, so it names the first Echo by the second's
+ *       handle.</li>
+ *   <li>Weave.java: {@code Weave} declares the member interface {@code Knot} ({@code tie()} at line
+ *       5, column 13); the static member classes {@code Loop} ({@code public void tie()} at line 9,
+ *       column 20), which does not implement Knot, and {@code Hitch extends Loop implements Knot}
+ *       ({@code tie()} at line 14, column 20), whose tie overrides both; the interface {@code Bend}
+ *       ({@code join(String rope)} at line 19, column 13); the class {@code Splice} ({@code public
+ *       void join(String cord)} at line 23, column 20) and {@code Sheet extends Splice implements
+ *       Bend} (line 27), declaring no method, so that in Sheet Splice's join implements Bend's; the
+ *       interface {@code Hook} ({@code hang(String coat)} at line 31, column 13), the class
+ *       {@code Peg<T>} ({@code public void hang(T coat)} at line 35, column 20) and {@code Rack
+ *       extends Peg<String> implements Hook} (line 39), declaring no method; the static method
+ *       {@code fasten(Knot, Loop)} calling {@code knot.tie()} (line 43, column 13) and
+ *       {@code loop.tie()} (line 44, column 13), and {@code link(Bend, Sheet)} calling
+ *       {@code bend.join("a")} (line 48, column 13) and {@code sheet.join("b")} (line 49, column
+ *       14).</li>
  * </ul>
  *
  * <p>The model numbers anonymous classes per enclosing type in source order, lambda bodies
@@ -64,6 +101,9 @@ final class LambdaHierarchy {
     static final String HOST = SOURCES + "Host.java";
     static final String CHAIN = SOURCES + "Chain.java";
     static final String LOCALS = SOURCES + "Locals.java";
+    static final String YARD = SOURCES + "Yard.java";
+    static final String MOSAIC = SOURCES + "Mosaic.java";
+    static final String WEAVE = SOURCES + "Weave.java";
 
     static final String PACKAGE = "com.example.hierarchy.";
 

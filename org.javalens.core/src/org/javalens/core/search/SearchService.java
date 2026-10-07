@@ -9,7 +9,6 @@ import org.eclipse.jdt.core.IMethod;
 import org.eclipse.jdt.core.IPackageFragment;
 import org.eclipse.jdt.core.IPackageFragmentRoot;
 import org.eclipse.jdt.core.IType;
-import org.eclipse.jdt.core.ITypeHierarchy;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTNode;
@@ -33,10 +32,14 @@ import org.eclipse.jdt.core.search.SearchRequestor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Predicate;
 
 /**
@@ -477,63 +480,67 @@ public class SearchService {
     }
 
     /**
-     * Get type hierarchy for a type.
-     * Fast because it uses the index.
+     * The direct subtypes an {@code IMPLEMENTORS} search for {@code type} reports by a handle the
+     * Java model does not hold, each named as the model holds it ({@link #withModelElement}): a
+     * class declared in a lambda body, which search places under the lambda. JDT's pull up reads
+     * the element of each such match as a type (PullUpRefactoringProcessor.checkIfHidingMethod
+     * :1239-1259, through findImplementors :2046-2057) and fails on one that does not exist. Only
+     * accurate matches count, as JDT's search filters the others. By file and position.
      */
-    public ITypeHierarchy getTypeHierarchy(IType type) throws CoreException {
-        return type.newTypeHierarchy(new NullProgressMonitor());
-    }
-
-    /**
-     * Find all subtypes (implementations/extensions) of a type.
-     */
-    public IType[] getAllSubtypes(IType type) throws CoreException {
-        ITypeHierarchy hierarchy = getTypeHierarchy(type);
-        return hierarchy.getAllSubtypes(type);
-    }
-
-    /**
-     * Find all supertypes of a type.
-     */
-    public IType[] getAllSupertypes(IType type) throws CoreException {
-        ITypeHierarchy hierarchy = getTypeHierarchy(type);
-        return hierarchy.getAllSuperclasses(type);
-    }
-
-    /**
-     * Search for methods that override a given method.
-     */
-    public SearchResult findOverridingMethods(IMethod method, int maxResults) throws CoreException {
-        SearchPattern pattern = SearchPattern.createPattern(
-            method,
-            IJavaSearchConstants.DECLARATIONS | IJavaSearchConstants.IGNORE_DECLARING_TYPE
-        );
-
+    public List<IType> implementorsWithoutModelHandles(IType type) throws CoreException {
+        SearchPattern pattern = SearchPattern.createPattern(type, IJavaSearchConstants.IMPLEMENTORS);
         if (pattern == null) {
-            return new SearchResult(List.of(), 0);
+            return List.of();
         }
+        List<IType> found = new ArrayList<>();
+        engine.search(pattern, new SearchParticipant[] { SearchEngine.getDefaultSearchParticipant() }, scope,
+            new SearchRequestor() {
+                @Override
+                public void acceptSearchMatch(SearchMatch match) {
+                    if (match.getAccuracy() == SearchMatch.A_ACCURATE && match.getElement() instanceof IType raw
+                            && !raw.exists() && withModelElement(match).getElement() instanceof IType model) {
+                        found.add(model);
+                    }
+                }
+            }, new NullProgressMonitor());
+        found.sort(ModelHierarchy.TYPE_ORDER);
+        return List.copyOf(found);
+    }
 
-        CollectingSearchRequestor requestor = new CollectingSearchRequestor(maxResults);
-
-        // Search in subtypes only
-        IType declaringType = method.getDeclaringType();
-        IType[] subtypes = getAllSubtypes(declaringType);
-
-        if (subtypes.length == 0) {
-            return new SearchResult(List.of(), 0);
+    /**
+     * The methods that must keep one name and signature with {@code method}, as JDT's rename
+     * relates them (RippleMethodFinder2.getAllRippleMethods :188-340): {@code method} and,
+     * repeated from every method found until none is new, every method it overrides
+     * ({@link ModelHierarchy#allOverridden}), every method that overrides it
+     * ({@link ModelHierarchy#overriding}) and every method a subtype inherits together with it
+     * ({@link ModelHierarchy#joinedInSubtypes}), all as the Java model holds them, in and after
+     * lambda bodies included. A method of a class file is listed but searched from no further: it
+     * cannot change with the others, and its overriders may be the whole JDK. By file and
+     * position, class files after sources.
+     *
+     * @throws IllegalArgumentException when a method found is declared in a lambda expression
+     */
+    public List<IMethod> rippleOf(IMethod method) throws CoreException {
+        Set<IMethod> ripple = new LinkedHashSet<>(List.of(method));
+        Deque<IMethod> pending = new ArrayDeque<>(ripple);
+        while (!pending.isEmpty()) {
+            IMethod current = pending.removeFirst();
+            if (current.isBinary()) {
+                continue;
+            }
+            ModelHierarchy hierarchy = hierarchyOf(current.getDeclaringType());
+            List<IMethod> related = new ArrayList<>(hierarchy.allOverridden(current));
+            related.addAll(hierarchy.overriding(current));
+            related.addAll(hierarchy.joinedInSubtypes(current));
+            for (IMethod found : related) {
+                if (ripple.add(found)) {
+                    pending.addLast(found);
+                }
+            }
         }
-
-        IJavaSearchScope subtypeScope = SearchEngine.createJavaSearchScope(subtypes);
-
-        engine.search(
-            pattern,
-            new SearchParticipant[] { SearchEngine.getDefaultSearchParticipant() },
-            subtypeScope,
-            requestor,
-            new NullProgressMonitor()
-        );
-
-        return requestor.toResult();
+        List<IMethod> sorted = new ArrayList<>(ripple);
+        sorted.sort(ModelHierarchy.METHOD_ORDER);
+        return List.copyOf(sorted);
     }
 
     // ========== Fine-Grained Reference Search ==========

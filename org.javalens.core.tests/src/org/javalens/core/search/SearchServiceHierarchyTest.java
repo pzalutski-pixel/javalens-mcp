@@ -49,6 +49,18 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
  *       no superclass, SuperTypeReferencePattern.createIndexKey :56-57), so no index entry leads
  *       JDT's hierarchy of java.lang.Record to this file.</li>
  *   <li>Twins.java: Twins; in first() and in second() a local class Echo.</li>
+ *   <li>Yard.java: Yard; classes Brick (heft()), Beam (load()) and Slab (depth()); anonymous class
+ *       1, a Brick created in a lambda body; in beams() the local classes Joist and Rafter extend
+ *       Beam; in slabs() the local class Wet extends Slab in a lambda body, then the local class Dry
+ *       extends Slab; class Post and, in posts(), the local class Pillar extending it.</li>
+ *   <li>Mosaic.java: Mosaic; class Tile (span(), grout()); in pieces() two local classes Echo in
+ *       sibling blocks, the first extending Tile (glaze()), the second extending nothing.</li>
+ *   <li>Weave.java: Weave; interface Knot (tie()); class Loop (tie()), which does not implement
+ *       Knot; class Hitch extends Loop implements Knot (tie()); interface Bend (join(String));
+ *       class Splice (join(String)); class Sheet extends Splice implements Bend, declaring no
+ *       method, so that Splice's join implements Bend's in Sheet; interface Hook (hang(String));
+ *       class Peg&lt;T&gt; (hang(T)); class Rack extends Peg&lt;String&gt; implements Hook,
+ *       declaring no method; static methods fasten and link calling tie and join.</li>
  * </ul>
  *
  * <p>Lists that hold types run by file, then by where each declaration starts, binary types last;
@@ -233,7 +245,10 @@ class SearchServiceHierarchyTest {
             P + "Chain", P + "Chain$Base", P + "Chain$Ranked",
             P + "Host", P + "Host$Plate", P + "Host$1", P + "Host$2", P + "Host$3", P + "Host$4", P + "Host$5",
             P + "Locals", P + "Locals$2",
-            P + "Twins", P + "Twins$Echo", P + "Twins$Echo");
+            P + "Mosaic", P + "Mosaic$Tile", P + "Mosaic$Echo",
+            P + "Twins", P + "Twins$Echo", P + "Twins$Echo",
+            P + "Weave", P + "Weave$Loop", P + "Weave$Splice", P + "Weave$Peg",
+            P + "Yard", P + "Yard$Brick", P + "Yard$Beam", P + "Yard$Slab", P + "Yard$Post");
         assertAll(
             () -> assertEquals(expected, sourcePrefix(object.subtypes())),
             () -> assertEquals(expected, sourcePrefix(object.subclasses())));
@@ -250,7 +265,13 @@ class SearchServiceHierarchyTest {
             P + "Ledger",
             P + "Locals", P + "Locals$Mode", P + "Locals$Mode$1", P + "Locals$Named", P + "Locals$Local",
             P + "Locals$Deeper", P + "Locals$1", P + "Locals$2", P + "Locals$Pair", P + "Locals$Twin",
-            P + "Twins", P + "Twins$Echo", P + "Twins$Echo"), sourcePrefix(object.allSubtypes()));
+            P + "Mosaic", P + "Mosaic$Tile", P + "Mosaic$Echo", P + "Mosaic$Echo",
+            P + "Twins", P + "Twins$Echo", P + "Twins$Echo",
+            P + "Weave", P + "Weave$Loop", P + "Weave$Hitch", P + "Weave$Splice", P + "Weave$Sheet", P + "Weave$Peg",
+            P + "Weave$Rack",
+            P + "Yard", P + "Yard$Brick", P + "Yard$1", P + "Yard$Beam", P + "Yard$Joist", P + "Yard$Rafter",
+            P + "Yard$Slab", P + "Yard$Wet", P + "Yard$Dry", P + "Yard$Post", P + "Yard$Pillar"),
+            sourcePrefix(object.allSubtypes()));
     }
 
     @Test
@@ -319,6 +340,13 @@ class SearchServiceHierarchyTest {
     }
 
     @Test
+    @DisplayName("overriding: Leaf.weight, of a class without subtypes, has no overrider")
+    void overridingWithoutSubtypes() throws CoreException {
+        assertEquals(List.of(),
+            methodNames(search.hierarchyOf(type("Chain.Leaf")).overriding(method("Chain.Leaf", "weight", 0))));
+    }
+
+    @Test
     @DisplayName("overridden: the nearest declaration overridden, past an overload, for local and anonymous classes in lambda bodies, an enum constant body and a type argument; null for a static method")
     void overridden() throws CoreException {
         ModelHierarchy leaf = search.hierarchyOf(type("Chain.Leaf"));
@@ -351,6 +379,71 @@ class SearchServiceHierarchyTest {
     }
 
     @Test
+    @DisplayName("allOverridden: every method a method overrides, in the superclass chain and the interfaces, with type arguments applied; none for a static method or an interface method without superinterfaces")
+    void allOverridden() throws CoreException {
+        assertAll(
+            () -> assertEquals(List.of(P + "Weave$Knot#tie()", P + "Weave$Loop#tie()"),
+                methodNames(search.hierarchyOf(type("Weave.Hitch")).allOverridden(method("Weave.Hitch", "tie", 0)))),
+            () -> assertEquals(List.of(P + "Chain$Sink#put(T)", P + "Chain$Base#put(String)"),
+                methodNames(search.hierarchyOf(type("Chain.Leaf")).allOverridden(method("Chain.Leaf", "put", 1)))),
+            () -> assertEquals(List.of(P + "Chain$Sink#put(T)", P + "Chain$Base#put(String)", P + "Locals$Local#put(String)"),
+                methodNames(search.hierarchyOf(type("Locals$1")).allOverridden(method("Locals$1", "put", 1)))),
+            () -> assertEquals(List.of(P + "Host$Plate#size()"),
+                methodNames(search.hierarchyOf(type("Host$Thin")).allOverridden(method("Host$Thin", "size", 0)))),
+            () -> assertEquals(List.of("java.lang.Comparable#compareTo(T)"),
+                methodNames(search.hierarchyOf(type("Chain.Ranked")).allOverridden(method("Chain.Ranked", "compareTo", 1)))),
+            () -> assertEquals(List.of(),
+                methodNames(search.hierarchyOf(type("Chain.Leaf")).allOverridden(method("Chain.Leaf", "count", 0)))),
+            () -> assertEquals(List.of(),
+                methodNames(search.hierarchyOf(type("Host.Mark")).allOverridden(method("Host.Mark", "tag", 0)))));
+    }
+
+    @Test
+    @DisplayName("joinedInSubtypes: Splice.join and Bend.join are one method of Sheet, which declares none; Peg<T>.hang(T) and Hook.hang(String) of Rack, a Peg<String>; Loop.tie and Knot.tie of Hitch; none for a method only overriding or overridden in its subtypes")
+    void joinedInSubtypes() throws CoreException {
+        assertAll(
+            () -> assertEquals(List.of(P + "Weave$Bend#join(String)"),
+                methodNames(search.hierarchyOf(type("Weave.Splice")).joinedInSubtypes(method("Weave.Splice", "join", 1)))),
+            () -> assertEquals(List.of(P + "Weave$Splice#join(String)"),
+                methodNames(search.hierarchyOf(type("Weave.Bend")).joinedInSubtypes(method("Weave.Bend", "join", 1)))),
+            () -> assertEquals(List.of(P + "Weave$Hook#hang(String)"),
+                methodNames(search.hierarchyOf(type("Weave.Peg")).joinedInSubtypes(method("Weave.Peg", "hang", 1)))),
+            () -> assertEquals(List.of(P + "Weave$Peg#hang(T)"),
+                methodNames(search.hierarchyOf(type("Weave.Hook")).joinedInSubtypes(method("Weave.Hook", "hang", 1)))),
+            () -> assertEquals(List.of(P + "Weave$Knot#tie()"),
+                methodNames(search.hierarchyOf(type("Weave.Loop")).joinedInSubtypes(method("Weave.Loop", "tie", 0)))),
+            () -> assertEquals(List.of(),
+                methodNames(search.hierarchyOf(type("Chain.Base")).joinedInSubtypes(method("Chain.Base", "put", 1)))),
+            () -> assertEquals(List.of(),
+                methodNames(search.hierarchyOf(type("Chain.Sink")).joinedInSubtypes(method("Chain.Sink", "put", 1)))),
+            () -> assertEquals(List.of(),
+                methodNames(search.hierarchyOf(type("Host.Mark")).joinedInSubtypes(method("Host.Mark", "tag", 0)))));
+    }
+
+    @Test
+    @DisplayName("rippleOf: the closure of a method under allOverridden, overriding and joinedInSubtypes, never expanded from a class-file method")
+    void rippleOf() throws CoreException {
+        List<String> tie = List.of(P + "Weave$Knot#tie()", P + "Weave$Loop#tie()", P + "Weave$Hitch#tie()");
+        List<String> join = List.of(P + "Weave$Bend#join(String)", P + "Weave$Splice#join(String)");
+        List<String> put = List.of(P + "Chain$Sink#put(T)", P + "Chain$Base#put(String)", P + "Chain$Leaf#put(String)",
+            P + "Locals$Named#put(String)", P + "Locals$Local#put(String)", P + "Locals$1#put(String)",
+            P + "Locals$2#put(String)");
+        assertAll(
+            () -> assertEquals(tie, methodNames(search.rippleOf(method("Weave.Loop", "tie", 0)))),
+            () -> assertEquals(tie, methodNames(search.rippleOf(method("Weave.Hitch", "tie", 0)))),
+            () -> assertEquals(join, methodNames(search.rippleOf(method("Weave.Splice", "join", 1)))),
+            () -> assertEquals(join, methodNames(search.rippleOf(method("Weave.Bend", "join", 1)))),
+            () -> assertEquals(List.of(P + "Weave$Hook#hang(String)", P + "Weave$Peg#hang(T)"),
+                methodNames(search.rippleOf(method("Weave.Hook", "hang", 1)))),
+            () -> assertEquals(put, methodNames(search.rippleOf(method("Locals$1", "put", 1)))),
+            () -> assertEquals(List.of(P + "Host$Mark#tag()", P + "Host$1#tag()", P + "Host$2#tag()", P + "Host$3#tag()",
+                P + "Host$5#tag()"), methodNames(search.rippleOf(method("Host.Mark", "tag", 0)))),
+            () -> assertEquals(List.of(P + "Chain$Ranked#compareTo(Base)", "java.lang.Comparable#compareTo(T)"),
+                methodNames(search.rippleOf(method("Chain.Ranked", "compareTo", 1)))),
+            () -> assertEquals(List.of(P + "Chain$Leaf#count()"), methodNames(search.rippleOf(method("Chain.Leaf", "count", 0)))));
+    }
+
+    @Test
     @DisplayName("A lambda expression has no hierarchy of its own, and a method of another type is refused")
     void refusals() throws CoreException {
         // The parameter item of the lambda quiet (Locals.java line 29, column 35) belongs to the
@@ -364,7 +457,9 @@ class SearchServiceHierarchyTest {
         assertAll(
             () -> assertThrows(IllegalArgumentException.class, () -> search.hierarchyOf(quiet)),
             () -> assertThrows(IllegalArgumentException.class, () -> base.overriding(leafPut)),
-            () -> assertThrows(IllegalArgumentException.class, () -> base.overridden(leafPut)));
+            () -> assertThrows(IllegalArgumentException.class, () -> base.overridden(leafPut)),
+            () -> assertThrows(IllegalArgumentException.class, () -> base.allOverridden(leafPut)),
+            () -> assertThrows(IllegalArgumentException.class, () -> base.joinedInSubtypes(leafPut)));
     }
 
     /**

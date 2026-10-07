@@ -10,10 +10,8 @@ import org.eclipse.jdt.core.IMember;
 import org.eclipse.jdt.core.IMethod;
 import org.eclipse.jdt.core.ISourceRange;
 import org.eclipse.jdt.core.IType;
-import org.eclipse.jdt.core.ITypeHierarchy;
 import org.eclipse.jdt.core.ITypeParameter;
 import org.eclipse.jdt.core.JavaModelException;
-import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTParser;
 import org.eclipse.jdt.core.dom.ASTVisitor;
@@ -76,6 +74,12 @@ public class RenameSymbolTool extends AbstractTool {
 
             USAGE: Position on symbol, provide new name
             OUTPUT: List of text edits to apply
+
+            A method is renamed together with every method it overrides, every
+            method that overrides it and every method a subtype inherits together
+            with it, in and after lambda bodies included, and every call of them.
+            A method of a class file, or a method renamed together with one, is
+            refused, naming that method: it cannot be renamed.
 
             IMPORTANT: Uses ZERO-BASED coordinates.
 
@@ -143,13 +147,30 @@ public class RenameSymbolTool extends AbstractTool {
                 return ToolResponse.invalidParameter("newName", "Same as current name");
             }
 
+            // A method is renamed with every method it must keep its name with: those it
+            // overrides, those overriding it and those a subtype inherits together with it.
+            // A method of a class file cannot be renamed, so neither can a method related to one.
+            if (element instanceof IMethod method) {
+                String position = "Method at position, " + oldName + " in "
+                    + ElementNames.qualifiedName(method.getDeclaringType());
+                if (method.isBinary()) {
+                    return ToolResponse.invalidParameter("position", position + ", is binary and cannot be renamed");
+                }
+                List<IMethod> ripple = service.getSearchService().rippleOf(method);
+                String binary = RelatedMethods.binaryRefusal(method, ripple);
+                if (binary != null) {
+                    return ToolResponse.invalidParameter("position", position + ", cannot be renamed: " + binary);
+                }
+                return renameViaSearch(method, ripple, oldName, newName, symbolKind, service);
+            }
+
             // Dispatch: IMember (IType, IField, IMethod) uses SearchEngine, which is
             // index-driven and resilient to per-call binding-resolution failures that
             // emerged at scale. ILocalVariable and ITypeParameter are not indexed by
             // SearchEngine in a useful way; they stay on the AST-binding path whose
             // file scope is the declaring CU only (locals/type-params don't cross files).
             if (element instanceof IMember member) {
-                return renameViaSearch(member, oldName, newName, symbolKind, service);
+                return renameViaSearch(member, List.of(member), oldName, newName, symbolKind, service);
             }
             return renameViaAstBinding(element, oldName, newName, symbolKind, service);
 
@@ -166,18 +187,14 @@ public class RenameSymbolTool extends AbstractTool {
      * index pressure on multi-thousand-file projects. SearchEngine is index-driven —
      * it doesn't re-resolve bindings per file — so it stays correct at scale.
      */
-    private ToolResponse renameViaSearch(IMember target, String oldName, String newName,
-                                          String symbolKind, IJdtService service) throws Exception {
-        // Override-chain: for methods, every overrider in subtypes and every overridden
-        // parent in supertypes must be renamed in lockstep. For non-methods this list
-        // is just the target.
-        List<IMember> compatibleMembers = computeCompatibleMembers(target);
-
+    private ToolResponse renameViaSearch(IMember target, List<? extends IMember> members, String oldName,
+                                          String newName, String symbolKind, IJdtService service) throws Exception {
+        // members: the target, and for a method every method renamed with it.
         Map<String, List<Map<String, Object>>> editsByFile = new LinkedHashMap<>();
         Set<String> emittedKeys = new LinkedHashSet<>();
         int totalEdits = 0;
 
-        for (IMember member : compatibleMembers) {
+        for (IMember member : members) {
             // Declaration site (SearchEngine REFERENCES omits the declaration itself).
             ISourceRange nameRange = member.getNameRange();
             if (nameRange != null && nameRange.getOffset() >= 0) {
@@ -284,7 +301,7 @@ public class RenameSymbolTool extends AbstractTool {
             log.debug("Using handle identifier as fallback: {}", targetKey);
         }
 
-        Set<String> compatibleKeys = computeCompatibleKeys(element, targetKey);
+        Set<String> compatibleKeys = Set.of(targetKey);
 
         Map<String, List<Map<String, Object>>> editsByFile = new LinkedHashMap<>();
         int totalEdits = 0;
@@ -340,112 +357,6 @@ public class RenameSymbolTool extends AbstractTool {
         IPath location = cu.getResource().getLocation();
         if (location == null) return null;
         return service.getPathUtils().formatPath(location.toOSString());
-    }
-
-    /**
-     * Companion to {@link #computeCompatibleKeys} that returns IMember instances
-     * (needed for the SearchEngine path) rather than binding-key strings.
-     */
-    private List<IMember> computeCompatibleMembers(IMember target) {
-        List<IMember> members = new ArrayList<>();
-        members.add(target);
-
-        if (!(target instanceof IMethod targetMethod)) return members;
-
-        try {
-            IType declaringType = targetMethod.getDeclaringType();
-            if (declaringType == null) return members;
-
-            ITypeHierarchy hierarchy = declaringType.newTypeHierarchy(new NullProgressMonitor());
-            for (IType subtype : hierarchy.getAllSubtypes(declaringType)) {
-                addMatchingMethodMember(subtype, targetMethod, members);
-            }
-            for (IType supertype : hierarchy.getAllSupertypes(declaringType)) {
-                addMatchingMethodMember(supertype, targetMethod, members);
-            }
-        } catch (Exception e) {
-            log.debug("Failed to compute override-related members: {}", e.getMessage());
-        }
-        return members;
-    }
-
-    private void addMatchingMethodMember(IType type, IMethod target, List<IMember> members) {
-        try {
-            String targetName = target.getElementName();
-            String[] targetParamTypes = target.getParameterTypes();
-            for (IMethod m : type.getMethods()) {
-                if (!m.getElementName().equals(targetName)) continue;
-                String[] paramTypes = m.getParameterTypes();
-                if (paramTypes.length != targetParamTypes.length) continue;
-                boolean match = true;
-                for (int i = 0; i < paramTypes.length; i++) {
-                    if (!paramTypes[i].equals(targetParamTypes[i])) { match = false; break; }
-                }
-                if (match) members.add(m);
-            }
-        } catch (Exception e) {
-            log.debug("Error matching method in {}: {}", type.getFullyQualifiedName(), e.getMessage());
-        }
-    }
-
-    /**
-     * For a method, gather the binding keys of every related method whose name must
-     * change in lockstep: the method itself, every overrider in the subtype hierarchy,
-     * and every overridden method in the supertype hierarchy. Renaming an interface
-     * method without propagating to implementors would leave the implementor signature
-     * mismatched against the interface — the project would stop compiling. For non-
-     * methods (fields, types, locals) the set is just the single target key.
-     */
-    private Set<String> computeCompatibleKeys(IJavaElement element, String targetKey) {
-        Set<String> keys = new LinkedHashSet<>();
-        keys.add(targetKey);
-
-        if (!(element instanceof IMethod targetMethod)) return keys;
-
-        try {
-            IType declaringType = targetMethod.getDeclaringType();
-            if (declaringType == null) return keys;
-
-            ITypeHierarchy hierarchy = declaringType.newTypeHierarchy(new NullProgressMonitor());
-            for (IType subtype : hierarchy.getAllSubtypes(declaringType)) {
-                addBindingKeyForMatchingMethod(subtype, targetMethod, keys);
-            }
-            for (IType supertype : hierarchy.getAllSupertypes(declaringType)) {
-                addBindingKeyForMatchingMethod(supertype, targetMethod, keys);
-            }
-        } catch (Exception e) {
-            log.debug("Failed to compute override-related binding keys: {}", e.getMessage());
-        }
-        return keys;
-    }
-
-    private void addBindingKeyForMatchingMethod(IType type, IMethod target, Set<String> keys) {
-        try {
-            String targetName = target.getElementName();
-            String[] targetParamTypes = target.getParameterTypes();
-            for (IMethod m : type.getMethods()) {
-                if (!m.getElementName().equals(targetName)) continue;
-                String[] paramTypes = m.getParameterTypes();
-                if (paramTypes.length != targetParamTypes.length) continue;
-                boolean match = true;
-                for (int i = 0; i < paramTypes.length; i++) {
-                    if (!paramTypes[i].equals(targetParamTypes[i])) { match = false; break; }
-                }
-                if (!match) continue;
-
-                ICompilationUnit cu = m.getCompilationUnit();
-                if (cu == null) continue;
-                ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
-                parser.setSource(cu);
-                parser.setResolveBindings(true);
-                parser.setBindingsRecovery(true);
-                CompilationUnit ast = (CompilationUnit) parser.createAST(null);
-                String key = findBindingKey(m, ast, targetName);
-                if (key != null) keys.add(key);
-            }
-        } catch (Exception e) {
-            log.debug("Error matching method in {}: {}", type.getFullyQualifiedName(), e.getMessage());
-        }
     }
 
     private List<Map<String, Object>> findRenameEdits(CompilationUnit ast, Set<String> compatibleKeys,
