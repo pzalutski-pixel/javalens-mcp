@@ -1,12 +1,15 @@
 package org.javalens.mcp.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.eclipse.jdt.core.Flags;
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IMethod;
 import org.eclipse.jdt.core.IType;
+import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTParser;
 import org.eclipse.jdt.core.dom.ASTVisitor;
+import org.eclipse.jdt.core.dom.AbstractTypeDeclaration;
 import org.eclipse.jdt.core.dom.Annotation;
 import org.eclipse.jdt.core.dom.ArrayInitializer;
 import org.eclipse.jdt.core.dom.CompilationUnit;
@@ -18,7 +21,6 @@ import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.NormalAnnotation;
 import org.eclipse.jdt.core.dom.SingleMemberAnnotation;
 import org.eclipse.jdt.core.dom.StringLiteral;
-import org.eclipse.jdt.core.dom.TypeDeclaration;
 import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.IJdtService;
 import org.javalens.core.search.SearchService;
@@ -93,6 +95,11 @@ public class GetHttpEndpointsTool extends AbstractTool {
 
             Method-level @RequestMapping(method=...) routes are not assembled;
             verb-shortcut annotations are the supported Spring form.
+
+            Handlers are listed where a framework can register them: in a named
+            top-level or static member class, interface, record or enum. A
+            verb-annotated method of an anonymous class, a local class or a
+            non-static inner class is no route and is not listed.
 
             Projects without these frameworks return an empty table.
 
@@ -173,6 +180,10 @@ public class GetHttpEndpointsTool extends AbstractTool {
                 if (!(match.getElement() instanceof IMethod handler)) {
                     continue;
                 }
+                // Only a class a framework can register holds routes.
+                if (!registrable(handler.getDeclaringType())) {
+                    continue;
+                }
                 String dedupeKey = handler.getHandleIdentifier() + "|" + annotationFqn;
                 if (!seenHandlers.add(dedupeKey)) {
                     continue;
@@ -224,12 +235,12 @@ public class GetHttpEndpointsTool extends AbstractTool {
         if (framework.equals("spring")) {
             methodPath = annotationPathValue(annotationByFqn(method.modifiers(), verbAnnotationFqn));
             classPrefix = annotationPathValue(annotationByFqn(
-                enclosingType(method).modifiers(),
+                typeModifiers(method),
                 "org.springframework.web.bind.annotation.RequestMapping"));
         } else {
             methodPath = annotationPathValue(annotationBySimpleName(method.modifiers(), "Path"));
             classPrefix = annotationPathValue(annotationBySimpleName(
-                enclosingType(method).modifiers(), "Path"));
+                typeModifiers(method), "Path"));
         }
 
         Map<String, Object> endpoint = new LinkedHashMap<>();
@@ -243,8 +254,27 @@ public class GetHttpEndpointsTool extends AbstractTool {
         return endpoint;
     }
 
-    private static TypeDeclaration enclosingType(MethodDeclaration method) {
-        return (TypeDeclaration) method.getParent();
+    /**
+     * Whether a framework can register {@code type} as the holder of routes: a named top-level
+     * type, or a static member type (a member interface, enum or record is static) with a
+     * canonical name. An anonymous or local class, a class nested in one, and a non-static inner
+     * class need an enclosing method context or instance, and no framework registers them.
+     */
+    private static boolean registrable(IType type) throws JavaModelException {
+        if (type.isMember() && type.isClass() && !Flags.isStatic(type.getFlags())) {
+            return false;
+        }
+        for (IType current = type; current != null; current = current.getDeclaringType()) {
+            if (current.isAnonymous() || current.isLocal()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** The modifiers of the class, interface, enum or record declaring {@code method}. */
+    private static List<?> typeModifiers(MethodDeclaration method) {
+        return method.getParent() instanceof AbstractTypeDeclaration type ? type.modifiers() : List.of();
     }
 
     private static String composePath(String prefix, String methodPath) {

@@ -635,6 +635,12 @@ public class SearchService {
      * model does not hold or a sibling of the right one. A reference in a lambda body belongs,
      * in the model, to the nearest enclosing member. A declaration keeps its kind and name, so a
      * lambda's own declaration is left as search reports it.
+     *
+     * <p>A reference search places in a lambda body lies in no class body within the lambda, yet
+     * it may lie in the creation of an anonymous class there, in the type it names or in its
+     * arguments: the model's anonymous class starts at that type name, as the parser places it
+     * (Parser.consumeEnterAnonymousClassBody), so the model's element at such a reference is the
+     * anonymous class, and the reference belongs to the member enclosing the creation.
      */
     private static SearchMatch withModelElement(SearchMatch match) {
         if (!(match.getElement() instanceof IJavaElement element) || !withinLocalScope(element)
@@ -643,9 +649,13 @@ public class SearchService {
         }
         try {
             IJavaElement model = unit.getElementAt(match.getOffset());
-            if (model != null && ((match instanceof ReferenceMatch && isLambda(element))
-                || (model.getElementType() == element.getElementType()
-                    && model.getElementName().equals(element.getElementName())))) {
+            if (model != null && match instanceof ReferenceMatch && isLambda(element)) {
+                while (model instanceof IType type && type.isAnonymous()) {
+                    model = model.getParent();
+                }
+                match.setElement(model);
+            } else if (model != null && model.getElementType() == element.getElementType()
+                    && model.getElementName().equals(element.getElementName())) {
                 match.setElement(model);
             }
         } catch (JavaModelException e) {

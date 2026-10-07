@@ -10,6 +10,7 @@ import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTParser;
 import org.eclipse.jdt.core.dom.ASTVisitor;
+import org.eclipse.jdt.core.dom.AnonymousClassDeclaration;
 import org.eclipse.jdt.core.dom.ClassInstanceCreation;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.ConstructorInvocation;
@@ -24,6 +25,7 @@ import org.eclipse.jdt.core.dom.NodeFinder;
 import org.eclipse.jdt.core.dom.SuperConstructorInvocation;
 import org.eclipse.jdt.core.dom.SuperMethodInvocation;
 import org.eclipse.jdt.core.dom.SuperMethodReference;
+import org.eclipse.jdt.core.dom.TypeDeclarationStatement;
 import org.eclipse.jdt.core.dom.TypeMethodReference;
 import org.javalens.core.IJdtService;
 import org.javalens.mcp.models.ResponseMeta;
@@ -58,6 +60,12 @@ import java.util.function.Supplier;
  * deferred dispatches (the method is invoked when the functional interface
  * is later applied, not at the reference site itself) but still part of the
  * dispatch graph.
+ *
+ * The calls are those the method makes itself, the inverse of incoming calls: a
+ * call in a lambda written in the method belongs to the method, and a call in
+ * the body of an anonymous or local class declared in it belongs to that class's
+ * member. Creating an anonymous class is a call of the superclass constructor
+ * its constructor runs, returning the anonymous class (CreationCalls).
  */
 public class GetCallHierarchyOutgoingTool extends AbstractTool {
 
@@ -79,6 +87,14 @@ public class GetCallHierarchyOutgoingTool extends AbstractTool {
 
             USAGE: Position cursor on a method name
             OUTPUT: List of methods that this method calls
+
+            A call in a lambda written in the method is the method's call; a
+            call in the body of an anonymous or local class declared in it is a
+            call of that class's member, as get_call_hierarchy_incoming reports
+            it. Creating an anonymous class, and its arguments, are calls of the
+            method; the creation is a call of the superclass constructor the
+            anonymous class's constructor runs (Object() for an interface),
+            returning the anonymous class.
 
             IMPORTANT: Uses ZERO-BASED coordinates.
 
@@ -198,6 +214,19 @@ public class GetCallHierarchyOutgoingTool extends AbstractTool {
         Set<String> seenMethods = new HashSet<>();
 
         method.accept(new ASTVisitor() {
+            // The body of an anonymous or local class declared in the method holds the calls of
+            // that class's members, as incoming calls attribute them; the creation of an
+            // anonymous class and its arguments stay calls of this method.
+            @Override
+            public boolean visit(AnonymousClassDeclaration node) {
+                return false;
+            }
+
+            @Override
+            public boolean visit(TypeDeclarationStatement node) {
+                return false;
+            }
+
             @Override
             public boolean visit(MethodInvocation node) {
                 IMethodBinding binding = node.resolveMethodBinding();
@@ -224,12 +253,9 @@ public class GetCallHierarchyOutgoingTool extends AbstractTool {
 
             @Override
             public boolean visit(ClassInstanceCreation node) {
-                IMethodBinding binding = node.resolveConstructorBinding();
-                if (binding != null) {
-                    String key = binding.getKey();
-                    if (seenMethods.add(key)) {
-                        addConstructorCallee(node, binding, callees, ast, filePath, service);
-                    }
+                IMethodBinding constructor = CreationCalls.constructorCalled(node);
+                if (constructor != null && seenMethods.add(CreationCalls.key(node, constructor))) {
+                    addConstructorCallee(node, constructor, callees, ast, filePath, service);
                 }
                 return true;
             }
@@ -341,6 +367,10 @@ public class GetCallHierarchyOutgoingTool extends AbstractTool {
         callees.add(callee);
     }
 
+    /**
+     * The call of {@code binding}, the constructor {@code node} runs (CreationCalls): the
+     * superclass constructor for an anonymous class, whose returned type is the anonymous class.
+     */
     private void addConstructorCallee(ClassInstanceCreation node, IMethodBinding binding,
                                        List<Map<String, Object>> callees, CompilationUnit ast,
                                        Path filePath, IJdtService service) {
@@ -348,7 +378,7 @@ public class GetCallHierarchyOutgoingTool extends AbstractTool {
         callee.put("method", "<init>");
         callee.put("declaringClass", ElementNames.qualifiedName(binding.getDeclaringClass()));
         callee.put("signature", "new " + ElementNames.typeExpression(binding.getDeclaringClass()) + buildParamList(binding));
-        callee.put("returnType", ElementNames.typeExpression(binding.getDeclaringClass()));
+        callee.put("returnType", ElementNames.typeExpression(CreationCalls.createdClass(node, binding)));
         callee.put("callType", "CONSTRUCTOR");
         callee.put("isFromSource", binding.getDeclaringClass().isFromSource());
         callee.put("callLocation", buildCallLocation(node, ast, filePath, service));

@@ -25,7 +25,8 @@ import static org.javalens.mcp.tools.unnamed.UnnamedElements.success;
  * Tools that read callees from resolved bindings name each type the way the model-based tools
  * do: a declaring class by its fully qualified name without type arguments, an anonymous class
  * by its type-qualified name ({@code Events$1}) and a local class by its simple name, also as
- * a parameter type ({@code Counter[]}). A captured wildcard, which has no name, is named by the
+ * a parameter type ({@code Counter[]}). The creation of an anonymous class is a call of the
+ * superclass constructor its constructor runs, returning the anonymous class. A captured wildcard, which has no name, is named by the
  * wildcard it captures ({@code ? extends CharSequence}), also as a type argument
  * ({@code List<?>}).
  */
@@ -55,9 +56,11 @@ class BindingNameTest {
     }
 
     @Test
-    @DisplayName("get_call_hierarchy_outgoing of listener() names the anonymous class it creates Events$1")
+    @DisplayName("get_call_hierarchy_outgoing of listener() names the constructor its anonymous Runnable runs, Object(), returning the anonymous class Events$1")
     void outgoingAnonymousCreation() {
-        // The anonymous class's own run() calls nothing, so its creation is the only callee.
+        // The anonymous class's own run() calls nothing, so its creation is the only callee. An
+        // anonymous class implementing an interface extends Object, so its constructor runs
+        // Object().
         Map<String, Object> data = map(
             "method", "listener",
             "declaringClass", EVENTS_TYPE,
@@ -65,11 +68,11 @@ class BindingNameTest {
             "totalCallees", 1,
             "callees", List.of(map(
                 "method", "<init>",
-                "declaringClass", EVENTS_TYPE + "$1",
-                "signature", "new Events$1()",
+                "declaringClass", "java.lang.Object",
+                "signature", "new Object()",
                 "returnType", "Events$1",
                 "callType", "CONSTRUCTOR",
-                "isFromSource", true,
+                "isFromSource", false,
                 "callLocation", location(31, 15))));
         assertPayload(mapper, new GetCallHierarchyOutgoingTool(() -> service), envelope, position(30, 13),
             success(data, outgoingMeta(1)));
@@ -143,7 +146,7 @@ class BindingNameTest {
     }
 
     @Test
-    @DisplayName("analyze_method of listener() names the anonymous class it creates Events$1, by qualified type only")
+    @DisplayName("analyze_method of listener() names the constructor its anonymous Runnable runs, java.lang.Object's Object()")
     void analyzeMethodAnonymousCreation() {
         Map<String, Object> data = map(
             "method", map(
@@ -158,10 +161,10 @@ class BindingNameTest {
             "parameters", List.of(),
             "callers", map("count", 0, "list", List.of()),
             "callees", map("count", 1, "list", List.of(map(
-                "name", "Events$1",
+                "name", "Object",
                 "kind", "CONSTRUCTOR",
-                "qualifiedType", EVENTS_TYPE + "$1",
-                "signature", "Events$1()",
+                "qualifiedType", "java.lang.Object",
+                "signature", "Object()",
                 "callLine", 31))),
             "overrides", map());
         assertPayload(mapper, new AnalyzeMethodTool(() -> service), envelope, position(30, 13),

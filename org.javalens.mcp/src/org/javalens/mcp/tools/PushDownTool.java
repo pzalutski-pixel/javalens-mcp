@@ -54,6 +54,10 @@ public class PushDownTool extends AbstractTool {
             subclass (member added); warnings from JDT's condition checking.
             Edits are returned as text - apply them yourself.
 
+            A member whose class has an anonymous direct subclass is refused,
+            naming each anonymous subclass: push down cannot add a member to an
+            anonymous class.
+
             IMPORTANT: Uses ZERO-BASED coordinates.
 
             Requires load_project to be called first.
@@ -111,6 +115,13 @@ public class PushDownTool extends AbstractTool {
                 return ToolResponse.invalidParameter("member",
                     "Declaring type has no subclasses to push into");
             }
+            List<String> anonymousSubclasses = anonymousSubclasses(subclasses);
+            if (!anonymousSubclasses.isEmpty()) {
+                return ToolResponse.invalidParameter("position", "Member at position, " + member.getElementName()
+                    + " in " + ElementNames.qualifiedName(declaringType) + ", cannot be pushed down into the anonymous "
+                    + (anonymousSubclasses.size() == 1 ? "subclass " : "subclasses ")
+                    + String.join(", ", anonymousSubclasses) + ", which push down cannot add a member to");
+            }
 
             Map<String, String> descriptorArguments = new HashMap<>();
             descriptorArguments.put("input", declaringType.getHandleIdentifier());
@@ -160,6 +171,24 @@ public class PushDownTool extends AbstractTool {
             log.error("Error pushing down member: {}", e.getMessage(), e);
             return ToolResponse.internalError(e);
         }
+    }
+
+    /**
+     * The qualified names, in name order, of the anonymous classes among {@code subclasses}. JDT's
+     * push down writes a member into each direct subclass's declaration, which it finds as the
+     * type declaration enclosing the subclass's name (PushDownRefactoringProcessor.copyMembers,
+     * ASTNodeSearchUtil.getAbstractTypeDeclarationNode): for an anonymous class, that is the
+     * class the anonymous class is written in, so the member would land there instead.
+     */
+    private static List<String> anonymousSubclasses(IType[] subclasses) throws JavaModelException {
+        List<String> names = new ArrayList<>();
+        for (IType subclass : subclasses) {
+            if (subclass.isAnonymous()) {
+                names.add(ElementNames.qualifiedName(subclass));
+            }
+        }
+        names.sort(null);
+        return names;
     }
 
     /**

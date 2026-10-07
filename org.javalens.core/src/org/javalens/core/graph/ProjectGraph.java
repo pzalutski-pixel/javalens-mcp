@@ -2,6 +2,7 @@ package org.javalens.core.graph;
 
 import org.eclipse.jdt.core.IField;
 import org.eclipse.jdt.core.IJavaElement;
+import org.eclipse.jdt.core.IMember;
 import org.eclipse.jdt.core.IMethod;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.JavaModelException;
@@ -245,11 +246,17 @@ public final class ProjectGraph {
     /**
      * Compute the graph key for a Java model element. Returns the key whether
      * or not the element is present in the graph; callers check {@link #node}.
-     * Returns {@code null} for element kinds the graph does not model.
+     * Returns {@code null} for element kinds the graph does not model, and for a
+     * local or anonymous class, a class nested in one, and their members: the
+     * graph holds no node for them, and a local class named like a member class
+     * must not take that class's key.
      */
     public String keyOf(IJavaElement element) throws JavaModelException {
         if (element instanceof IType type) {
-            return type.getFullyQualifiedName();
+            return hasCanonicalName(type) ? type.getFullyQualifiedName() : null;
+        }
+        if (element instanceof IMember member && !hasCanonicalName(member.getDeclaringType())) {
+            return null;
         }
         if (element instanceof IMethod method) {
             String typeKey = method.getDeclaringType().getFullyQualifiedName();
@@ -265,5 +272,19 @@ public final class ProjectGraph {
             return field.getDeclaringType().getFullyQualifiedName() + "#" + field.getElementName();
         }
         return null;
+    }
+
+    /**
+     * Whether {@code type} has a canonical name (JLS 6.7): it is a top-level type or a member of
+     * a type that has one. A local or anonymous class, and any class nested in one, has none, so
+     * its binding's qualified name is empty and the graph holds no node for it.
+     */
+    private static boolean hasCanonicalName(IType type) throws JavaModelException {
+        for (IType current = type; current != null; current = current.getDeclaringType()) {
+            if (current.isLocal() || current.isAnonymous() || current.isLambda()) {
+                return false;
+            }
+        }
+        return true;
     }
 }

@@ -13,6 +13,7 @@ import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTParser;
 import org.eclipse.jdt.core.dom.ASTVisitor;
+import org.eclipse.jdt.core.dom.AnonymousClassDeclaration;
 import org.eclipse.jdt.core.dom.ClassInstanceCreation;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.ConstructorInvocation;
@@ -27,8 +28,10 @@ import org.eclipse.jdt.core.dom.NodeFinder;
 import org.eclipse.jdt.core.dom.SuperConstructorInvocation;
 import org.eclipse.jdt.core.dom.SuperMethodInvocation;
 import org.eclipse.jdt.core.dom.SuperMethodReference;
+import org.eclipse.jdt.core.dom.TypeDeclarationStatement;
 import org.eclipse.jdt.core.dom.TypeMethodReference;
 import org.eclipse.jdt.core.search.SearchMatch;
+import org.eclipse.jdt.internal.corext.dom.Bindings;
 import org.javalens.core.IJdtService;
 import org.javalens.core.MethodFormatter;
 import org.javalens.core.ModifierFormatter;
@@ -77,7 +80,10 @@ public class AnalyzeMethodTool extends AbstractTool {
             - Parameters with types
             - Declared exceptions
             - Incoming calls (who calls this method)
-            - Outgoing calls (what this method calls)
+            - Outgoing calls (what this method calls, in its lambdas included; a
+              call in an anonymous or local class declared in it is a call of
+              that class's member; creating an anonymous class is a call of the
+              superclass constructor its constructor runs)
             - Override information (super method, overriding methods)
 
             Use this instead of multiple calls to get_method_at_position + call hierarchy tools.
@@ -152,11 +158,15 @@ public class AnalyzeMethodTool extends AbstractTool {
             // Incoming calls (callers)
             data.put("callers", findCallers(method, service, maxCallers));
 
+            // The method's declaration, with bindings: its callees and the method it overrides
+            // are read from it.
+            MethodDeclaration declaration = findDeclaration(method, cu);
+
             // Outgoing calls (callees)
-            data.put("callees", findCallees(method, cu, service, maxCallees));
+            data.put("callees", findCallees(declaration, maxCallees));
 
             // Override info
-            data.put("overrides", findOverrideInfo(method, service));
+            data.put("overrides", findOverrideInfo(method, declaration, service));
 
             return ToolResponse.success(data, ResponseMeta.builder()
                 .suggestedNextTools(List.of(
@@ -280,12 +290,12 @@ public class AnalyzeMethodTool extends AbstractTool {
         return result;
     }
 
-    private Map<String, Object> findCallees(IMethod method, ICompilationUnit cu, IJdtService service, int maxCallees) {
-        Map<String, Object> result = new LinkedHashMap<>();
-        List<Map<String, Object>> callees = new ArrayList<>();
-
+    /**
+     * The declaration of {@code method} in {@code cu}, parsed with bindings, or null when the
+     * unit does not parse.
+     */
+    private MethodDeclaration findDeclaration(IMethod method, ICompilationUnit cu) {
         try {
-            // Parse AST to find callees
             ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
             parser.setSource(cu);
             parser.setResolveBindings(true);
@@ -293,21 +303,42 @@ public class AnalyzeMethodTool extends AbstractTool {
 
             CompilationUnit ast = (CompilationUnit) parser.createAST(null);
             if (ast == null) {
-                result.put("count", 0);
-                result.put("list", callees);
-                return result;
+                return null;
             }
-
-            // Find method declaration
             int offset = method.getSourceRange().getOffset();
-            NodeFinder finder = new NodeFinder(ast, offset, 0);
-            ASTNode coveringNode = finder.getCoveringNode();
-            MethodDeclaration methodDecl = findEnclosingMethod(coveringNode);
+            return findEnclosingMethod(new NodeFinder(ast, offset, 0).getCoveringNode());
+        } catch (Exception e) {
+            log.debug("Error parsing the declaration of {}: {}", method.getElementName(), e.getMessage());
+            return null;
+        }
+    }
 
+    /**
+     * The calls {@code methodDecl} makes itself: those in its body and in the lambdas written in
+     * it. A call in the body of an anonymous or local class declared in the method is a call of
+     * that class's member; the creation of an anonymous class and its arguments are calls of
+     * the method.
+     */
+    private Map<String, Object> findCallees(MethodDeclaration methodDecl, int maxCallees) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        List<Map<String, Object>> callees = new ArrayList<>();
+
+        try {
             if (methodDecl != null) {
+                CompilationUnit ast = (CompilationUnit) methodDecl.getRoot();
                 Set<String> seenCallees = new HashSet<>();
 
                 methodDecl.accept(new ASTVisitor() {
+                    @Override
+                    public boolean visit(AnonymousClassDeclaration node) {
+                        return false;
+                    }
+
+                    @Override
+                    public boolean visit(TypeDeclarationStatement node) {
+                        return false;
+                    }
+
                     @Override
                     public boolean visit(MethodInvocation node) {
                         if (callees.size() >= maxCallees) return false;
@@ -327,9 +358,12 @@ public class AnalyzeMethodTool extends AbstractTool {
                     @Override
                     public boolean visit(ClassInstanceCreation node) {
                         if (callees.size() >= maxCallees) return false;
-                        IMethodBinding binding = node.resolveConstructorBinding();
-                        if (binding != null) {
-                            addCallee(binding, "CONSTRUCTOR", ElementNames.typeExpression(binding.getDeclaringClass()),
+                        // An anonymous class's creation is a call of the superclass constructor
+                        // its constructor runs (CreationCalls).
+                        IMethodBinding constructor = CreationCalls.constructorCalled(node);
+                        if (constructor != null) {
+                            addCallee(CreationCalls.key(node, constructor), constructor, "CONSTRUCTOR",
+                                ElementNames.typeExpression(constructor.getDeclaringClass()),
                                 ast.getLineNumber(node.getStartPosition()), seenCallees, callees);
                         }
                         return true;
@@ -402,8 +436,12 @@ public class AnalyzeMethodTool extends AbstractTool {
     private void addCallee(IMethodBinding binding, String kind, String name, int line,
                           Set<String> seen, List<Map<String, Object>> callees) {
         if (binding == null) return;
+        addCallee(binding.getKey(), binding, kind, name, line, seen, callees);
+    }
 
-        String key = binding.getKey();
+    /** {@code binding}'s call, listed once per {@code key}. */
+    private void addCallee(String key, IMethodBinding binding, String kind, String name, int line,
+                          Set<String> seen, List<Map<String, Object>> callees) {
         if (seen.contains(key)) return;
         seen.add(key);
 
@@ -431,16 +469,17 @@ public class AnalyzeMethodTool extends AbstractTool {
         callees.add(callee);
     }
 
-    private Map<String, Object> findOverrideInfo(IMethod method, IJdtService service) {
+    private Map<String, Object> findOverrideInfo(IMethod method, MethodDeclaration declaration,
+                                                 IJdtService service) {
         Map<String, Object> result = new LinkedHashMap<>();
 
         try {
-            // Find super method
-            IMethod superMethod = findSuperMethod(method);
-            if (superMethod != null) {
+            // The method this one overrides, as the compiler binds it
+            IMethodBinding overridden = findOverriddenMethod(declaration);
+            if (overridden != null) {
                 Map<String, Object> superInfo = new LinkedHashMap<>();
-                superInfo.put("method", superMethod.getElementName());
-                superInfo.put("qualifiedType", ElementNames.qualifiedName(superMethod.getDeclaringType()));
+                superInfo.put("method", overridden.getName());
+                superInfo.put("qualifiedType", ElementNames.qualifiedName(overridden.getDeclaringClass()));
                 result.put("overrides", superInfo);
             }
 
@@ -470,48 +509,18 @@ public class AnalyzeMethodTool extends AbstractTool {
         return result;
     }
 
-    private IMethod findSuperMethod(IMethod method) {
-        try {
-            IType declaringType = method.getDeclaringType();
-            String methodName = method.getElementName();
-            String[] paramTypes = method.getParameterTypes();
-
-            // Check superclass
-            String superclassName = declaringType.getSuperclassName();
-            if (superclassName != null) {
-                String[][] resolvedSuper = declaringType.resolveType(superclassName);
-                if (resolvedSuper != null && resolvedSuper.length > 0) {
-                    IType superType = method.getJavaProject().findType(
-                        resolvedSuper[0][0] + "." + resolvedSuper[0][1]);
-                    if (superType != null) {
-                        IMethod superMethod = superType.getMethod(methodName, paramTypes);
-                        if (superMethod.exists()) {
-                            return superMethod;
-                        }
-                    }
-                }
-            }
-
-            // Check interfaces
-            String[] interfaceNames = declaringType.getSuperInterfaceNames();
-            for (String interfaceName : interfaceNames) {
-                String[][] resolved = declaringType.resolveType(interfaceName);
-                if (resolved != null && resolved.length > 0) {
-                    IType interfaceType = method.getJavaProject().findType(
-                        resolved[0][0] + "." + resolved[0][1]);
-                    if (interfaceType != null) {
-                        IMethod interfaceMethod = interfaceType.getMethod(methodName, paramTypes);
-                        if (interfaceMethod.exists()) {
-                            return interfaceMethod;
-                        }
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log.debug("Error finding super method: {}", e.getMessage());
-        }
-
-        return null;
+    /**
+     * The method {@code declaration} overrides, as JDT finds it from the compiler's bindings
+     * ({@code Bindings.findOverriddenMethod}, which JDT's own quick fixes use to find the method
+     * a method overrides): the nearest declaration of a method it overrides in its superclass
+     * chain, else in its interfaces, visible from its package. The binding knows an anonymous
+     * class's supertype and a type parameter's argument ({@code compareTo(String)} overrides
+     * {@code Comparable<T>.compareTo(T)}). A static or private method or a constructor overrides
+     * nothing.
+     */
+    private IMethodBinding findOverriddenMethod(MethodDeclaration declaration) {
+        IMethodBinding binding = declaration == null ? null : declaration.resolveBinding();
+        return binding == null ? null : Bindings.findOverriddenMethod(binding, true);
     }
 
     private MethodDeclaration findEnclosingMethod(ASTNode node) {
