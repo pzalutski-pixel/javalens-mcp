@@ -6,7 +6,6 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
 import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
-import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.RenameSymbolTool;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -14,14 +13,20 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
- * Integration tests for RenameSymbolTool.
- * Tests cross-file rename and identifier validation.
+ * Integration tests for RenameSymbolTool on simple-maven: cross-file rename and identifier
+ * validation. Every expectation is the whole payload, through execute() and through the JSON-RPC
+ * envelope. Each file's edits come last position first; an edit replaces the old name where it
+ * is written. Raw offsets depend on line endings, so each edit's startOffset and endOffset are
+ * replaced by the span between them; line and column pin the edit.
  */
 class RenameSymbolToolTest {
 
@@ -46,93 +51,30 @@ class RenameSymbolToolTest {
         calculatorPath = projectPath.resolve("src/main/java/com/example/Calculator.java").toString();
     }
 
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> getData(ToolResponse r) { return (Map<String, Object>) r.getData(); }
-
-    @SuppressWarnings("unchecked")
-    private Map<String, List<Map<String, Object>>> getEditsByFile(Map<String, Object> data) {
-        return (Map<String, List<Map<String, Object>>>) data.get("editsByFile");
-    }
-
     // ========== Comprehensive Functionality Tests ==========
 
     @Test
     @DisplayName("rename local variable returns complete response with all edit details")
     void renameLocalVariable_returnsCompleteResponse() {
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", refactoringTargetPath);
-        args.put("line", 88);  // int oldName = 42;
-        args.put("column", 12);
-        args.put("newName", "newName");
-
-        ToolResponse response = tool.execute(args);
-
-        assertTrue(response.isSuccess());
-        Map<String, Object> data = getData(response);
-
-        // Verify symbol info
-        assertEquals("oldName", data.get("oldName"));
-        assertEquals("newName", data.get("newName"));
-        assertEquals("variable", data.get("symbolKind"));
-
-        // oldName is a local used 3x (declaration + 2 uses), all in one file.
-        assertEquals(3, ((Number) data.get("totalEdits")).intValue());
-        assertEquals(1, ((Number) data.get("filesAffected")).intValue());
-
-        // Verify edit structure
-        Map<String, List<Map<String, Object>>> editsByFile = getEditsByFile(data);
-        assertFalse(editsByFile.isEmpty());
-        List<Map<String, Object>> edits = editsByFile.values().iterator().next();
-        assertFalse(edits.isEmpty());
-
-        Map<String, Object> edit = edits.get(0);
-        assertTrue(((Number) edit.get("line")).intValue() >= 0, "line >= 0; got: " + edit);
-        int col = ((Number) edit.get("column")).intValue();
-        int endCol = ((Number) edit.get("endColumn")).intValue();
-        assertTrue(col >= 0, "column >= 0; got: " + edit);
-        assertEquals(col + "oldName".length(), endCol,
-            "endColumn must equal column + oldText.length(); got: " + edit);
-        assertEquals("oldName", edit.get("oldText"));
-        assertEquals("newName", edit.get("newText"));
+        // localVariableRename declares oldName on line 88 and reads it on lines 89 and 90.
+        assertPayload(at(refactoringTargetPath, 88, 12, "newName"), rename("oldName", "newName", "variable",
+            Map.of(REFACTORING_TARGET, List.of(edit(90, 22), edit(89, 27), edit(88, 12))), null));
     }
 
     @Test
     @DisplayName("rename field finds all usages and returns field kind")
     void renameField_findsAllUsagesAndReturnsFieldKind() {
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", refactoringTargetPath);
-        args.put("line", 15);  // private String userName;
-        args.put("column", 19);
-        args.put("newName", "userFullName");
-
-        ToolResponse response = tool.execute(args);
-
-        assertTrue(response.isSuccess());
-        Map<String, Object> data = getData(response);
-        assertEquals("userName", data.get("oldName"));
-        assertEquals("userFullName", data.get("newName"));
-        assertEquals("field", data.get("symbolKind"));
-        // userName: declaration + 4 in-file usages = 5 edits, all in RefactoringTarget.java.
-        assertEquals(5, ((Number) data.get("totalEdits")).intValue());
-        assertEquals(1, ((Number) data.get("filesAffected")).intValue());
+        // userName is declared on line 15 and used on lines 98, 100, 107 and 114 (this.userName;
+        // setUserName's parameter of the same name is not the field).
+        assertPayload(at(refactoringTargetPath, 15, 19, "userFullName"), rename("userName", "userFullName", "field",
+            Map.of(REFACTORING_TARGET, List.of(edit(114, 13), edit(107, 15), edit(100, 27), edit(98, 8),
+                edit(15, 19))), null));
     }
 
     @Test
     @DisplayName("rename method returns method kind")
     void renameMethod_returnsMethodKind() {
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", calculatorPath);
-        args.put("line", 14);  // public int add(int a, int b)
-        args.put("column", 15);
-        args.put("newName", "sum");
-
-        ToolResponse response = tool.execute(args);
-
-        assertTrue(response.isSuccess());
-        Map<String, Object> data = getData(response);
-        assertEquals("add", data.get("oldName"));
-        assertEquals("sum", data.get("newName"));
-        assertEquals("method", data.get("symbolKind"));
+        assertPayload(addToSum(), ADD_TO_SUM);
     }
 
     // ========== Validation Tests ==========
@@ -140,41 +82,13 @@ class RenameSymbolToolTest {
     @Test
     @DisplayName("rejects invalid Java identifiers, reserved words, and same name")
     void rejectsInvalidNames() {
-        // Test invalid identifier (starts with number)
-        ObjectNode args1 = objectMapper.createObjectNode();
-        args1.put("filePath", refactoringTargetPath);
-        args1.put("line", 88);
-        args1.put("column", 12);
-        args1.put("newName", "123invalid");
-
-        ToolResponse response1 = tool.execute(args1);
-        assertFalse(response1.isSuccess());
-        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response1.getError().getCode());
-        assertEquals("Invalid parameter 'newName': Not a valid Java identifier",
-            response1.getError().getMessage());
-
-        // Test reserved word
-        ObjectNode args2 = objectMapper.createObjectNode();
-        args2.put("filePath", refactoringTargetPath);
-        args2.put("line", 88);
-        args2.put("column", 12);
-        args2.put("newName", "class");
-
-        ToolResponse response2 = tool.execute(args2);
-        assertFalse(response2.isSuccess());
-
-        // Test same name
-        ObjectNode args3 = objectMapper.createObjectNode();
-        args3.put("filePath", refactoringTargetPath);
-        args3.put("line", 88);
-        args3.put("column", 12);
-        args3.put("newName", "oldName");
-
-        ToolResponse response3 = tool.execute(args3);
-        assertFalse(response3.isSuccess());
-        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response3.getError().getCode());
-        assertEquals("Invalid parameter 'newName': Same as current name",
-            response3.getError().getMessage());
+        assertAll(
+            () -> assertPayload(at(refactoringTargetPath, 88, 12, "123invalid"),
+                refusal("Invalid parameter 'newName': Not a valid Java identifier")),
+            () -> assertPayload(at(refactoringTargetPath, 88, 12, "class"),
+                refusal("Invalid parameter 'newName': Not a valid Java identifier")),
+            () -> assertPayload(at(refactoringTargetPath, 88, 12, "oldName"),
+                refusal("Invalid parameter 'newName': Same as current name")));
     }
 
     // ========== Required Parameter Tests ==========
@@ -186,11 +100,7 @@ class RenameSymbolToolTest {
         args.put("line", 10);
         args.put("column", 5);
         args.put("newName", "test");
-
-        ToolResponse response = tool.execute(args);
-
-        assertFalse(response.isSuccess());
-        assertEquals("INVALID_PARAMETER", response.getError().getCode());
+        assertPayload(args, refusal("Invalid parameter 'filePath': Required"));
     }
 
     @Test
@@ -200,11 +110,7 @@ class RenameSymbolToolTest {
         args.put("filePath", refactoringTargetPath);
         args.put("line", 10);
         args.put("column", 5);
-
-        ToolResponse response = tool.execute(args);
-
-        assertFalse(response.isSuccess());
-        assertEquals("INVALID_PARAMETER", response.getError().getCode());
+        assertPayload(args, refusal("Invalid parameter 'newName': Required"));
     }
 
     // ========== Error Handling Tests ==========
@@ -212,37 +118,18 @@ class RenameSymbolToolTest {
     @Test
     @DisplayName("Negative line/column returns INVALID_PARAMETER")
     void handlesInvalidLineColumn() {
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", refactoringTargetPath);
-        args.put("line", -1);
-        args.put("column", -1);
-        args.put("newName", "test");
-
-        ToolResponse response = tool.execute(args);
-        assertFalse(response.isSuccess());
-        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER,
-            response.getError().getCode(),
-            "Negative coords must surface as INVALID_PARAMETER; got: "
-                + response.getError().getCode());
+        assertPayload(at(refactoringTargetPath, -1, -1, "test"),
+            refusal("Invalid parameter 'line/column': Must be >= 0"));
     }
 
     @Test
     @DisplayName("Position with no symbol returns SYMBOL_NOT_FOUND")
     void handlesNoSymbolAtPosition() {
-        // Line 1 col 0 — blank line between `package` and class Javadoc.
-        // getElementAtPosition returns null → tool emits SYMBOL_NOT_FOUND.
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", refactoringTargetPath);
-        args.put("line", 1);
-        args.put("column", 0);
-        args.put("newName", "test");
-
-        ToolResponse response = tool.execute(args);
-        assertFalse(response.isSuccess());
-        assertEquals(org.javalens.mcp.models.ErrorInfo.SYMBOL_NOT_FOUND,
-            response.getError().getCode(),
-            "Blank-line position must surface as SYMBOL_NOT_FOUND; got: "
-                + response.getError().getCode());
+        // Line 1 col 0 is the blank line between `package` and the class Javadoc.
+        assertPayload(at(refactoringTargetPath, 1, 0, "test"), Map.of("success", false, "error", Map.of(
+            "code", "SYMBOL_NOT_FOUND",
+            "message", "Symbol not found: No symbol at position",
+            "hint", "Use search_symbols to find available symbols")));
     }
 
     // ========== Semantic-grade tests (exact-content assertions) ==========
@@ -250,391 +137,235 @@ class RenameSymbolToolTest {
     @Test
     @DisplayName("rename FieldHolder.pet (custom-typed field): cross-file edits across FieldHolder + WidgetHelper")
     void renameCustomTypedField_emitsAllEditsAcrossFiles() {
-        String fieldHolderPath = helper.getFixturePath("simple-maven")
-            .resolve("src/main/java/com/example/FieldHolder.java").toString();
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", fieldHolderPath);
-        args.put("line", 4);    // `    Animal pet;` (0-based)
-        args.put("column", 11); // start of "pet"
-        args.put("newName", "companion");
-
-        ToolResponse response = tool.execute(args);
-        assertTrue(response.isSuccess());
-        Map<String, Object> data = getData(response);
-
-        assertEquals("pet", data.get("oldName"));
-        assertEquals("companion", data.get("newName"));
-        assertEquals("field", data.get("symbolKind"));
-
-        int totalEdits = ((Number) data.get("totalEdits")).intValue();
-        int filesAffected = ((Number) data.get("filesAffected")).intValue();
-
-        // Expected: 4 edits in FieldHolder (decl + 2 ctor inits + getPet return) + 4 edits
-        // in WidgetHelper (describe read + swap write + extract read + extract write) = 8
-        // across 2 files. Tool may or may not count the declaration itself as an edit; bound
-        // conservatively at >= 7 across 2 files.
-        assertEquals(2, filesAffected,
-            "FieldHolder.pet must be renamed across both declaring file and WidgetHelper");
-        // 4 edits in FieldHolder (decl + 2 ctor inits + getPet) + 4 in WidgetHelper = 8.
-        assertEquals(8, totalEdits,
-            "pet rename produces exactly 8 edits across the two files; got: " + totalEdits);
-
-        @SuppressWarnings("unchecked")
-        java.util.Map<String, java.util.List<?>> editsByFile =
-            (java.util.Map<String, java.util.List<?>>) data.get("editsByFile");
-        boolean hasFieldHolder = editsByFile.keySet().stream()
-            .anyMatch(k -> k.replace('\\', '/').endsWith("FieldHolder.java"));
-        boolean hasWidgetHelper = editsByFile.keySet().stream()
-            .anyMatch(k -> k.replace('\\', '/').endsWith("WidgetHelper.java"));
-        assertTrue(hasFieldHolder, "edits must include FieldHolder.java; got: " + editsByFile.keySet());
-        assertTrue(hasWidgetHelper, "edits must include WidgetHelper.java; got: " + editsByFile.keySet());
+        // FieldHolder: the declaration (4), both constructors' this.pet (7, 11) and getPet (15).
+        // WidgetHelper: describe's read (5), swap's write (9), extract's read and write (13, 14).
+        String fieldHolder = "src/main/java/com/example/FieldHolder.java";
+        String widgetHelper = "src/main/java/com/example/WidgetHelper.java";
+        assertPayload(at(projectPath.resolve(fieldHolder).toString(), 4, 11, "companion"),
+            rename("pet", "companion", "field", Map.of(
+                fieldHolder, List.of(edit(15, 15), edit(11, 13), edit(7, 13), edit(4, 11)),
+                widgetHelper, List.of(edit(14, 15), edit(13, 32), edit(9, 15), edit(5, 32))), null));
     }
 
     @Test
     @DisplayName("renaming MethodRefTarget.formatId propagates to MethodRefTarget::formatId method-reference call site")
     void renameMethod_propagatesToTypeMethodReference() {
-        // MethodRefUser holds `IntFunction<String> formatter = MethodRefTarget::formatId;`
-        // (a TypeMethodReference). Renaming formatId must update that reference; the
-        // formatter's binding doesn't change at the binding-key level (still IMethodBinding
-        // for the same method), but the textual identifier `formatId` in the call site
-        // must be rewritten to the new name.
-        String methodRefTargetPath = projectPath
-            .resolve("src/main/java/com/example/MethodRefTarget.java").toString();
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", methodRefTargetPath);
-        // 0-based line 8: `    public static String formatId(int id) {`
-        // "formatId" starts at column 25 (4 indent + "public static String " = 25).
-        args.put("line", 8);
-        args.put("column", 25);
-        args.put("newName", "formatIdentifier");
-
-        ToolResponse response = tool.execute(args);
-        assertTrue(response.isSuccess(),
-            "Rename must succeed; got error: " +
-                (response.getError() != null ? response.getError().getMessage() : "n/a"));
-
-        Map<String, List<Map<String, Object>>> editsByFile = getEditsByFile(getData(response));
-        // The declaration update is in MethodRefTarget.java; the method-reference
-        // update must be in MethodRefUser.java.
-        boolean hasUserFile = editsByFile.keySet().stream()
-            .anyMatch(k -> k.replace('\\', '/').endsWith("MethodRefUser.java"));
-        assertTrue(hasUserFile,
-            "MethodRefUser.java must appear in edits — it has a `MethodRefTarget::formatId` " +
-                "method-reference that must be rewritten to ::formatIdentifier; got files: "
-                + editsByFile.keySet());
-
-        // The edit's oldText must be `formatId` (the identifier inside the method
-        // reference); newText `formatIdentifier`.
-        List<Map<String, Object>> userEdits = editsByFile.entrySet().stream()
-            .filter(e -> e.getKey().replace('\\', '/').endsWith("MethodRefUser.java"))
-            .map(Map.Entry::getValue)
-            .findFirst().orElseThrow();
-        boolean hasFormatIdRewrite = userEdits.stream()
-            .anyMatch(e -> "formatId".equals(e.get("oldText"))
-                && "formatIdentifier".equals(e.get("newText")));
-        assertTrue(hasFormatIdRewrite,
-            "Expected an edit in MethodRefUser.java rewriting `formatId` to `formatIdentifier`; " +
-                "got: " + userEdits);
+        // MethodRefUser holds `IntFunction<String> formatter = MethodRefTarget::formatId;` (line 15).
+        String target = "src/main/java/com/example/MethodRefTarget.java";
+        String user = "src/main/java/com/example/MethodRefUser.java";
+        assertPayload(at(projectPath.resolve(target).toString(), 8, 25, "formatIdentifier"),
+            rename("formatId", "formatIdentifier", "method", Map.of(
+                target, List.of(edit(8, 25)),
+                user, List.of(edit(15, 57))), null));
     }
 
     @Test
-    @DisplayName("renaming SuperMethodParent.greet propagates to the super.greet(name) call site in SuperMethodChild")
+    @DisplayName("renaming SuperMethodParent.greet propagates to super.greet(name) and super::greet in SuperMethodChild")
     void renameMethod_propagatesToSuperMethodInvocation() {
-        // SuperMethodChild.enthusiasticGreet calls super.greet(name). Renaming
-        // SuperMethodParent.greet → salute must rewrite super.greet to super.salute.
-        // SuperMethodInvocation's name is a SimpleName whose binding matches the
-        // rename target.
-        String parentPath = projectPath
-            .resolve("src/main/java/com/example/SuperMethodParent.java").toString();
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", parentPath);
-        // 0-based line 8: `    public String greet(String name) {`
-        // "greet" starts at column 18.
-        args.put("line", 8);
-        args.put("column", 18);
-        args.put("newName", "salute");
-
-        ToolResponse response = tool.execute(args);
-        assertTrue(response.isSuccess(),
-            "Rename must succeed; got error: " +
-                (response.getError() != null ? response.getError().getMessage() : "n/a"));
-
-        Map<String, List<Map<String, Object>>> editsByFile = getEditsByFile(getData(response));
-        boolean hasChild = editsByFile.keySet().stream()
-            .anyMatch(k -> k.replace('\\', '/').endsWith("SuperMethodChild.java"));
-        assertTrue(hasChild,
-            "SuperMethodChild.java must appear in edits — it has a super.greet(name) call " +
-                "site that must be rewritten to super.salute(name); got files: " +
-                editsByFile.keySet());
-
-        List<Map<String, Object>> childEdits = editsByFile.entrySet().stream()
-            .filter(e -> e.getKey().replace('\\', '/').endsWith("SuperMethodChild.java"))
-            .map(Map.Entry::getValue)
-            .findFirst().orElseThrow();
-        boolean hasGreetRewrite = childEdits.stream()
-            .anyMatch(e -> "greet".equals(e.get("oldText"))
-                && "salute".equals(e.get("newText")));
-        assertTrue(hasGreetRewrite,
-            "Expected an edit in SuperMethodChild.java rewriting `greet` → `salute`; got: "
-                + childEdits);
+        // SuperMethodChild does not override greet: it calls super.greet(name) (line 17) and
+        // captures super::greet (line 21).
+        String parent = "src/main/java/com/example/SuperMethodParent.java";
+        String child = "src/main/java/com/example/SuperMethodChild.java";
+        assertPayload(at(projectPath.resolve(parent).toString(), 8, 18, "salute"),
+            rename("greet", "salute", "method", Map.of(
+                parent, List.of(edit(8, 18)),
+                child, List.of(edit(21, 22), edit(17, 21))), null));
     }
 
     // ========== Behavior-matrix coverage ==========
 
     @Test
-    @DisplayName("Per-edit shape: line, column, endColumn, oldText, newText, startOffset, endOffset all present")
+    @DisplayName("Per-edit shape: line, column, endColumn, oldText, newText, and an offset span equal to the old name's length")
     void perEdit_shapeIncludesAllFields() {
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", calculatorPath);
-        args.put("line", 14);
-        args.put("column", 15);
-        args.put("newName", "sum");
-
-        ToolResponse r = tool.execute(args);
-        assertTrue(r.isSuccess());
-        Map<String, Object> data = getData(r);
-        Map<String, List<Map<String, Object>>> editsByFile = getEditsByFile(data);
-        for (List<Map<String, Object>> edits : editsByFile.values()) {
-            for (Map<String, Object> e : edits) {
-                assertTrue(((Number) e.get("line")).intValue() >= 0, "line >= 0; got: " + e);
-                assertEquals("add", e.get("oldText"));
-                assertEquals("sum", e.get("newText"));
-                int col = ((Number) e.get("column")).intValue();
-                int endCol = ((Number) e.get("endColumn")).intValue();
-                assertTrue(col >= 0, "column >= 0; got: " + e);
-                assertEquals(col + "add".length(), endCol,
-                    "endColumn must equal column + oldText.length(); got: " + e);
-                int startOffset = ((Number) e.get("startOffset")).intValue();
-                int endOffset = ((Number) e.get("endOffset")).intValue();
-                assertTrue(startOffset >= 0, "startOffset >= 0; got: " + e);
-                assertEquals(startOffset + "add".length(), endOffset,
-                    "endOffset must equal startOffset + oldText.length(); got: " + e);
-            }
-        }
+        assertPayload(addToSum(), ADD_TO_SUM);
     }
 
     @Test
-    @DisplayName("Rename type sets symbolKind=Class and emits the file-rename note")
+    @DisplayName("Rename type sets symbolKind from the type's kind and emits the file-rename note")
     void renameClass_emitsFileRenameNote() {
-        // Calculator.java line 5 (0-based) `public class Calculator {`
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", calculatorPath);
-        args.put("line", 5);
-        args.put("column", 13); // start of `Calculator`
-        args.put("newName", "ComputeEngine");
-
-        ToolResponse r = tool.execute(args);
-        assertTrue(r.isSuccess());
-        Map<String, Object> data = getData(r);
-        assertEquals("Calculator", data.get("oldName"));
-        assertEquals("class", data.get("symbolKind"));
-        assertEquals("Renaming a type may require renaming the file as well", data.get("note"));
+        // Marker (declared on line 11, `public @interface Marker`) is applied as @Marker in seven
+        // positions of AnnotationUsages and referenced nowhere else.
+        String marker = "src/main/java/com/example/Marker.java";
+        String usages = "src/main/java/com/example/AnnotationUsages.java";
+        assertPayload(at(projectPath.resolve(marker).toString(), 11, 18, "Tagged"), rename("Marker", "Tagged",
+            "annotation", Map.of(
+                marker, List.of(edit(11, 18)),
+                usages, List.of(edit(35, 17), edit(31, 9), edit(30, 33), edit(16, 5), edit(12, 5), edit(9, 5),
+                    edit(6, 1))),
+            "Renaming a type may require renaming the file as well"));
     }
 
     @Test
     @DisplayName("Rename method propagates to call sites in other files")
     void renameMethod_includesCrossFileCallSites() {
-        // Calculator.add — called from UserService (calculator.add(...)) and SampleTest.
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", calculatorPath);
-        args.put("line", 14);
-        args.put("column", 15);
-        args.put("newName", "sum");
-
-        ToolResponse r = tool.execute(args);
-        assertTrue(r.isSuccess());
-        Map<String, Object> data = getData(r);
-        Map<String, List<Map<String, Object>>> editsByFile = getEditsByFile(data);
-        // Files containing add or its calls: Calculator.java (decl), and at minimum UserService.java.
-        java.util.Set<String> files = new java.util.HashSet<>();
-        for (String k : editsByFile.keySet()) {
-            String n = k.replace('\\', '/');
-            files.add(n.substring(n.lastIndexOf('/') + 1));
-        }
-        assertTrue(files.contains("Calculator.java"),
-            "Calculator.java (declaration) must be edited; got: " + files);
-        assertTrue(files.contains("UserService.java"),
-            "UserService.java (caller) must be edited; got: " + files);
+        assertPayload(addToSum(), ADD_TO_SUM);
     }
 
     @Test
     @DisplayName("Method rename does NOT touch a same-named but unrelated method in a different type (isolation)")
     void renameMethod_isolation_doesNotTouchUnrelatedSameName() {
-        // Calculator.add is being renamed. The fixture has other types that may have a
-        // method named `add` (e.g., List<...>.add); those bind to a different element and
-        // must not appear in editsByFile.
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", calculatorPath);
-        args.put("line", 14);
-        args.put("column", 15);
-        args.put("newName", "sum");
-
-        ToolResponse r = tool.execute(args);
-        assertTrue(r.isSuccess());
-        Map<String, Object> data = getData(r);
-        Map<String, List<Map<String, Object>>> editsByFile = getEditsByFile(data);
-        for (List<Map<String, Object>> edits : editsByFile.values()) {
-            for (Map<String, Object> e : edits) {
-                assertEquals("add", e.get("oldText"),
-                    "Every edit's oldText must be `add` for the Calculator.add rename; got: " + e);
-            }
-        }
+        // List.add calls (SearchPatterns' calcs.add, list.add) bind to another method.
+        assertPayload(addToSum(), ADD_TO_SUM);
     }
 
     @Test
-    @DisplayName("Reject reserved word: var, sealed, permits, record, yield, non-sealed all rejected")
+    @DisplayName("Reject reserved word: var, sealed, permits, record, yield all rejected")
     void rejectAdditionalReservedWords() {
-        for (String word : List.of("var", "sealed", "permits", "record", "yield")) {
-            ObjectNode args = objectMapper.createObjectNode();
-            args.put("filePath", refactoringTargetPath);
-            args.put("line", 88);
-            args.put("column", 12);
-            args.put("newName", word);
-            ToolResponse r = tool.execute(args);
-            assertFalse(r.isSuccess(),
-                "Reserved word `" + word + "` must be rejected");
-        }
+        assertAll(List.of("var", "sealed", "permits", "record", "yield").stream()
+            .map(word -> (org.junit.jupiter.api.function.Executable) () -> assertPayload(
+                at(refactoringTargetPath, 88, 12, word),
+                refusal("Invalid parameter 'newName': Not a valid Java identifier"))));
     }
 
     @Test
     @DisplayName("Reject empty newName")
     void rejectEmptyNewName() {
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", refactoringTargetPath);
-        args.put("line", 88);
-        args.put("column", 12);
-        args.put("newName", "");
-        ToolResponse r = tool.execute(args);
-        assertFalse(r.isSuccess());
-        assertEquals("INVALID_PARAMETER", r.getError().getCode());
+        assertPayload(at(refactoringTargetPath, 88, 12, ""), refusal("Invalid parameter 'newName': Required"));
     }
 
     @Test
     @DisplayName("Non-type rename (method) does NOT include the file-rename note")
     void renameMethod_noFileRenameNote() {
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", calculatorPath);
-        args.put("line", 14);
-        args.put("column", 15);
-        args.put("newName", "sum");
-
-        ToolResponse r = tool.execute(args);
-        assertTrue(r.isSuccess());
-        Map<String, Object> data = getData(r);
-        assertNull(data.get("note"),
-            "Method rename must not include file-rename note; got: " + data.get("note"));
+        assertPayload(addToSum(), ADD_TO_SUM);
     }
 
     @Test
     @DisplayName("Renaming a generic-class type parameter propagates to its usages in member signatures and body")
-    @SuppressWarnings("unchecked")
     void renameTypeParameter_propagatesInClassBody() {
-        // TypeKindsFixture.GenericContainer<T> declares <T> and uses T in:
-        //   - field declaration: `private T value;`
-        //   - getter return type: `public T get()`
-        //   - setter parameter type: `public void set(T value)`
-        // Position cursor on the T declaration in `class GenericContainer<T>`
-        // (0-based line 16, column 41) and rename to E. Every use of T inside
-        // the class body must be updated.
-        String tkf = projectPath.resolve("src/main/java/com/example/TypeKindsFixture.java").toString();
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", tkf);
-        args.put("line", 16);
-        args.put("column", 41);
-        args.put("newName", "E");
-
-        ToolResponse r = tool.execute(args);
-        assertTrue(r.isSuccess(),
-            "Rename on a type parameter must succeed; got error: "
-                + (r.getError() != null ? r.getError().getMessage() : "n/a"));
-
-        Map<String, List<Map<String, Object>>> editsByFile = getEditsByFile(getData(r));
-        assertNotNull(editsByFile);
-        assertFalse(editsByFile.isEmpty(),
-            "rename of a type parameter must produce at least one file edit; full response: " + getData(r));
-
-        List<Map<String, Object>> edits = editsByFile.entrySet().stream()
-            .filter(e -> e.getKey().replace('\\', '/').endsWith("TypeKindsFixture.java"))
-            .findFirst().map(java.util.Map.Entry::getValue)
-            .orElseThrow(() -> new AssertionError(
-                "Edits must be under TypeKindsFixture.java; got files: " + editsByFile.keySet()
-                    + "; full response: " + getData(r)));
-
-        // Edit set must include the declaration (line 16) AND the body usages:
-        //   line 18 (private T value;)
-        //   line 20 (public T get())
-        //   line 24 (set(T value))
-        // The declaration edit at line 16 is included by rename_symbol's
-        // editsByFile (the response always rewrites the declaration too).
-        java.util.Set<Integer> editLines = new java.util.HashSet<>();
-        for (Map<String, Object> e : edits) {
-            editLines.add(((Number) e.get("line")).intValue());
-        }
-        assertTrue(editLines.contains(18),
-            "Field declaration `private T value;` must be rewritten; got lines: " + editLines);
-        assertTrue(editLines.contains(20),
-            "Getter return type `public T get()` must be rewritten; got lines: " + editLines);
-        assertTrue(editLines.contains(24),
-            "Setter parameter type `public void set(T value)` must be rewritten; got lines: " + editLines);
-
-        // Every edit's newText must be the new name "E".
-        for (Map<String, Object> e : edits) {
-            assertEquals("E", e.get("newText"),
-                "Rename edit must substitute E for T; got: " + e);
-        }
+        // TypeKindsFixture.GenericContainer<T> (line 16, column 41) uses T in its field (18), the
+        // getter's return type (20) and the setter's parameter type (24).
+        String typeKinds = "src/main/java/com/example/TypeKindsFixture.java";
+        assertPayload(at(projectPath.resolve(typeKinds).toString(), 16, 41, "E"), rename("T", "E", "typeParameter",
+            Map.of(typeKinds, List.of(edit(24, 24), edit(20, 15), edit(18, 16), edit(16, 41))), null));
     }
 
     @Test
     @DisplayName("totalEdits equals the sum of per-file edit list sizes")
     void totalEdits_sumsAcrossFiles() {
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", calculatorPath);
-        args.put("line", 14);
-        args.put("column", 15);
-        args.put("newName", "sum");
-
-        ToolResponse r = tool.execute(args);
-        assertTrue(r.isSuccess());
-        Map<String, Object> data = getData(r);
-        int total = ((Number) data.get("totalEdits")).intValue();
-        int sum = getEditsByFile(data).values().stream().mapToInt(List::size).sum();
-        assertEquals(total, sum, "totalEdits must equal the sum of per-file edits");
+        assertPayload(addToSum(), ADD_TO_SUM);
     }
 
     // ========== MCP envelope seam (exact authored values through processMessage) ==========
 
     @Test
-    @DisplayName("Through the real MCP envelope: renaming Calculator.add edits Calculator + UserService, every edit add->sum")
+    @DisplayName("Through the real MCP envelope: renaming Calculator.add edits its declaration and its four calls, every edit add->sum")
     void envelope_renameAdd_crossFileExactEdits() {
         ObjectNode args = envelope.args();
         args.put("filePath", calculatorPath);
         args.put("line", 14);
         args.put("column", 15);
         args.put("newName", "sum");
-        JsonNode payload = envelope.assertEnvelopeFidelity("rename_symbol", args);
+        assertPayload(args, ADD_TO_SUM);
+    }
 
-        assertTrue(payload.get("success").asBoolean(),
-            () -> "rename_symbol failed through the envelope: " + payload);
-        JsonNode data = payload.get("data");
-        assertEquals("add", data.get("oldName").asText());
-        assertEquals("method", data.get("symbolKind").asText());
+    // ========== exact payload helpers ==========
 
-        JsonNode editsByFile = data.get("editsByFile");
-        java.util.Set<String> files = new java.util.TreeSet<>();
-        java.util.Iterator<String> keys = editsByFile.fieldNames();
-        while (keys.hasNext()) {
-            String k = keys.next();
-            String n = k.replace('\\', '/');
-            files.add(n.substring(n.lastIndexOf('/') + 1));
-            for (JsonNode e : editsByFile.get(k)) {
-                assertEquals("add", e.get("oldText").asText(),
-                    "every rename edit rewrites `add` through the envelope; got: " + e);
-                assertEquals("sum", e.get("newText").asText());
+    private static final String REFACTORING_TARGET = "src/main/java/com/example/RefactoringTarget.java";
+
+    /**
+     * Calculator.add renamed to sum: its declaration (line 14) and its calls in SearchPatterns
+     * (58, 80), UserService (58) and SampleTest (35); the edit sits on `add` in each.
+     */
+    private static final Map<String, Object> ADD_TO_SUM = rename("add", "sum", "method", Map.of(
+        "src/main/java/com/example/Calculator.java", List.of(edit(14, 15)),
+        "src/main/java/com/example/SearchPatterns.java", List.of(edit(80, 17), edit(58, 26)),
+        "src/main/java/com/example/service/UserService.java", List.of(edit(58, 26)),
+        "src/test/java/com/example/SampleTest.java", List.of(edit(35, 32))), null);
+
+    private ObjectNode addToSum() {
+        return at(calculatorPath, 14, 15, "sum");
+    }
+
+    private ObjectNode at(String file, int line, int column, String newName) {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", file);
+        args.put("line", line);
+        args.put("column", column);
+        args.put("newName", newName);
+        return args;
+    }
+
+    /** An edit at {@code line} and {@code column}; its old and new names are filled in by {@link #rename}. */
+    private static Map<String, Object> edit(int line, int column) {
+        Map<String, Object> edit = new LinkedHashMap<>();
+        edit.put("line", line);
+        edit.put("column", column);
+        return edit;
+    }
+
+    /** The success payload renaming {@code oldName} to {@code newName} with {@code edits} by file. */
+    private static Map<String, Object> rename(String oldName, String newName, String symbolKind,
+                                              Map<String, List<Map<String, Object>>> edits, String note) {
+        Map<String, List<Map<String, Object>>> editsByFile = new LinkedHashMap<>();
+        int total = 0;
+        for (Map.Entry<String, List<Map<String, Object>>> file : edits.entrySet()) {
+            List<Map<String, Object>> fileEdits = new ArrayList<>();
+            for (Map<String, Object> position : file.getValue()) {
+                Map<String, Object> edit = new LinkedHashMap<>(position);
+                edit.put("endColumn", (int) position.get("column") + oldName.length());
+                edit.put("oldText", oldName);
+                edit.put("newText", newName);
+                edit.put("span", oldName.length());
+                fileEdits.add(edit);
             }
+            editsByFile.put(file.getKey(), fileEdits);
+            total += fileEdits.size();
         }
-        assertTrue(files.contains("Calculator.java"),
-            "declaration file Calculator.java must be edited; got: " + files);
-        assertTrue(files.contains("UserService.java"),
-            "cross-file caller UserService.java must be edited; got: " + files);
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("oldName", oldName);
+        data.put("newName", newName);
+        data.put("symbolKind", symbolKind);
+        data.put("totalEdits", total);
+        data.put("filesAffected", editsByFile.size());
+        data.put("editsByFile", editsByFile);
+        if (note != null) {
+            data.put("note", note);
+        }
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("totalCount", total);
+        meta.put("returnedCount", total);
+        meta.put("suggestedNextTools", List.of(
+            "Apply the text edits to complete the rename",
+            "get_diagnostics to verify no errors after rename"));
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("success", true);
+        payload.put("data", data);
+        payload.put("meta", meta);
+        return payload;
+    }
+
+    private static Map<String, Object> refusal(String message) {
+        return Map.of("success", false, "error", Map.of("code", "INVALID_PARAMETER", "message", message));
+    }
+
+    /**
+     * The payload through execute(), read back from the JSON text it serializes to, and through
+     * the JSON-RPC envelope both equal {@code expected}, each edit's raw offsets replaced by
+     * their span.
+     */
+    private void assertPayload(ObjectNode args, Map<String, Object> expected) {
+        JsonNode expectedJson = objectMapper.valueToTree(expected);
+        JsonNode direct;
+        try {
+            direct = spans(objectMapper.readTree(objectMapper.writeValueAsString(tool.execute(args.deepCopy()))));
+        } catch (Exception e) {
+            throw new AssertionError("execute() payload does not serialize for " + args, e);
+        }
+        JsonNode wire = spans(envelope.assertEnvelopeFidelity("rename_symbol", args));
+        assertAll(
+            () -> assertEquals(expectedJson, direct, "execute() payload for " + args),
+            () -> assertEquals(expectedJson, wire, "envelope payload for " + args));
+    }
+
+    /** {@code payload} with each edit's startOffset and endOffset replaced by the span between them. */
+    private static JsonNode spans(JsonNode payload) {
+        JsonNode copy = payload.deepCopy();
+        copy.path("data").path("editsByFile").forEach(edits -> edits.forEach(edit -> {
+            ObjectNode object = (ObjectNode) edit;
+            int span = object.path("endOffset").asInt() - object.path("startOffset").asInt();
+            object.remove(List.of("startOffset", "endOffset"));
+            object.put("span", span);
+        }));
+        return copy;
     }
 }

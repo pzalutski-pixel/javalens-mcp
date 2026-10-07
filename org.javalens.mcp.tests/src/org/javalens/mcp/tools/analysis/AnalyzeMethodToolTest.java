@@ -14,12 +14,22 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
-import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
+/**
+ * analyze_method on simple-maven. Every expectation is the whole payload, derived from the
+ * fixture source and asserted through execute() and through the JSON-RPC envelope. A method's
+ * line is where its source range starts, its Javadoc or annotations included, zero-based; callers
+ * come in search order (by file path, then position) and callees in source order, each listed
+ * once.
+ *
+ * <p>Calculator.add is called by SearchPatterns.createObjects (line 58) and performCasts (80),
+ * UserService.calculateSum (58) and SampleTest.testAddition (35), and calls nothing.
+ */
 class AnalyzeMethodToolTest {
 
     @RegisterExtension
@@ -42,8 +52,6 @@ class AnalyzeMethodToolTest {
 
     @SuppressWarnings("unchecked")
     private Map<String, Object> getData(ToolResponse r) { return (Map<String, Object>) r.getData(); }
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> getMethod(Map<String, Object> d) { return (Map<String, Object>) d.get("method"); }
 
     // ========== exact payload helpers ==========
 
@@ -156,67 +164,66 @@ class AnalyzeMethodToolTest {
             () -> assertEquals(expectedJson, wire, "envelope payload for " + args));
     }
 
-    @Test @DisplayName("analyzes method comprehensively")
-    void analyzesMethodComprehensively() {
+    private static final String ANIMAL = "src/main/java/com/example/Animal.java";
+    private static final String USER_SERVICE = "src/main/java/com/example/service/UserService.java";
+    private static final String SAMPLE_TEST = "src/test/java/com/example/SampleTest.java";
+
+    private static final Map<String, Object> CREATE_OBJECTS =
+        caller("createObjects", "com.example.SearchPatterns", SEARCH_PATTERNS, 58);
+
+    /** Calculator.add with every caller listed. */
+    private static final Map<String, Object> ADD_FULL = analysis(CALCULATOR_ADD, ADD_PARAMETERS,
+        calls(4, List.of(
+            CREATE_OBJECTS,
+            caller("performCasts", "com.example.SearchPatterns", SEARCH_PATTERNS, 80),
+            caller("calculateSum", "com.example.service.UserService", USER_SERVICE, 58),
+            caller("testAddition", "com.example.SampleTest", SAMPLE_TEST, 35))),
+        calls(0, List.of()), Map.of());
+
+    private ObjectNode at(String file, int line, int column) {
         ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", calculatorPath);
-        args.put("line", 14);  // add method
-        args.put("column", 15);
+        args.put("filePath", file);
+        args.put("line", line);
+        args.put("column", column);
+        return args;
+    }
 
-        ToolResponse r = tool.execute(args);
+    private static Map<String, Object> callee(String name, String kind, String qualifiedType, String signature,
+                                              int callLine) {
+        Map<String, Object> callee = callee(name, qualifiedType, signature, callLine);
+        callee.put("kind", kind);
+        return callee;
+    }
 
-        assertTrue(r.isSuccess());
-        Map<String, Object> data = getData(r);
-        Map<String, Object> method = getMethod(data);
+    /** {@code payload}'s data with the declared exceptions {@code exceptions}. */
+    @SuppressWarnings("unchecked")
+    private static void withExceptions(Map<String, Object> payload, List<String> exceptions) {
+        ((Map<String, Object>) payload.get("data")).put("exceptions", exceptions);
+    }
 
-        // Method info — exact contract
-        assertEquals("add", method.get("name"));
-        assertEquals("add(int a, int b): int", method.get("signature"));
-        assertEquals("com.example.Calculator", method.get("declaringType"));
-        assertEquals("int", method.get("returnType"));
+    private static Map<String, Object> refusal(String message) {
+        return Map.of("success", false, "error", Map.of("code", "INVALID_PARAMETER", "message", message));
+    }
 
-        // Parameters: Calculator.add(int a, int b) has exactly 2
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> parameters = (List<Map<String, Object>>) data.get("parameters");
-        assertNotNull(parameters, "parameters list missing");
-        assertEquals(2, parameters.size(),
-            "Calculator.add has 2 parameters; got: " + parameters);
-
-        // Call hierarchy — each block must be a structured map with a `list`
-        @SuppressWarnings("unchecked")
-        Map<String, Object> callers = (Map<String, Object>) data.get("callers");
-        assertNotNull(callers, "callers block missing");
-        assertNotNull(callers.get("list"), "callers.list missing; got: " + callers);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> callees = (Map<String, Object>) data.get("callees");
-        assertNotNull(callees, "callees block missing");
-        assertNotNull(callees.get("list"), "callees.list missing; got: " + callees);
-        // overrides may be a single map (if it overrides) or null/empty
-        // marker (if it doesn't); presence is the contract.
-        assertNotNull(data.get("overrides"), "overrides field missing (may be null/empty marker)");
+    @Test @DisplayName("analyzes method comprehensively: Calculator.add's info, parameters, four callers, no callees, no overrides")
+    void analyzesMethodComprehensively() {
+        assertPayload(at(calculatorPath, 14, 15), ADD_FULL);
     }
 
     @Test @DisplayName("maxCallers=1 lists the first of Calculator.add's 4 distinct callers, counts all 4 and reports the cut")
     void respectsMaxLimits() {
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", calculatorPath);
-        args.put("line", 14);
-        args.put("column", 15);
+        ObjectNode args = at(calculatorPath, 14, 15);
         args.put("maxCallers", 1);
         args.put("maxCallees", 1);
         // Callers in search order: SearchPatterns.createObjects, SearchPatterns.performCasts,
         // UserService.calculateSum, SampleTest.testAddition. add calls nothing.
-        assertPayload(args, analysis(CALCULATOR_ADD, ADD_PARAMETERS,
-            calls(4, List.of(caller("createObjects", "com.example.SearchPatterns", SEARCH_PATTERNS, 58))),
+        assertPayload(args, analysis(CALCULATOR_ADD, ADD_PARAMETERS, calls(4, List.of(CREATE_OBJECTS)),
             calls(0, List.of()), Map.of()));
     }
 
     @Test @DisplayName("maxCallees=1 lists the first of performCasts' 4 distinct callees in source order, counts all 4 and reports the cut")
     void maxCalleesOne_countsEveryCallee() {
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", helper.getFixturePath("simple-maven").resolve(SEARCH_PATTERNS).toString());
-        args.put("line", 64);
-        args.put("column", 16);
+        ObjectNode args = at(helper.getFixturePath("simple-maven").resolve(SEARCH_PATTERNS).toString(), 64, 16);
         args.put("maxCallees", 1);
         // performCasts calls println(String) on line 68, println(int) and size() on line 74 and
         // add(int, int) on line 80; nothing calls performCasts.
@@ -228,350 +235,175 @@ class AnalyzeMethodToolTest {
 
     @Test @DisplayName("missing filePath/line/column each yield exact INVALID_PARAMETER")
     void requiresParameters() {
-        ToolResponse noFile = tool.execute(objectMapper.createObjectNode());
-        assertFalse(noFile.isSuccess());
-        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, noFile.getError().getCode());
-        assertEquals("Invalid parameter 'filePath': Required parameter missing",
-            noFile.getError().getMessage());
-
         ObjectNode noLine = objectMapper.createObjectNode();
         noLine.put("filePath", calculatorPath);
         noLine.put("column", 15);
-        ToolResponse noLineResp = tool.execute(noLine);
-        assertFalse(noLineResp.isSuccess());
-        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, noLineResp.getError().getCode());
-        assertEquals("Invalid parameter 'line': Must be >= 0 (zero-based)", noLineResp.getError().getMessage());
-
         ObjectNode noColumn = objectMapper.createObjectNode();
         noColumn.put("filePath", calculatorPath);
         noColumn.put("line", 14);
-        ToolResponse noColumnResp = tool.execute(noColumn);
-        assertFalse(noColumnResp.isSuccess());
-        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, noColumnResp.getError().getCode());
-        assertEquals("Invalid parameter 'column': Must be >= 0 (zero-based)", noColumnResp.getError().getMessage());
+        assertAll(
+            () -> assertPayload(objectMapper.createObjectNode(),
+                refusal("Invalid parameter 'filePath': Required parameter missing")),
+            () -> assertPayload(noLine, refusal("Invalid parameter 'line': Must be >= 0 (zero-based)")),
+            () -> assertPayload(noColumn, refusal("Invalid parameter 'column': Must be >= 0 (zero-based)")));
     }
 
     @Test @DisplayName("non-existent file -> FILE_NOT_FOUND; non-method position -> INVALID_PARAMETER")
     void handlesInvalidInputs() {
-        ObjectNode badFile = objectMapper.createObjectNode();
-        badFile.put("filePath", "/nonexistent/File.java");
-        badFile.put("line", 14);
-        badFile.put("column", 15);
-        ToolResponse badFileResp = tool.execute(badFile);
-        assertFalse(badFileResp.isSuccess());
-        assertEquals(org.javalens.mcp.models.ErrorInfo.FILE_NOT_FOUND, badFileResp.getError().getCode());
-        assertEquals("File not found: /nonexistent/File.java", badFileResp.getError().getMessage());
-
-        // Line 0 col 0 is the package declaration — not a method.
-        ObjectNode notMethod = objectMapper.createObjectNode();
-        notMethod.put("filePath", calculatorPath);
-        notMethod.put("line", 0);
-        notMethod.put("column", 0);
-        ToolResponse notMethodResp = tool.execute(notMethod);
-        assertFalse(notMethodResp.isSuccess());
-        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, notMethodResp.getError().getCode());
-        assertEquals("Invalid parameter 'position': Position is not on a method",
-            notMethodResp.getError().getMessage());
+        // Line 0 col 0 of Calculator is the package declaration, not a method.
+        assertAll(
+            () -> assertPayload(at("/nonexistent/File.java", 14, 15), Map.of("success", false, "error", Map.of(
+                "code", "FILE_NOT_FOUND",
+                "message", "File not found: /nonexistent/File.java",
+                "hint", "Verify the file path is correct and the file exists"))),
+            () -> assertPayload(at(calculatorPath, 0, 0),
+                refusal("Invalid parameter 'position': Position is not on a method")));
     }
 
     // ========== Semantic-grade tests ==========
 
     @Test
-    @DisplayName("Calculator.add aggregate: exact caller file set and count")
+    @DisplayName("Calculator.add aggregate: exact caller files and count with maxCallers=100")
     void calculatorAdd_callersExactFilesAndCount() {
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", calculatorPath);
-        args.put("line", 14);
-        args.put("column", 15);
+        ObjectNode args = at(calculatorPath, 14, 15);
         args.put("maxCallers", 100);
-
-        ToolResponse r = tool.execute(args);
-        assertTrue(r.isSuccess());
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> callers = (Map<String, Object>) getData(r).get("callers");
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> list = (List<Map<String, Object>>) callers.get("list");
-
-        // 4 distinct enclosing methods invoke Calculator.add: SampleTest.testAddition,
-        // SearchPatterns.createObjects, SearchPatterns.performCasts, UserService.calculateSum.
-        assertEquals(4, ((Number) callers.get("count")).intValue());
-        assertEquals(4, list.size());
-
-        // AnalyzeMethodTool emits the per-caller file as `file` (not `filePath`).
-        java.util.Set<String> callerFiles = list.stream()
-            .map(c -> (String) c.get("file"))
-            .map(s -> s.replace('\\', '/'))
-            .map(s -> s.substring(s.lastIndexOf('/') + 1))
-            .collect(java.util.stream.Collectors.toSet());
-        assertEquals(java.util.Set.of("SampleTest.java", "SearchPatterns.java", "UserService.java"),
-            callerFiles);
+        assertPayload(args, ADD_FULL);
     }
 
     // ========== Behavior-matrix coverage ==========
 
     @Test
-    @DisplayName("Method info has name, signature, declaringType, returnType, modifiers")
-    @SuppressWarnings("unchecked")
+    @DisplayName("Method info has name, constructor, modifiers, declaringType, signature, returnType, file, line")
     void method_shape() {
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", calculatorPath);
-        args.put("line", 14);
-        args.put("column", 15);
-        ToolResponse r = tool.execute(args);
-        assertTrue(r.isSuccess());
-        Map<String, Object> method = getMethod(getData(r));
-        for (String key : List.of("name", "signature", "declaringType", "returnType", "modifiers")) {
-            assertNotNull(method.get(key), key + " missing on method: " + method);
-        }
+        assertPayload(at(calculatorPath, 14, 15), ADD_FULL);
     }
 
     @Test
     @DisplayName("Calculator.add has 2 parameters: int a, int b")
     void calculatorAdd_parameters() {
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", calculatorPath);
-        args.put("line", 14);
-        args.put("column", 15);
-        ToolResponse r = tool.execute(args);
-        assertTrue(r.isSuccess());
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> params = (List<Map<String, Object>>) getData(r).get("parameters");
-        assertEquals(2, params.size(),
-            "Calculator.add(int a, int b) has 2 parameters; got: " + params);
-        // Exact parameter shape: first is (int a), second is (int b).
-        assertEquals("a", params.get(0).get("name"), "first param name; got: " + params.get(0));
-        assertEquals("int", params.get(0).get("type"), "first param type; got: " + params.get(0));
-        assertEquals("b", params.get(1).get("name"), "second param name; got: " + params.get(1));
-        assertEquals("int", params.get(1).get("type"), "second param type; got: " + params.get(1));
+        assertPayload(at(calculatorPath, 14, 15), ADD_FULL);
     }
 
     @Test
-    @DisplayName("callers block has list + count; count equals list.size()")
+    @DisplayName("callers block has list + count; nothing cut, count equals the list's size")
     void callersBlock_shape() {
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", calculatorPath);
-        args.put("line", 14);
-        args.put("column", 15);
+        ObjectNode args = at(calculatorPath, 14, 15);
         args.put("maxCallers", 100);
-        ToolResponse r = tool.execute(args);
-        assertTrue(r.isSuccess());
-        @SuppressWarnings("unchecked")
-        Map<String, Object> callers = (Map<String, Object>) getData(r).get("callers");
-        @SuppressWarnings("unchecked")
-        List<?> list = (List<?>) callers.get("list");
-        assertNotNull(list);
-        Object count = callers.get("count");
-        if (count != null) {
-            assertEquals(((Number) count).intValue(), list.size(),
-                "callers.count must equal callers.list.size(); got: " + callers);
-        }
+        assertPayload(args, ADD_FULL);
     }
 
     @Test
     @DisplayName("Calculator.add calls nothing: callees list is empty with count 0")
     void calculatorAdd_calleesEmpty() {
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", calculatorPath);
-        args.put("line", 14);
-        args.put("column", 15);
-        ToolResponse r = tool.execute(args);
-        assertTrue(r.isSuccess());
-        @SuppressWarnings("unchecked")
-        Map<String, Object> callees = (Map<String, Object>) getData(r).get("callees");
-        @SuppressWarnings("unchecked")
-        List<?> list = (List<?>) callees.get("list");
-        // add's body (lastResult = a + b; return lastResult;) invokes no methods or constructors.
-        assertEquals(0, list.size());
-        assertEquals(0, ((Number) callees.get("count")).intValue());
+        assertPayload(at(calculatorPath, 14, 15), ADD_FULL);
     }
 
     @Test
-    @DisplayName("Dog.speak override info: overrides Animal.speak with exact super coordinates")
-    @SuppressWarnings("unchecked")
+    @DisplayName("Dog.speak override info: overrides Animal.speak, by name and qualified type")
     void dogSpeak_overridesSuperMethod() {
-        String animalPath = helper.getFixturePath("simple-maven")
-            .resolve("src/main/java/com/example/Animal.java").toString();
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", animalPath);
-        args.put("line", 22);   // Dog.speak (0-based); col 16 = "speak"
-        args.put("column", 16);
-
-        ToolResponse r = tool.execute(args);
-        assertTrue(r.isSuccess(), () -> "Dog.speak must resolve; got: " + r.getError());
-        Map<String, Object> overrides = (Map<String, Object>) getData(r).get("overrides");
-        Map<String, Object> superInfo = (Map<String, Object>) overrides.get("overrides");
-        assertNotNull(superInfo, "Dog.speak overrides Animal.speak; super info missing; got: " + overrides);
-        assertEquals(Map.of("method", "speak", "qualifiedType", "com.example.Animal"), superInfo,
-            "super method, by name and qualified type only");
-        // Dog.speak is not itself overridden.
-        assertFalse(overrides.containsKey("overriddenBy"),
-            "Dog.speak has no overriders; got: " + overrides);
+        // Dog.speak (0-based line 22, col 16 = "speak") starts at its @Override on line 21.
+        Map<String, Object> method = methodInfo("speak", "com.example.Dog", "speak(): void", "void", ANIMAL, 21);
+        assertPayload(at(helper.getFixturePath("simple-maven").resolve(ANIMAL).toString(), 22, 16),
+            analysis(method, List.of(), calls(0, List.of()),
+                calls(1, List.of(callee("println", "java.io.PrintStream", "println(String)", 23))),
+                Map.of("overrides", Map.of("method", "speak", "qualifiedType", "com.example.Animal"))));
     }
 
     @Test
     @DisplayName("Animal.speak override info: overriddenBy lists Dog.speak, no super method")
-    @SuppressWarnings("unchecked")
     void animalSpeak_overriddenByDog() {
-        String animalPath = helper.getFixturePath("simple-maven")
-            .resolve("src/main/java/com/example/Animal.java").toString();
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", animalPath);
-        args.put("line", 7);    // Animal.speak (0-based); col 16 = "speak"
-        args.put("column", 16);
-
-        ToolResponse r = tool.execute(args);
-        assertTrue(r.isSuccess(), () -> "Animal.speak must resolve; got: " + r.getError());
-        Map<String, Object> overrides = (Map<String, Object>) getData(r).get("overrides");
-        // Animal declares no explicit superclass -> no super method.
-        assertFalse(overrides.containsKey("overrides"),
-            "Animal.speak overrides nothing; got: " + overrides);
-        List<Map<String, Object>> overriddenBy = (List<Map<String, Object>>) overrides.get("overriddenBy");
-        assertNotNull(overriddenBy, "Animal.speak is overridden by Dog.speak; got: " + overrides);
-        assertEquals(1, overriddenBy.size());
-        assertEquals(Map.of("method", "speak", "qualifiedType", "com.example.Dog"), overriddenBy.get(0),
-            "overrider, by name and qualified type only");
+        Map<String, Object> method = methodInfo("speak", "com.example.Animal", "speak(): void", "void", ANIMAL, 7);
+        assertPayload(at(helper.getFixturePath("simple-maven").resolve(ANIMAL).toString(), 7, 16),
+            analysis(method, List.of(), calls(0, List.of()),
+                calls(1, List.of(callee("println", "java.io.PrintStream", "println(String)", 8))),
+                Map.of("overriddenBy", List.of(Map.of("method", "speak", "qualifiedType", "com.example.Dog")))));
     }
 
     // ========== T-2 cross-tool consistency ==========
 
     @Test
-    @DisplayName("Calculator.add: analyze_method callers count agrees with get_call_hierarchy_incoming (cross-tool consistency)")
+    @DisplayName("Calculator.add: analyze_method callers are exactly get_call_hierarchy_incoming's callers (cross-tool consistency)")
     @SuppressWarnings("unchecked")
-    void calculatorAdd_callerCountAgreesWithCallHierarchy() throws Exception {
-        // If analyze_method's callers count drifts from get_call_hierarchy_incoming,
-        // one of the tools is wrong about what calls Calculator.add. This test pins
-        // them together.
-        GetCallHierarchyIncomingTool detail = new GetCallHierarchyIncomingTool(() -> service);
-
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", calculatorPath);
-        args.put("line", 14);
-        args.put("column", 15);
+    void calculatorAdd_callerCountAgreesWithCallHierarchy() {
+        // Both tools name the same four calling methods, in the same order.
+        ObjectNode args = at(calculatorPath, 14, 15);
         args.put("maxCallers", 100);
-
-        Map<String, Object> aggregateData = getData(tool.execute(args));
-        Map<String, Object> detailData = getData(detail.execute(args));
-
-        Map<String, Object> aggregateCallers = (Map<String, Object>) aggregateData.get("callers");
-        List<?> aggregateList = (List<?>) aggregateCallers.get("list");
-        List<?> detailCallers = (List<?>) detailData.get("callers");
-
-        assertNotNull(aggregateList, "aggregate callers.list must be present; got: " + aggregateCallers);
-        assertNotNull(detailCallers, "detail callers list must be present; got: " + detailData);
-        assertEquals(detailCallers.size(), aggregateList.size(),
-            "analyze_method.callers.list.size() must equal get_call_hierarchy_incoming.callers.size(); "
-                + "aggregate=" + aggregateList.size() + " detail=" + detailCallers.size());
+        List<Map<String, Object>> detailCallers = (List<Map<String, Object>>)
+            getData(new GetCallHierarchyIncomingTool(() -> service).execute(args.deepCopy())).get("callers");
+        List<Object> detailMethods = detailCallers.stream().map(caller -> caller.get("callerMethod")).toList();
+        assertAll(
+            () -> assertPayload(args, ADD_FULL),
+            () -> assertEquals(List.of("createObjects", "performCasts", "calculateSum", "testAddition"),
+                detailMethods));
     }
 
     @Test
-    @DisplayName("Method with throws clause: exceptions list is present with the declared exception types")
-    @SuppressWarnings("unchecked")
+    @DisplayName("Method with throws clause: exceptions lists IOException and IllegalArgumentException")
     void methodWithThrows_exceptionsBlockPresent() {
-        // SearchPatterns.riskyOperation declares `throws IOException, IllegalArgumentException`.
-        // Source line 131-137: emits the `exceptions` list only when exceptions.length > 0.
-        // Position on the method name `riskyOperation` (0-based line 123, col 16 for the name).
-        String searchPatternsPath = helper.getFixturePath("simple-maven")
-            .resolve("src/main/java/com/example/SearchPatterns.java").toString();
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", searchPatternsPath);
-        args.put("line", 123);
-        args.put("column", 16);
-
-        ToolResponse r = tool.execute(args);
-        assertTrue(r.isSuccess(),
-            "riskyOperation analyze must succeed; got: " +
-                (r.getError() != null ? r.getError().getMessage() : "n/a"));
-        List<String> exceptions = (List<String>) getData(r).get("exceptions");
-        assertNotNull(exceptions,
-            "exceptions list must be present for a method declaring throws; got null");
-        assertTrue(exceptions.contains("IOException"),
-            "exceptions list must include IOException; got: " + exceptions);
-        assertTrue(exceptions.contains("IllegalArgumentException"),
-            "exceptions list must include IllegalArgumentException; got: " + exceptions);
+        // SearchPatterns.riskyOperation (0-based line 123, col 16 for the name; its Javadoc starts
+        // on line 120) declares `throws IOException, IllegalArgumentException`. handleExceptions
+        // calls it on line 161; it creates an IllegalArgumentException (125), calls isEmpty()
+        // (127) and creates an IOException (128).
+        Map<String, Object> method = methodInfo("riskyOperation", "com.example.SearchPatterns",
+            "riskyOperation(String input): void", "void", SEARCH_PATTERNS, 120);
+        Map<String, Object> expected = analysis(method, List.of(parameter("String", "input")),
+            calls(1, List.of(caller("handleExceptions", "com.example.SearchPatterns", SEARCH_PATTERNS, 161))),
+            calls(3, List.of(
+                callee("IllegalArgumentException", "CONSTRUCTOR", "java.lang.IllegalArgumentException",
+                    "IllegalArgumentException(String)", 125),
+                callee("isEmpty", "java.lang.String", "isEmpty()", 127),
+                callee("IOException", "CONSTRUCTOR", "java.io.IOException", "IOException(String)", 128))),
+            Map.of());
+        withExceptions(expected, List.of("IOException", "IllegalArgumentException"));
+        assertPayload(at(helper.getFixturePath("simple-maven").resolve(SEARCH_PATTERNS).toString(), 123, 16),
+            expected);
     }
 
     @Test
     @DisplayName("Method without throws clause: exceptions list is omitted (not emitted as empty)")
-    @SuppressWarnings("unchecked")
     void methodWithoutThrows_exceptionsBlockOmitted() {
-        // Calculator.add() declares no throws clause. Source line 131-137 emits the
-        // `exceptions` field ONLY when exceptions.length > 0. Pin the omission contract.
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", calculatorPath);
-        args.put("line", 14);
-        args.put("column", 15);
-
-        ToolResponse r = tool.execute(args);
-        assertTrue(r.isSuccess());
-        Map<String, Object> data = getData(r);
-        assertFalse(data.containsKey("exceptions"),
-            "Methods without throws must omit the exceptions field entirely (not emit []); got: "
-                + data.get("exceptions"));
+        assertPayload(at(calculatorPath, 14, 15), ADD_FULL);
     }
 
     @Test
-    @DisplayName("Method-reference callee: analyzing MethodRefUser.use must list MethodRefTarget.formatId among callees")
-    @SuppressWarnings("unchecked")
+    @DisplayName("Method-reference callee: MethodRefUser.use lists MethodRefTarget::formatId, then IntFunction.apply")
     void methodReferenceInBody_appearsAsCallee() {
-        // MethodRefUser.use(int) captures `MethodRefTarget::formatId` as an IntFunction.
-        // The reference is a deferred dispatch — when the functional interface is
-        // applied, formatId runs. The callees list must therefore include formatId
-        // alongside any direct invocations.
-        String userPath = helper.getFixturePath("simple-maven")
-            .resolve("src/main/java/com/example/MethodRefUser.java").toString();
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", userPath);
-        // 0-based line 14: `    public String use(int id) {` — "use" at column 18.
-        args.put("line", 14);
-        args.put("column", 18);
-
-        ToolResponse r = tool.execute(args);
-        assertTrue(r.isSuccess(),
-            "Position on MethodRefUser.use must resolve; got: " +
-                (r.getError() != null ? r.getError().getMessage() : "n/a"));
-        Map<String, Object> callees = (Map<String, Object>) getData(r).get("callees");
-        assertNotNull(callees);
-        List<Map<String, Object>> calleeList = (List<Map<String, Object>>) callees.get("list");
-        boolean hasFormatId = calleeList.stream()
-            .anyMatch(c -> "formatId".equals(c.get("name"))
-                && c.get("qualifiedType") != null
-                && c.get("qualifiedType").toString().endsWith("MethodRefTarget"));
-        assertTrue(hasFormatId,
-            "MethodRefTarget::formatId in MethodRefUser.use's body must appear in callees " +
-                "(deferred-invocation dispatch site); got: " + calleeList);
+        // MethodRefUser.use(int) (0-based line 14, "use" at column 18) captures
+        // `MethodRefTarget::formatId` (line 15), a deferred dispatch, and applies it (line 16).
+        String user = "src/main/java/com/example/MethodRefUser.java";
+        Map<String, Object> method = methodInfo("use", "com.example.MethodRefUser", "use(int id): String", "String",
+            user, 14);
+        assertPayload(at(helper.getFixturePath("simple-maven").resolve(user).toString(), 14, 18),
+            analysis(method, List.of(parameter("int", "id")), calls(0, List.of()), calls(2, List.of(
+                callee("formatId", "METHOD_REFERENCE", "com.example.MethodRefTarget", "formatId(int)", 15),
+                callee("apply", "java.util.function.IntFunction", "apply(int)", 16))), Map.of()));
     }
 
     @Test
-    @DisplayName("Generic method analysis: method.typeParameters includes the method-level type parameter")
-    @SuppressWarnings("unchecked")
+    @DisplayName("Generic method analysis: method.typeParameters lists U and its bound Comparable<U>")
     void genericMethod_typeParameters_reported() throws Exception {
-        // GenericInterfaceExtractTarget.identity is declared as
-        // `<U extends Comparable<U>> U identity(U input)`. analyze_method
-        // must report U as a method type parameter; without it a consumer
-        // sees the method as non-generic.
-        String generic = helper.getFixturePath("simple-maven")
-            .resolve("src/main/java/com/example/GenericInterfaceExtractTarget.java").toString();
+        // GenericInterfaceExtractTarget.identity is declared `<U extends Comparable<U>> U identity(U input)`
+        // on 0-based line 35; its Javadoc starts on line 31.
+        String file = "src/main/java/com/example/GenericInterfaceExtractTarget.java";
+        String generic = helper.getFixturePath("simple-maven").resolve(file).toString();
         String source = java.nio.file.Files.readString(java.nio.file.Path.of(generic));
         int idx = source.indexOf("identity(");
         int line = (int) source.substring(0, idx).chars().filter(c -> c == '\n').count();
         int col = idx - (source.lastIndexOf('\n', idx) + 1);
 
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", generic);
-        args.put("line", line);
-        args.put("column", col);
-
-        ToolResponse r = tool.execute(args);
-        assertTrue(r.isSuccess());
-        Map<String, Object> method = getMethod(getData(r));
-        assertEquals("identity", method.get("name"));
-
-        List<String> typeParameters = (List<String>) method.get("typeParameters");
-        assertNotNull(typeParameters,
-            "Method analysis must report typeParameters for a generic method; got: " + method);
-        assertEquals(List.of("U"), typeParameters,
-            "identity declares <U ...>; method.typeParameters must list U; got: " + typeParameters);
+        Map<String, Object> method = new java.util.LinkedHashMap<>();
+        method.put("name", "identity");
+        method.put("constructor", false);
+        method.put("modifiers", List.of("public"));
+        method.put("declaringType", "com.example.GenericInterfaceExtractTarget");
+        method.put("signature", "identity(U input): U");
+        method.put("returnType", "U");
+        method.put("typeParameters", List.of("U"));
+        method.put("typeParameterBounds", Map.of("U", List.of("Comparable<U>")));
+        method.put("file", file);
+        method.put("line", 31);
+        assertPayload(at(generic, line, col), analysis(method, List.of(parameter("U", "input")),
+            calls(0, List.of()), calls(0, List.of()), Map.of()));
     }
 
     // ========== MCP envelope seam (exact authored values through processMessage) ==========
@@ -583,21 +415,6 @@ class AnalyzeMethodToolTest {
         args.put("filePath", calculatorPath);
         args.put("line", 14);
         args.put("column", 15);
-        JsonNode payload = envelope.assertEnvelopeFidelity("analyze_method", args);
-
-        assertTrue(payload.get("success").asBoolean(),
-            () -> "analyze_method failed through the envelope: " + payload);
-        JsonNode data = payload.get("data");
-        JsonNode method = data.get("method");
-        assertEquals("add", method.get("name").asText());
-        assertEquals("add(int a, int b): int", method.get("signature").asText(),
-            "exact method signature must survive the envelope");
-        assertEquals("int", method.get("returnType").asText());
-        JsonNode params = data.get("parameters");
-        assertEquals(2, params.size(), "Calculator.add has two parameters");
-        assertEquals("a", params.get(0).get("name").asText());
-        assertEquals("int", params.get(0).get("type").asText());
-        assertEquals("b", params.get(1).get("name").asText());
-        assertEquals("int", params.get(1).get("type").asText());
+        assertPayload(args, ADD_FULL);
     }
 }

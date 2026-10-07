@@ -1,21 +1,26 @@
 package org.javalens.mcp.tools.analysis;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
-import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.GetDependencyGraphTool;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * Pins get_dependency_graph handling of JEP 511 module imports
@@ -29,8 +34,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <p>The fixture {@code ModuleImportDemo} also has an ordinary
  * {@code import java.util.Map;} so the same run proves ordinary imports are
- * still tracked — the module-import handling must isolate the module import
- * only, not suppress real dependencies.
+ * still tracked: the module-import handling must isolate the module import
+ * only, not suppress real dependencies. names() returns a List, which resolves through the
+ * module import, and counts() a Map.
  */
 class GetDependencyGraphModuleImportTest {
 
@@ -38,42 +44,83 @@ class GetDependencyGraphModuleImportTest {
     TestProjectHelper helper = new TestProjectHelper();
 
     private GetDependencyGraphTool tool;
+    private EnvelopeHarness envelope;
     private ObjectMapper mapper;
 
     @BeforeEach
     void setUp() throws Exception {
         JdtServiceImpl service = helper.loadProject("java25-maven");
         tool = new GetDependencyGraphTool(() -> service);
+        envelope = new EnvelopeHarness(service);
         mapper = new ObjectMapper();
     }
 
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> getData(ToolResponse r) { return (Map<String, Object>) r.getData(); }
-
     @Test
-    @DisplayName("module import (import module java.base;) is not emitted as a java.base package/type node")
-    @SuppressWarnings("unchecked")
+    @DisplayName("module import (import module java.base;) is not emitted as a java.base node; the Map import and the List and Map return types are")
     void moduleImport_notDerivedAsPackageNode() {
+        String demo = "com.example.ModuleImportDemo";
         ObjectNode args = mapper.createObjectNode();
         args.put("scope", "type");
-        args.put("name", "com.example.ModuleImportDemo");
+        args.put("name", demo);
         args.put("includeExternal", true); // would surface a bogus java.base node if mis-derived
 
-        ToolResponse r = tool.execute(args);
-        assertTrue(r.isSuccess(), "expected success; got: " + r.getData());
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("totalNodes", 3);
+        summary.put("totalEdges", 2);
+        summary.put("internalDependencies", 0);
+        summary.put("externalDependencies", 2);
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("scope", "type");
+        data.put("root", demo);
+        data.put("nodes", List.of(
+            node(demo, "class", "com.example"),
+            node("java.util.List", "type", "java.util"),
+            node("java.util.Map", "import", "java.util")));
+        data.put("edges", List.of(
+            Map.of("from", demo, "to", "java.util.List", "count", 1),
+            Map.of("from", demo, "to", "java.util.Map", "count", 2)));
+        data.put("summary", summary);
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("totalCount", 3);
+        meta.put("returnedCount", 3);
+        meta.put("suggestedNextTools", List.of(
+            "find_circular_dependencies to detect cycles",
+            "get_type_hierarchy for inheritance analysis"));
 
-        List<Map<String, Object>> nodes = (List<Map<String, Object>>) getData(r).get("nodes");
+        JsonNode expected = mapper.valueToTree(Map.of("success", true, "data", data, "meta", meta));
+        JsonNode direct;
+        try {
+            direct = sorted(mapper.readTree(mapper.writeValueAsString(tool.execute(args.deepCopy()))));
+        } catch (Exception e) {
+            throw new AssertionError("execute() payload does not serialize for " + args, e);
+        }
+        JsonNode wire = sorted(envelope.assertEnvelopeFidelity("get_dependency_graph", args));
+        assertAll(
+            () -> assertEquals(expected, direct, "execute() payload for " + args),
+            () -> assertEquals(expected, wire, "envelope payload for " + args));
+    }
 
-        boolean hasModuleNode = nodes.stream()
-            .map(n -> String.valueOf(n.get("name")))
-            .anyMatch(name -> name.equals("java.base") || name.startsWith("java.base."));
-        assertFalse(hasModuleNode,
-            "module import 'java.base' must not appear as a graph node; got: " + nodes);
+    private static Map<String, Object> node(String name, String kind, String pkg) {
+        Map<String, Object> node = new LinkedHashMap<>();
+        node.put("name", name);
+        node.put("kind", kind);
+        node.put("package", pkg);
+        return node;
+    }
 
-        boolean hasOrdinaryImport = nodes.stream()
-            .map(n -> String.valueOf(n.get("name")))
-            .anyMatch(name -> name.equals("java.util.Map"));
-        assertTrue(hasOrdinaryImport,
-            "ordinary 'import java.util.Map;' must still be tracked as a node; got: " + nodes);
+    /** The payload with its nodes sorted by name and its edges by target: a graph has no defined order. */
+    private static JsonNode sorted(JsonNode payload) {
+        JsonNode copy = payload.deepCopy();
+        if (copy.path("data") instanceof ObjectNode data) {
+            for (String[] field : new String[][] {{"nodes", "name"}, {"edges", "to"}}) {
+                if (data.get(field[0]) instanceof ArrayNode array) {
+                    List<JsonNode> elements = new ArrayList<>();
+                    array.forEach(elements::add);
+                    elements.sort(Comparator.comparing(element -> element.path(field[1]).asText()));
+                    data.putArray(field[0]).addAll(elements);
+                }
+            }
+        }
+        return copy;
     }
 }

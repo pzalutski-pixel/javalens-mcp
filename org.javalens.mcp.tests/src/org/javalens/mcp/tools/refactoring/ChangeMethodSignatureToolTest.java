@@ -7,7 +7,6 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.JdtServiceImpl;
 import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
-import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.ChangeMethodSignatureTool;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -15,14 +14,27 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
- * Integration tests for ChangeMethodSignatureTool.
- * Tests method signature changes and call site updates.
+ * Integration tests for ChangeMethodSignatureTool on simple-maven: signature changes and call
+ * site updates. Every expectation is the whole payload, through execute() and through the
+ * JSON-RPC envelope. The declaration edit spans the signature from the return type (a
+ * constructor's name) to the closing parenthesis; each call edit spans the call, a constructor
+ * delegation with its semicolon, and rebuilds its arguments in the new order. Raw offsets depend
+ * on line endings, so each edit's startOffset and endOffset are replaced by the span between them;
+ * lines and columns pin the edit.
+ *
+ * <p>RefactoringTarget declares `String formatMessage(String message, int count)` on line 71 and
+ * calls it on lines 79 and 81. ConstructorTarget(String, int) (line 11) is called by
+ * ConstructorTarget(String)'s this(name, 0) (line 8), four times by ConstructorCaller (lines 8, 17,
+ * 18, 19) and by ConstructorSubclass's super(name, count) (line 11).
  */
 class ChangeMethodSignatureToolTest {
 
@@ -45,188 +57,49 @@ class ChangeMethodSignatureToolTest {
         refactoringTargetPath = projectPath.resolve("src/main/java/com/example/RefactoringTarget.java").toString();
     }
 
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> getData(ToolResponse r) { return (Map<String, Object>) r.getData(); }
-
     // ========== Comprehensive Functionality Tests ==========
 
     @Test
     @DisplayName("renames method and updates call sites with complete response")
     void renamesMethodWithCompleteResponse() {
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", refactoringTargetPath);
-        args.put("line", 71);  // formatMessage method
-        args.put("column", 18);
-        args.put("newName", "formatOutput");
-
-        ToolResponse response = tool.execute(args);
-
-        assertTrue(response.isSuccess());
-        Map<String, Object> data = getData(response);
-
-        // Verify rename info
-        assertEquals("formatOutput", data.get("newName"));
-
-        // Verify edit structure
-        @SuppressWarnings("unchecked")
-        Map<String, ?> editsByFile = (Map<String, ?>) data.get("editsByFile");
-        assertNotNull(editsByFile, "editsByFile must be present");
-        assertFalse(editsByFile.isEmpty(), "renaming a called method must touch at least one file");
-        int filesAffected = ((Number) data.get("filesAffected")).intValue();
-        // Renaming formatMessage -> formatOutput: declaration + 2 call sites, all in
-        // RefactoringTarget.java.
-        assertEquals(3, ((Number) data.get("totalEdits")).intValue());
-        assertEquals(1, filesAffected);
-        assertEquals(editsByFile.size(), filesAffected);
-        assertEquals(java.util.Set.of("src/main/java/com/example/RefactoringTarget.java"),
-            editsByFile.keySet().stream().map(k -> k.replace('\\', '/'))
-                .collect(java.util.stream.Collectors.toSet()));
-    }
-
-    /**
-     * Locate the declaration edit (isDeclaration=true) for the method being modified,
-     * across all files in editsByFile.
-     */
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> findDeclarationEdit(Map<String, Object> data) {
-        Map<String, List<Map<String, Object>>> byFile =
-            (Map<String, List<Map<String, Object>>>) data.get("editsByFile");
-        for (List<Map<String, Object>> edits : byFile.values()) {
-            for (Map<String, Object> edit : edits) {
-                if (Boolean.TRUE.equals(edit.get("isDeclaration"))) {
-                    return edit;
-                }
-            }
-        }
-        throw new AssertionError("No declaration edit found in editsByFile: " + byFile);
+        assertPayload(formatMessageArgs("formatOutput", null), RENAME_TO_FORMAT_OUTPUT);
     }
 
     @Test
-    @DisplayName("add parameter: declaration newSignature includes the new param; new param count is reported")
+    @DisplayName("add parameter: declaration newSignature includes the new param; each call passes its default")
     void addsParameterWithDefaultValue() {
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", refactoringTargetPath);
-        args.put("line", 71);
-        args.put("column", 18);
-
-        ArrayNode params = objectMapper.createArrayNode();
-        ObjectNode param1 = objectMapper.createObjectNode();
-        param1.put("name", "message");
-        param1.put("type", "String");
-        params.add(param1);
-
-        ObjectNode param2 = objectMapper.createObjectNode();
-        param2.put("name", "count");
-        param2.put("type", "int");
-        params.add(param2);
-
-        ObjectNode param3 = objectMapper.createObjectNode();
-        param3.put("name", "prefix");
-        param3.put("type", "String");
-        param3.put("defaultValue", "\"\"");
-        params.add(param3);
-
-        args.set("newParameters", params);
-
-        ToolResponse response = tool.execute(args);
-        assertTrue(response.isSuccess());
-        Map<String, Object> data = getData(response);
-
-        assertEquals(2, ((Number) data.get("oldParameterCount")).intValue());
-        assertEquals(3, ((Number) data.get("newParameterCount")).intValue(),
-            "After adding `String prefix`, newParameterCount must be 3; got: " + data);
-
-        // The declaration edit must carry a newSignature that reflects the added param.
-        Map<String, Object> declEdit = findDeclarationEdit(data);
-        String newSig = (String) declEdit.get("newSignature");
-        assertEquals("String formatMessage(String message, int count, String prefix)", newSig,
-            "Declaration newSignature must include all three params in order; got: " + newSig);
+        ObjectNode args = formatMessageArgs(null, null);
+        args.set("newParameters", params("message", "String", null, "count", "int", null, "prefix", "String", "\"\""));
+        assertPayload(args, formatMessage("formatMessage", "String", List.of("message", "String", "count", "int",
+            "prefix", "String"), "String formatMessage(String message, int count, String prefix)",
+            "formatMessage(\"Items\", 5, \"\")", "formatMessage(\"Total\", 10, \"\")"));
     }
 
     @Test
-    @DisplayName("remove parameter: declaration newSignature drops `count`; newParameterCount=1")
+    @DisplayName("remove parameter: declaration newSignature drops `count`; each call drops its argument")
     void removesParameter() {
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", refactoringTargetPath);
-        args.put("line", 71);
-        args.put("column", 18);
-
-        // Keep only first parameter (message)
-        ArrayNode params = objectMapper.createArrayNode();
-        ObjectNode param1 = objectMapper.createObjectNode();
-        param1.put("name", "message");
-        param1.put("type", "String");
-        params.add(param1);
-
-        args.set("newParameters", params);
-
-        ToolResponse response = tool.execute(args);
-        assertTrue(response.isSuccess());
-        Map<String, Object> data = getData(response);
-
-        assertEquals(2, ((Number) data.get("oldParameterCount")).intValue());
-        assertEquals(1, ((Number) data.get("newParameterCount")).intValue(),
-            "After removing `count`, newParameterCount must be 1; got: " + data);
-
-        Map<String, Object> declEdit = findDeclarationEdit(data);
-        String newSig = (String) declEdit.get("newSignature");
-        assertEquals("String formatMessage(String message)", newSig,
-            "Declaration newSignature must drop `count`; got: " + newSig);
+        ObjectNode args = formatMessageArgs(null, null);
+        args.set("newParameters", params("message", "String", null));
+        assertPayload(args, formatMessage("formatMessage", "String", List.of("message", "String"),
+            "String formatMessage(String message)", "formatMessage(\"Items\")", "formatMessage(\"Total\")"));
     }
 
     @Test
-    @DisplayName("reorder parameters: declaration newSignature has params in swapped order")
+    @DisplayName("reorder parameters: declaration newSignature and each call have the swapped order")
     void reordersParameters() {
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", refactoringTargetPath);
-        args.put("line", 71);
-        args.put("column", 18);
-
-        // Swap parameter order
-        ArrayNode params = objectMapper.createArrayNode();
-        ObjectNode param1 = objectMapper.createObjectNode();
-        param1.put("name", "count");
-        param1.put("type", "int");
-        params.add(param1);
-
-        ObjectNode param2 = objectMapper.createObjectNode();
-        param2.put("name", "message");
-        param2.put("type", "String");
-        params.add(param2);
-
-        args.set("newParameters", params);
-
-        ToolResponse response = tool.execute(args);
-        assertTrue(response.isSuccess());
-        Map<String, Object> data = getData(response);
-
-        Map<String, Object> declEdit = findDeclarationEdit(data);
-        String newSig = (String) declEdit.get("newSignature");
-        assertEquals("String formatMessage(int count, String message)", newSig,
-            "Declaration newSignature must reflect swapped order; got: " + newSig);
+        ObjectNode args = formatMessageArgs(null, null);
+        args.set("newParameters", params("count", "int", null, "message", "String", null));
+        assertPayload(args, formatMessage("formatMessage", "String", List.of("count", "int", "message", "String"),
+            "String formatMessage(int count, String message)", "formatMessage(5, \"Items\")",
+            "formatMessage(10, \"Total\")"));
     }
 
     @Test
-    @DisplayName("change return type: declaration newSignature uses new return type")
+    @DisplayName("change return type: declaration newSignature uses new return type; calls keep their text")
     void changesReturnType() {
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", refactoringTargetPath);
-        args.put("line", 71);
-        args.put("column", 18);
-        args.put("newReturnType", "void");
-
-        ToolResponse response = tool.execute(args);
-        assertTrue(response.isSuccess());
-        Map<String, Object> data = getData(response);
-
-        assertEquals("String", data.get("oldReturnType"),
-            "Old return type must be reported; got: " + data);
-        assertEquals("void", data.get("newReturnType"));
-
-        Map<String, Object> declEdit = findDeclarationEdit(data);
-        String newSig = (String) declEdit.get("newSignature");
-        assertEquals("void formatMessage(String message, int count)", newSig,
-            "Declaration newSignature must use new return type with original params; got: " + newSig);
+        assertPayload(formatMessageArgs(null, "void"), formatMessage("formatMessage", "void",
+            List.of("message", "String", "count", "int"), "void formatMessage(String message, int count)",
+            "formatMessage(\"Items\", 5)", "formatMessage(\"Total\", 10)"));
     }
 
     // ========== Required Parameter Tests ==========
@@ -234,18 +107,8 @@ class ChangeMethodSignatureToolTest {
     @Test
     @DisplayName("requires at least one change to be specified")
     void requiresAtLeastOneChange() {
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", refactoringTargetPath);
-        args.put("line", 71);
-        args.put("column", 18);
-        // No newName, newReturnType, or newParameters
-
-        ToolResponse response = tool.execute(args);
-
-        assertFalse(response.isSuccess());
-        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response.getError().getCode());
-        assertEquals("Invalid parameter 'changes': At least one of newName, newReturnType, "
-            + "or newParameters must be specified", response.getError().getMessage());
+        assertPayload(formatMessageArgs(null, null), refusal("Invalid parameter 'changes': At least one of newName, "
+            + "newReturnType, or newParameters must be specified"));
     }
 
     @Test
@@ -255,12 +118,7 @@ class ChangeMethodSignatureToolTest {
         args.put("line", 71);
         args.put("column", 18);
         args.put("newName", "formatOutput");
-
-        ToolResponse response = tool.execute(args);
-
-        assertFalse(response.isSuccess());
-        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response.getError().getCode());
-        assertEquals("Invalid parameter 'filePath': Required", response.getError().getMessage());
+        assertPayload(args, refusal("Invalid parameter 'filePath': Required"));
     }
 
     // ========== Error Handling Tests ==========
@@ -268,33 +126,20 @@ class ChangeMethodSignatureToolTest {
     @Test
     @DisplayName("handles invalid position gracefully")
     void handlesInvalidPosition() {
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", refactoringTargetPath);
-        args.put("line", -1);
-        args.put("column", -1);
+        ObjectNode args = at(refactoringTargetPath, -1, -1);
         args.put("newName", "formatOutput");
-
-        ToolResponse response = tool.execute(args);
-
-        assertFalse(response.isSuccess());
-        assertEquals(org.javalens.mcp.models.ErrorInfo.INVALID_PARAMETER, response.getError().getCode());
-        assertEquals("Invalid parameter 'line/column': Must be >= 0", response.getError().getMessage());
+        assertPayload(args, refusal("Invalid parameter 'line/column': Must be >= 0"));
     }
 
     @Test
     @DisplayName("handles non-method position gracefully")
     void handlesNotAMethod() {
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", refactoringTargetPath);
-        args.put("line", 14);  // Field declaration
-        args.put("column", 19);
+        ObjectNode args = at(refactoringTargetPath, 14, 19);  // Field declaration
         args.put("newName", "newFieldName");
-
-        ToolResponse response = tool.execute(args);
-
-        assertFalse(response.isSuccess());
-        assertEquals(org.javalens.mcp.models.ErrorInfo.SYMBOL_NOT_FOUND, response.getError().getCode());
-        assertEquals("Symbol not found: No method found at position", response.getError().getMessage());
+        assertPayload(args, Map.of("success", false, "error", Map.of(
+            "code", "SYMBOL_NOT_FOUND",
+            "message", "Symbol not found: No method found at position",
+            "hint", "Use search_symbols to find available symbols")));
     }
 
     // ========== Semantic-grade tests (constructor call sites) ==========
@@ -302,382 +147,57 @@ class ChangeMethodSignatureToolTest {
     @Test
     @DisplayName("adding a parameter to ConstructorTarget(String, int) updates all 4 `new` call sites + this() delegation")
     void addParam_updatesConstructorCallSitesAcrossFiles() {
-        String constructorTargetPath = projectPath
-            .resolve("src/main/java/com/example/ConstructorTarget.java").toString();
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", constructorTargetPath);
-        // 2-arg constructor declared on 0-based line 11: `public ConstructorTarget(String name, int count) {`
-        // Position on "ConstructorTarget" identifier (constructor name).
-        args.put("line", 11);
-        args.put("column", 11);
-
-        ArrayNode params = objectMapper.createArrayNode();
-        ObjectNode p1 = objectMapper.createObjectNode();
-        p1.put("name", "name");
-        p1.put("type", "String");
-        params.add(p1);
-        ObjectNode p2 = objectMapper.createObjectNode();
-        p2.put("name", "count");
-        p2.put("type", "int");
-        params.add(p2);
-        ObjectNode p3 = objectMapper.createObjectNode();
-        p3.put("name", "tag");
-        p3.put("type", "String");
-        p3.put("defaultValue", "\"\"");
-        params.add(p3);
-        args.set("newParameters", params);
-
-        ToolResponse response = tool.execute(args);
-        assertTrue(response.isSuccess(),
-            "Constructor signature change must succeed; got error: " +
-                (response.getError() != null ? response.getError().getMessage() : "n/a"));
-
-        Map<String, Object> data = getData(response);
-        @SuppressWarnings("unchecked")
-        Map<String, List<?>> editsByFile =
-            (Map<String, List<?>>) data.get("editsByFile");
-
-        // ConstructorCaller.java has 4 `new ConstructorTarget(String, int)` call sites
-        // (makeOne + 3 in makeMany). All must be present in editsByFile.
-        boolean hasCaller = editsByFile.keySet().stream()
-            .anyMatch(k -> k.replace('\\', '/').endsWith("ConstructorCaller.java"));
-        assertTrue(hasCaller,
-            "ConstructorCaller.java must appear in edits — its 4 `new ConstructorTarget(...)` " +
-                "sites need updating; got files: " + editsByFile.keySet());
-
-        List<?> callerEdits = editsByFile.entrySet().stream()
-            .filter(e -> e.getKey().replace('\\', '/').endsWith("ConstructorCaller.java"))
-            .map(Map.Entry::getValue)
-            .findFirst().orElseThrow();
-        assertEquals(4, callerEdits.size(),
-            "Exactly 4 edits in ConstructorCaller.java (makeOne + 3 in makeMany); got: "
-                + callerEdits.size() + " edits: " + callerEdits);
-
-        // Constructor newSignature must be `Name(params)` with no return-type prefix.
-        // JDT returns `"V"` for IMethod.getReturnType() on constructors; without an
-        // explicit skip, `Signature.toString` flows that through as `"void"` and the
-        // emitted signature becomes `void ConstructorTarget(...)` — invalid Java.
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> declEdits = (List<Map<String, Object>>) editsByFile.entrySet().stream()
-            .filter(e -> e.getKey().replace('\\', '/').endsWith("ConstructorTarget.java"))
-            .map(Map.Entry::getValue)
-            .findFirst().orElseThrow();
-        Map<String, Object> declEdit = declEdits.stream()
-            .filter(e -> Boolean.TRUE.equals(e.get("isDeclaration")))
-            .findFirst()
-            .orElseThrow(() -> new AssertionError(
-                "Expected an isDeclaration=true edit on ConstructorTarget.java; got: " + declEdits));
-        String newSig = (String) declEdit.get("newSignature");
-        assertNotNull(newSig);
-        assertFalse(newSig.startsWith("void "),
-            "Constructor signature must not start with `void`; got: " + newSig);
-        assertEquals("ConstructorTarget(String name, int count, String tag)", newSig,
-            "Constructor signature must be `Name(params)`; got: " + newSig);
-
-        // Constructors have no return type — top-level oldReturnType / newReturnType
-        // keys are meaningless and must be omitted (vs reported as the JDT-internal
-        // "void" placeholder).
-        assertFalse(data.containsKey("newReturnType"),
-            "newReturnType must be absent on a constructor signature change; got: " + data);
-        assertFalse(data.containsKey("oldReturnType"),
-            "oldReturnType must be absent on a constructor signature change; got: " + data);
+        // A constructor's signature starts at its name and has no return type; the payload
+        // reports no return types for it.
+        assertPayload(constructorTagArgs(), CONSTRUCTOR_TAG);
     }
 
     @Test
     @DisplayName("adding a parameter to ConstructorTarget(String, int) propagates to the this(name, 0) delegation site in the same file")
     void addParam_propagatesToThisConstructorDelegation() {
-        // ConstructorTarget.java declares two constructors. The 1-arg constructor at
-        // line 8 (0-based) delegates via `this(name, 0)` at line 9. When the 2-arg
-        // constructor gets a third parameter, that this() site must be updated to
-        // `this(name, 0, "");` or it breaks compilation. The this(...) form is a
-        // `ConstructorInvocation` AST node — distinct from MethodInvocation and
-        // ClassInstanceCreation. JDT models it as a Statement (not an Expression),
-        // so the edit covers the full statement including the trailing semicolon.
-        String constructorTargetPath = projectPath
-            .resolve("src/main/java/com/example/ConstructorTarget.java").toString();
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", constructorTargetPath);
-        // 2-arg constructor at 0-based line 11.
-        args.put("line", 11);
-        args.put("column", 11);
-
-        ArrayNode params = objectMapper.createArrayNode();
-        ObjectNode p1 = objectMapper.createObjectNode();
-        p1.put("name", "name");
-        p1.put("type", "String");
-        params.add(p1);
-        ObjectNode p2 = objectMapper.createObjectNode();
-        p2.put("name", "count");
-        p2.put("type", "int");
-        params.add(p2);
-        ObjectNode p3 = objectMapper.createObjectNode();
-        p3.put("name", "tag");
-        p3.put("type", "String");
-        p3.put("defaultValue", "\"\"");
-        params.add(p3);
-        args.set("newParameters", params);
-
-        ToolResponse response = tool.execute(args);
-        assertTrue(response.isSuccess(),
-            "Constructor signature change must succeed; got error: " +
-                (response.getError() != null ? response.getError().getMessage() : "n/a"));
-
-        @SuppressWarnings("unchecked")
-        Map<String, List<Map<String, Object>>> editsByFile =
-            (Map<String, List<Map<String, Object>>>) getData(response).get("editsByFile");
-
-        List<Map<String, Object>> targetEdits = editsByFile.entrySet().stream()
-            .filter(e -> e.getKey().replace('\\', '/').endsWith("ConstructorTarget.java"))
-            .map(Map.Entry::getValue)
-            .findFirst()
-            .orElseThrow(() -> new AssertionError(
-                "ConstructorTarget.java must appear in edits; got files: " + editsByFile.keySet()));
-
-        // The declaration edit (isDeclaration=true) covers line 11 (the 2-arg ctor).
-        // The this() delegation at line 8 (1-arg ctor body) must produce a separate
-        // non-declaration edit that includes the new `""` argument.
-        List<Map<String, Object>> nonDeclarationEdits = targetEdits.stream()
-            .filter(e -> !Boolean.TRUE.equals(e.get("isDeclaration")))
-            .toList();
-        assertFalse(nonDeclarationEdits.isEmpty(),
-            "Expected a non-declaration edit in ConstructorTarget.java for the this(name, 0) " +
-                "delegation site; got only declaration edits: " + targetEdits);
-
-        // The this() edit's newText must include the defaulted `""` value for the new param.
-        Map<String, Object> thisEdit = nonDeclarationEdits.stream()
-            .filter(e -> {
-                String oldText = (String) e.get("oldText");
-                return oldText != null && oldText.startsWith("this(");
-            })
-            .findFirst()
-            .orElseThrow(() -> new AssertionError(
-                "Expected an edit whose oldText starts with `this(` in ConstructorTarget.java; " +
-                    "got non-declaration edits: " + nonDeclarationEdits));
-        String newText = (String) thisEdit.get("newText");
-        assertNotNull(newText, "this() edit newText must be present; got: " + thisEdit);
-        assertEquals("this(name, 0, \"\");", newText,
-            "this() delegation edit must include the defaulted new arg AND the trailing " +
-                "semicolon (the edit replaces the full Statement); got: " + newText);
-        // oldText reflects JDT's ASTNode.toString() canonical format (e.g., spaces inside
-        // parens may differ from the original source). The load-bearing part of the edit
-        // is the (startOffset, endOffset) range + newText; the consumer applies the edit
-        // by offset, not by literal oldText match. So we only assert that the oldText
-        // names the this() form, not its exact whitespace.
-        String oldText = (String) thisEdit.get("oldText");
-        assertNotNull(oldText);
-        // JDT's ASTNode.toString() on a Statement appends a trailing newline and
-        // strips inter-argument whitespace; trim before shape checks.
-        String oldTrimmed = oldText.trim();
-        assertTrue(oldTrimmed.startsWith("this("),
-            "Old text must be the this() delegation form; got: " + oldText);
-        assertTrue(oldTrimmed.endsWith(";"),
-            "Old text covers the full Statement, must end with `;`; got: " + oldText);
-        // Offsets must be non-negative and end > start.
-        int startOffset = ((Number) thisEdit.get("startOffset")).intValue();
-        int endOffset = ((Number) thisEdit.get("endOffset")).intValue();
-        assertTrue(startOffset >= 0 && endOffset > startOffset,
-            "Offsets must form a valid range; got start=" + startOffset + " end=" + endOffset);
+        // The this(...) form is a ConstructorInvocation statement: its edit covers the
+        // trailing semicolon.
+        assertPayload(constructorTagArgs(), CONSTRUCTOR_TAG);
     }
 
     @Test
     @DisplayName("adding a parameter to ConstructorTarget(String, int) propagates to a subclass's super(name, count) delegation")
     void addParam_propagatesToSuperConstructorDelegation() {
-        // ConstructorSubclass extends ConstructorTarget and calls super(name, count)
-        // in its own constructor. When the 2-arg ConstructorTarget constructor gets a
-        // third parameter, the super() site must be updated to super(name, count, "").
-        // SuperConstructorInvocation is a distinct AST node from MethodInvocation and
-        // from ConstructorInvocation; like ConstructorInvocation it is a Statement,
-        // so the edit covers the full statement including the trailing semicolon.
-        String constructorTargetPath = projectPath
-            .resolve("src/main/java/com/example/ConstructorTarget.java").toString();
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", constructorTargetPath);
-        args.put("line", 11);
-        args.put("column", 11);
-
-        ArrayNode params = objectMapper.createArrayNode();
-        ObjectNode p1 = objectMapper.createObjectNode();
-        p1.put("name", "name");
-        p1.put("type", "String");
-        params.add(p1);
-        ObjectNode p2 = objectMapper.createObjectNode();
-        p2.put("name", "count");
-        p2.put("type", "int");
-        params.add(p2);
-        ObjectNode p3 = objectMapper.createObjectNode();
-        p3.put("name", "tag");
-        p3.put("type", "String");
-        p3.put("defaultValue", "\"\"");
-        params.add(p3);
-        args.set("newParameters", params);
-
-        ToolResponse response = tool.execute(args);
-        assertTrue(response.isSuccess(),
-            "Constructor signature change must succeed; got error: " +
-                (response.getError() != null ? response.getError().getMessage() : "n/a"));
-
-        @SuppressWarnings("unchecked")
-        Map<String, List<Map<String, Object>>> editsByFile =
-            (Map<String, List<Map<String, Object>>>) getData(response).get("editsByFile");
-
-        List<Map<String, Object>> subclassEdits = editsByFile.entrySet().stream()
-            .filter(e -> e.getKey().replace('\\', '/').endsWith("ConstructorSubclass.java"))
-            .map(Map.Entry::getValue)
-            .findFirst()
-            .orElseThrow(() -> new AssertionError(
-                "ConstructorSubclass.java must appear in edits — it has a super(...) call site " +
-                    "that needs updating; got files: " + editsByFile.keySet()));
-
-        Map<String, Object> superEdit = subclassEdits.stream()
-            .filter(e -> {
-                String oldText = (String) e.get("oldText");
-                return oldText != null && oldText.trim().startsWith("super(");
-            })
-            .findFirst()
-            .orElseThrow(() -> new AssertionError(
-                "Expected an edit whose oldText starts with `super(` in ConstructorSubclass.java; " +
-                    "got edits: " + subclassEdits));
-        String newText = (String) superEdit.get("newText");
-        assertNotNull(newText, "super() edit newText must be present; got: " + superEdit);
-        assertEquals("super(name, count, \"\");", newText,
-            "super() delegation edit must include the defaulted new arg AND the trailing " +
-                "semicolon (the edit replaces the full Statement); got: " + newText);
-        // Offsets must be a valid range.
-        int startOffset = ((Number) superEdit.get("startOffset")).intValue();
-        int endOffset = ((Number) superEdit.get("endOffset")).intValue();
-        assertTrue(startOffset >= 0 && endOffset > startOffset,
-            "Offsets must form a valid range; got start=" + startOffset + " end=" + endOffset);
+        // The super(...) form is a SuperConstructorInvocation statement: its edit covers the
+        // trailing semicolon.
+        assertPayload(constructorTagArgs(), CONSTRUCTOR_TAG);
     }
 
     @Test
-    @DisplayName("adding a parameter to a method that is consumed via method-reference (Foo::method) must surface that reference site — either as an edit, a warning, or a refusal")
+    @DisplayName("adding a parameter to a method consumed via method reference (Foo::method) reports that reference with a warning and leaves its file unedited")
     void addParam_methodReferenceCallSite_isSurfaced() {
-        // MethodRefTarget.formatId(int) is consumed by MethodRefUser via the form
-        //     IntFunction<String> formatter = MethodRefTarget::formatId;
-        // (a TypeMethodReference AST node). Adding a parameter to formatId breaks the
-        // functional-interface assignment compatibility — IntFunction expects (int)
-        // not (int, String). An automatic textual rewrite cannot fix this; the user
-        // must replace the method reference with a lambda OR change the functional
-        // interface.
-        //
-        // The tool must not be SILENT about this. Acceptable contracts:
-        //   (a) the response includes MethodRefUser.java in editsByFile with the
-        //       reference site recorded (informational; the consumer rewrites manually)
-        //   (b) the response carries a `warnings` block naming MethodRefUser.java
-        //   (c) the response is an INVALID_PARAMETER error refusing the change
-        // Silent skip — response omits any mention of the reference site — is the bug.
-        String methodRefTargetPath = projectPath
-            .resolve("src/main/java/com/example/MethodRefTarget.java").toString();
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", methodRefTargetPath);
-        // 0-based line 8: `    public static String formatId(int id) {`
-        // "formatId" starts at column 25 (4 indent + "public static String " = 25).
-        args.put("line", 8);
-        args.put("column", 25);
-
-        ArrayNode params = objectMapper.createArrayNode();
-        ObjectNode p1 = objectMapper.createObjectNode();
-        p1.put("name", "id");
-        p1.put("type", "int");
-        params.add(p1);
-        ObjectNode p2 = objectMapper.createObjectNode();
-        p2.put("name", "prefix");
-        p2.put("type", "String");
-        p2.put("defaultValue", "\"\"");
-        params.add(p2);
-        args.set("newParameters", params);
-
-        ToolResponse response = tool.execute(args);
-
-        // The tool's actual contract here is branch (b): it succeeds, edits only the
-        // declaration file, and emits a `warnings` entry naming the reference file that
-        // cannot be auto-updated. It must NOT silently rewrite (or omit) MethodRefUser.
-        assertTrue(response.isSuccess(), () -> "expected success with a warning; got: " + response.getError());
-        Map<String, Object> data = getData(response);
-
-        @SuppressWarnings("unchecked")
-        Map<String, List<Map<String, Object>>> editsByFile =
-            (Map<String, List<Map<String, Object>>>) data.get("editsByFile");
-        boolean editsTouchReferenceFile = editsByFile.keySet().stream()
-            .anyMatch(k -> k.replace('\\', '/').endsWith("MethodRefUser.java"));
-        assertFalse(editsTouchReferenceFile,
-            "MethodRefUser must NOT be auto-edited (the method reference can't be textually "
-                + "rewritten); got: " + editsByFile.keySet());
-
-        @SuppressWarnings("unchecked")
-        List<String> warnings = (List<String>) data.get("warnings");
-        assertEquals(List.of(
-            "src/main/java/com/example/MethodRefUser.java has method-reference call sites that "
-                + "cannot be automatically updated. Replace each with a lambda or refactor the "
-                + "functional-interface signature."),
-            warnings,
-            "exactly one warning naming the un-updatable reference file; got: " + warnings);
+        // MethodRefUser holds `IntFunction<String> formatter = MethodRefTarget::formatId;` (line
+        // 15, the reference at column 40). IntFunction expects (int), so no textual rewrite fits.
+        String target = "src/main/java/com/example/MethodRefTarget.java";
+        String user = "src/main/java/com/example/MethodRefUser.java";
+        ObjectNode args = at(projectPath.resolve(target).toString(), 8, 25);
+        args.set("newParameters", params("id", "int", null, "prefix", "String", "\"\""));
+        assertPayload(args, payload("formatId", "formatId", List.of("String", "String"), 1,
+            List.of("id", "int", "prefix", "String"),
+            Map.of(target, List.of(declaration(8, 18, "String formatId(int id)", "String formatId(int id, String prefix)"))),
+            List.of(methodReference(user, 15, 40, "MethodRefTarget::formatId"))));
     }
 
     @Test
-    @DisplayName("adding a parameter to SuperMethodParent.greet propagates to the super.greet(name) call site in SuperMethodChild")
+    @DisplayName("adding a parameter to SuperMethodParent.greet propagates to super.greet(name) and reports the super::greet reference")
     void addParam_propagatesToSuperMethodInvocation() {
-        // SuperMethodChild.enthusiasticGreet calls super.greet(name). That is a
-        // SuperMethodInvocation AST node — a distinct node type from MethodInvocation
-        // (regular `obj.foo()` calls) and from SuperMethodReference (`super::foo`).
-        // When SuperMethodParent.greet's signature gains a parameter, the
-        // super.greet(name) call site must be updated to super.greet(name, "").
-        String parentPath = projectPath
-            .resolve("src/main/java/com/example/SuperMethodParent.java").toString();
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", parentPath);
-        // 0-based line 8: `    public String greet(String name) {`
-        // "greet" starts at column 18 (4 indent + "public String " = 18).
-        args.put("line", 8);
-        args.put("column", 18);
-
-        ArrayNode params = objectMapper.createArrayNode();
-        ObjectNode p1 = objectMapper.createObjectNode();
-        p1.put("name", "name");
-        p1.put("type", "String");
-        params.add(p1);
-        ObjectNode p2 = objectMapper.createObjectNode();
-        p2.put("name", "suffix");
-        p2.put("type", "String");
-        p2.put("defaultValue", "\"\"");
-        params.add(p2);
-        args.set("newParameters", params);
-
-        ToolResponse response = tool.execute(args);
-        assertTrue(response.isSuccess(),
-            "Method signature change must succeed; got error: " +
-                (response.getError() != null ? response.getError().getMessage() : "n/a"));
-
-        @SuppressWarnings("unchecked")
-        Map<String, List<Map<String, Object>>> editsByFile =
-            (Map<String, List<Map<String, Object>>>) getData(response).get("editsByFile");
-
-        List<Map<String, Object>> childEdits = editsByFile.entrySet().stream()
-            .filter(e -> e.getKey().replace('\\', '/').endsWith("SuperMethodChild.java"))
-            .map(Map.Entry::getValue)
-            .findFirst()
-            .orElseThrow(() -> new AssertionError(
-                "SuperMethodChild.java must appear in edits — it has a super.greet(name) " +
-                    "call site that needs updating; got files: " + editsByFile.keySet()));
-
-        Map<String, Object> superCallEdit = childEdits.stream()
-            .filter(e -> {
-                String oldText = (String) e.get("oldText");
-                return oldText != null && oldText.trim().contains("super.greet");
-            })
-            .findFirst()
-            .orElseThrow(() -> new AssertionError(
-                "Expected an edit whose oldText contains `super.greet` in " +
-                    "SuperMethodChild.java; got edits: " + childEdits));
-        String newText = (String) superCallEdit.get("newText");
-        assertNotNull(newText, "super.greet() edit newText must be present; got: " + superCallEdit);
-        assertEquals("super.greet(name, \"\")", newText,
-            "super.greet call must include the defaulted new arg; got: " + newText);
-        // Offsets must be a valid range.
-        int startOffset = ((Number) superCallEdit.get("startOffset")).intValue();
-        int endOffset = ((Number) superCallEdit.get("endOffset")).intValue();
-        assertTrue(startOffset >= 0 && endOffset > startOffset,
-            "Offsets must form a valid range; got start=" + startOffset + " end=" + endOffset);
+        // SuperMethodChild calls super.greet(name) (line 17), a SuperMethodInvocation, and
+        // captures super::greet (line 21), a method reference that cannot be rewritten.
+        String parent = "src/main/java/com/example/SuperMethodParent.java";
+        String child = "src/main/java/com/example/SuperMethodChild.java";
+        ObjectNode args = at(projectPath.resolve(parent).toString(), 8, 18);
+        args.set("newParameters", params("name", "String", null, "suffix", "String", "\"\""));
+        assertPayload(args, payload("greet", "greet", List.of("String", "String"), 1,
+            List.of("name", "String", "suffix", "String"),
+            Map.of(
+                parent, List.of(declaration(8, 11, "String greet(String name)", "String greet(String name, String suffix)")),
+                child, List.of(call(17, 15, "super.greet(name)", "super.greet(name, \"\")"))),
+            List.of(methodReference(child, 21, 15, "super::greet"))));
     }
 
     // ========== Behavior-matrix coverage ==========
@@ -685,112 +205,38 @@ class ChangeMethodSignatureToolTest {
     @Test
     @DisplayName("Invalid Java identifier in newName is rejected")
     void rejectsInvalidNewName() {
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", refactoringTargetPath);
-        args.put("line", 71);
-        args.put("column", 18);
-        args.put("newName", "123invalid");
-        ToolResponse r = tool.execute(args);
-        assertFalse(r.isSuccess());
-        assertEquals("INVALID_PARAMETER", r.getError().getCode());
+        assertPayload(formatMessageArgs("123invalid", null),
+            refusal("Invalid parameter 'newName': Not a valid Java identifier"));
     }
 
     @Test
     @DisplayName("Empty newParameters array removes all params: signature becomes `String formatMessage()`")
     void removesAllParameters() {
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", refactoringTargetPath);
-        args.put("line", 71);
-        args.put("column", 18);
+        ObjectNode args = formatMessageArgs(null, null);
         args.set("newParameters", objectMapper.createArrayNode());
-
-        ToolResponse r = tool.execute(args);
-        assertTrue(r.isSuccess());
-        Map<String, Object> data = getData(r);
-        assertEquals(0, ((Number) data.get("newParameterCount")).intValue());
-
-        Map<String, Object> decl = findDeclarationEdit(data);
-        assertEquals("String formatMessage()", decl.get("newSignature"),
-            "Empty newParameters must drop all params; got: " + decl.get("newSignature"));
+        assertPayload(args, formatMessage("formatMessage", "String", List.of(), "String formatMessage()",
+            "formatMessage()", "formatMessage()"));
     }
 
     @Test
-    @DisplayName("Declaration edit carries isDeclaration=true, oldSignature, newSignature, full position shape")
+    @DisplayName("Declaration edit carries type, positions, oldSignature, newSignature and isDeclaration=true")
     void declarationEdit_shape() {
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", refactoringTargetPath);
-        args.put("line", 71);
-        args.put("column", 18);
-        args.put("newName", "formatOutput");
-
-        ToolResponse r = tool.execute(args);
-        assertTrue(r.isSuccess());
-        Map<String, Object> decl = findDeclarationEdit(getData(r));
-        for (String key : List.of("type", "isDeclaration", "oldSignature", "newSignature",
-                "startLine", "startColumn", "endLine", "endColumn", "startOffset", "endOffset")) {
-            assertNotNull(decl.get(key), key + " missing on declaration edit: " + decl);
-        }
-        assertEquals(Boolean.TRUE, decl.get("isDeclaration"));
-        assertEquals("replace", decl.get("type"));
+        assertPayload(formatMessageArgs("formatOutput", null), RENAME_TO_FORMAT_OUTPUT);
     }
 
     @Test
     @DisplayName("Only one declaration edit exists across all files")
     void onlyOneDeclarationEdit() {
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", refactoringTargetPath);
-        args.put("line", 71);
-        args.put("column", 18);
-        args.put("newName", "formatOutput");
-
-        ToolResponse r = tool.execute(args);
-        assertTrue(r.isSuccess());
-        Map<String, Object> data = getData(r);
-        @SuppressWarnings("unchecked")
-        Map<String, List<Map<String, Object>>> byFile =
-            (Map<String, List<Map<String, Object>>>) data.get("editsByFile");
-        long declCount = byFile.values().stream()
-            .flatMap(List::stream)
-            .filter(e -> Boolean.TRUE.equals(e.get("isDeclaration")))
-            .count();
-        assertEquals(1L, declCount,
-            "Exactly one edit must carry isDeclaration=true; got: " + declCount);
+        assertPayload(formatMessageArgs("formatOutput", null), RENAME_TO_FORMAT_OUTPUT);
     }
 
     @Test
     @DisplayName("totalEdits equals the sum of per-file edit list sizes")
     void totalEdits_sumsAcrossFiles() {
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", refactoringTargetPath);
-        args.put("line", 71);
-        args.put("column", 18);
-        args.put("newName", "formatOutput");
-
-        ToolResponse r = tool.execute(args);
-        assertTrue(r.isSuccess());
-        Map<String, Object> data = getData(r);
-        int total = ((Number) data.get("totalEdits")).intValue();
-        @SuppressWarnings("unchecked")
-        Map<String, List<Map<String, Object>>> byFile =
-            (Map<String, List<Map<String, Object>>>) data.get("editsByFile");
-        int sum = byFile.values().stream().mapToInt(List::size).sum();
-        assertEquals(total, sum);
+        assertPayload(formatMessageArgs("formatOutput", null), RENAME_TO_FORMAT_OUTPUT);
     }
 
     // ========== MCP envelope seam (exact authored values through processMessage) ==========
-
-    /** Locate the isDeclaration=true edit across all files in a JsonNode editsByFile. */
-    private JsonNode findDeclarationEditNode(JsonNode data) {
-        JsonNode byFile = data.get("editsByFile");
-        for (JsonNode fileEdits : byFile) {
-            for (JsonNode edit : fileEdits) {
-                if (edit.path("isDeclaration").asBoolean()) {
-                    return edit;
-                }
-            }
-        }
-        throw new AssertionError("No declaration edit found in editsByFile: " + byFile);
-    }
 
     @Test
     @DisplayName("Through the real MCP envelope: adding `String prefix` yields newSignature `String formatMessage(String message, int count, String prefix)`")
@@ -799,33 +245,222 @@ class ChangeMethodSignatureToolTest {
         args.put("filePath", refactoringTargetPath);
         args.put("line", 71);
         args.put("column", 18);
+        args.set("newParameters", params("message", "String", null, "count", "int", null, "prefix", "String", "\"\""));
+        assertPayload(args, formatMessage("formatMessage", "String", List.of("message", "String", "count", "int",
+            "prefix", "String"), "String formatMessage(String message, int count, String prefix)",
+            "formatMessage(\"Items\", 5, \"\")", "formatMessage(\"Total\", 10, \"\")"));
+    }
 
+    // ========== exact payload helpers ==========
+
+    private static final String REFACTORING_TARGET = "src/main/java/com/example/RefactoringTarget.java";
+
+    private static final Map<String, Object> RENAME_TO_FORMAT_OUTPUT = formatMessage("formatOutput", "String",
+        List.of("message", "String", "count", "int"), "String formatOutput(String message, int count)",
+        "formatOutput(\"Items\", 5)", "formatOutput(\"Total\", 10)");
+
+    /**
+     * ConstructorTarget(String, int) given a third parameter, tag, defaulting to "": its
+     * declaration and the this() delegation in ConstructorTarget, ConstructorCaller's four
+     * creations and ConstructorSubclass's super() delegation.
+     */
+    private static final Map<String, Object> CONSTRUCTOR_TAG = payload("ConstructorTarget", "ConstructorTarget",
+        null, 2, List.of("name", "String", "count", "int", "tag", "String"),
+        Map.of(
+            "src/main/java/com/example/ConstructorTarget.java", List.of(
+                declaration(11, 11, "ConstructorTarget(String name, int count)",
+                    "ConstructorTarget(String name, int count, String tag)"),
+                call(8, 8, "this(name, 0);", "this(name, 0, \"\");")),
+            "src/main/java/com/example/ConstructorCaller.java", List.of(
+                call(8, 15, "new ConstructorTarget(\"alpha\", 1)", "new ConstructorTarget(\"alpha\", 1, \"\")"),
+                call(17, 16, "new ConstructorTarget(\"a\", 1)", "new ConstructorTarget(\"a\", 1, \"\")"),
+                call(18, 16, "new ConstructorTarget(\"b\", 2)", "new ConstructorTarget(\"b\", 2, \"\")"),
+                call(19, 16, "new ConstructorTarget(\"c\", 3)", "new ConstructorTarget(\"c\", 3, \"\")")),
+            "src/main/java/com/example/ConstructorSubclass.java", List.of(
+                call(11, 8, "super(name, count);", "super(name, count, \"\");"))),
+        List.of());
+
+    private ObjectNode at(String file, int line, int column) {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", file);
+        args.put("line", line);
+        args.put("column", column);
+        return args;
+    }
+
+    /** formatMessage at its name (line 71, column 18), with the given newName and newReturnType. */
+    private ObjectNode formatMessageArgs(String newName, String newReturnType) {
+        ObjectNode args = at(refactoringTargetPath, 71, 18);
+        if (newName != null) {
+            args.put("newName", newName);
+        }
+        if (newReturnType != null) {
+            args.put("newReturnType", newReturnType);
+        }
+        return args;
+    }
+
+    private ObjectNode constructorTagArgs() {
+        // The 2-arg constructor's name on 0-based line 11.
+        ObjectNode args = at(projectPath.resolve("src/main/java/com/example/ConstructorTarget.java").toString(), 11, 11);
+        args.set("newParameters", params("name", "String", null, "count", "int", null, "tag", "String", "\"\""));
+        return args;
+    }
+
+    /** newParameters from triples of name, type and default value (null for none). */
+    private ArrayNode params(String... nameTypeDefault) {
         ArrayNode params = objectMapper.createArrayNode();
-        ObjectNode p1 = objectMapper.createObjectNode();
-        p1.put("name", "message");
-        p1.put("type", "String");
-        params.add(p1);
-        ObjectNode p2 = objectMapper.createObjectNode();
-        p2.put("name", "count");
-        p2.put("type", "int");
-        params.add(p2);
-        ObjectNode p3 = objectMapper.createObjectNode();
-        p3.put("name", "prefix");
-        p3.put("type", "String");
-        p3.put("defaultValue", "\"\"");
-        params.add(p3);
-        args.set("newParameters", params);
+        for (int i = 0; i < nameTypeDefault.length; i += 3) {
+            ObjectNode param = params.addObject();
+            param.put("name", nameTypeDefault[i]);
+            param.put("type", nameTypeDefault[i + 1]);
+            if (nameTypeDefault[i + 2] != null) {
+                param.put("defaultValue", nameTypeDefault[i + 2]);
+            }
+        }
+        return params;
+    }
 
-        JsonNode payload = envelope.assertEnvelopeFidelity("change_method_signature", args);
+    /**
+     * formatMessage's payload: its declaration (line 71, the signature from column 11) and its
+     * two calls, on line 79 at column 24 and on line 81 at column 27.
+     */
+    private static Map<String, Object> formatMessage(String newName, String newReturnType, List<String> newParameters,
+                                                     String newSignature, String newCall79, String newCall81) {
+        return payload("formatMessage", newName, List.of("String", newReturnType), 2, newParameters,
+            Map.of(REFACTORING_TARGET, List.of(
+                declaration(71, 11, "String formatMessage(String message, int count)", newSignature),
+                call(79, 24, "formatMessage(\"Items\", 5)", newCall79),
+                call(81, 27, "formatMessage(\"Total\", 10)", newCall81))),
+            List.of());
+    }
 
-        assertTrue(payload.get("success").asBoolean(),
-            () -> "change_method_signature failed through the envelope: " + payload);
-        JsonNode data = payload.get("data");
-        assertEquals(2, data.get("oldParameterCount").asInt(), "old param count through the envelope");
-        assertEquals(3, data.get("newParameterCount").asInt(), "new param count through the envelope");
-        JsonNode declEdit = findDeclarationEditNode(data);
-        assertEquals("String formatMessage(String message, int count, String prefix)",
-            declEdit.get("newSignature").asText(),
-            "the rewritten declaration signature must survive the envelope verbatim");
+    /** A one-line declaration edit starting at {@code column}. */
+    private static Map<String, Object> declaration(int line, int column, String oldSignature, String newSignature) {
+        Map<String, Object> edit = new LinkedHashMap<>();
+        edit.put("type", "replace");
+        edit.put("startLine", line);
+        edit.put("startColumn", column);
+        edit.put("endLine", line);
+        edit.put("endColumn", column + oldSignature.length());
+        edit.put("span", oldSignature.length());
+        edit.put("oldSignature", oldSignature);
+        edit.put("newSignature", newSignature);
+        edit.put("isDeclaration", true);
+        return edit;
+    }
+
+    /** A one-line call edit starting at {@code column}. */
+    private static Map<String, Object> call(int line, int column, String oldText, String newText) {
+        Map<String, Object> edit = new LinkedHashMap<>();
+        edit.put("type", "replace");
+        edit.put("startLine", line);
+        edit.put("startColumn", column);
+        edit.put("endLine", line);
+        edit.put("endColumn", column + oldText.length());
+        edit.put("span", oldText.length());
+        edit.put("oldText", oldText);
+        edit.put("newText", newText);
+        edit.put("isDeclaration", false);
+        return edit;
+    }
+
+    /** A method reference that cannot be rewritten. */
+    private static Map<String, Object> methodReference(String file, int line, int column, String text) {
+        Map<String, Object> reference = new LinkedHashMap<>();
+        reference.put("filePath", file);
+        reference.put("line", line);
+        reference.put("column", column);
+        reference.put("span", text.length());
+        reference.put("text", text);
+        reference.put("reason", "Method reference cannot be automatically rewritten; the functional-interface "
+            + "signature would no longer match. Replace with a lambda or refactor manually.");
+        return reference;
+    }
+
+    /**
+     * The success payload of a signature change; {@code returnTypes} is the old and new return
+     * type, null for a constructor, and {@code newParameters} alternates names and types.
+     */
+    private static Map<String, Object> payload(String oldName, String newName, List<String> returnTypes,
+                                               int oldParameterCount, List<String> newParameters,
+                                               Map<String, List<Map<String, Object>>> editsByFile,
+                                               List<Map<String, Object>> methodReferences) {
+        List<Map<String, Object>> parameters = new ArrayList<>();
+        for (int i = 0; i < newParameters.size(); i += 2) {
+            parameters.add(Map.of("name", newParameters.get(i), "type", newParameters.get(i + 1)));
+        }
+        int total = editsByFile.values().stream().mapToInt(List::size).sum();
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("oldName", oldName);
+        data.put("newName", newName);
+        if (returnTypes != null) {
+            data.put("oldReturnType", returnTypes.get(0));
+            data.put("newReturnType", returnTypes.get(1));
+        }
+        data.put("oldParameterCount", oldParameterCount);
+        data.put("newParameterCount", parameters.size());
+        data.put("newParameters", parameters);
+        data.put("totalEdits", total);
+        data.put("filesAffected", editsByFile.size());
+        data.put("editsByFile", editsByFile);
+        if (!methodReferences.isEmpty()) {
+            data.put("methodReferences", methodReferences);
+            data.put("warnings", methodReferences.stream()
+                .map(reference -> reference.get("filePath"))
+                .distinct()
+                .map(file -> file + " has method-reference call sites that cannot be automatically updated. "
+                    + "Replace each with a lambda or refactor the functional-interface signature.")
+                .toList());
+        }
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("totalCount", total);
+        meta.put("returnedCount", total);
+        meta.put("suggestedNextTools", List.of(
+            "Apply the text edits to complete the signature change",
+            "get_diagnostics to verify no errors"));
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("success", true);
+        payload.put("data", data);
+        payload.put("meta", meta);
+        return payload;
+    }
+
+    private static Map<String, Object> refusal(String message) {
+        return Map.of("success", false, "error", Map.of("code", "INVALID_PARAMETER", "message", message));
+    }
+
+    /**
+     * The payload through execute(), read back from the JSON text it serializes to, and through
+     * the JSON-RPC envelope both equal {@code expected}, each edit's and method reference's raw
+     * offsets replaced by their span.
+     */
+    private void assertPayload(ObjectNode args, Map<String, Object> expected) {
+        JsonNode expectedJson = objectMapper.valueToTree(expected);
+        JsonNode direct;
+        try {
+            direct = spans(objectMapper.readTree(objectMapper.writeValueAsString(tool.execute(args.deepCopy()))));
+        } catch (Exception e) {
+            throw new AssertionError("execute() payload for " + args + " does not serialize", e);
+        }
+        JsonNode wire = spans(envelope.assertEnvelopeFidelity("change_method_signature", args));
+        assertAll(
+            () -> assertEquals(expectedJson, direct, "execute() payload for " + args),
+            () -> assertEquals(expectedJson, wire, "envelope payload for " + args));
+    }
+
+    private static JsonNode spans(JsonNode payload) {
+        JsonNode copy = payload.deepCopy();
+        copy.path("data").path("editsByFile").forEach(edits -> edits.forEach(ChangeMethodSignatureToolTest::span));
+        copy.path("data").path("methodReferences").forEach(ChangeMethodSignatureToolTest::span);
+        return copy;
+    }
+
+    /** {@code node} with its startOffset and endOffset replaced by the span between them. */
+    private static void span(JsonNode node) {
+        ObjectNode object = (ObjectNode) node;
+        int span = object.path("endOffset").asInt() - object.path("startOffset").asInt();
+        object.remove(List.of("startOffset", "endOffset"));
+        object.put("span", span);
     }
 }

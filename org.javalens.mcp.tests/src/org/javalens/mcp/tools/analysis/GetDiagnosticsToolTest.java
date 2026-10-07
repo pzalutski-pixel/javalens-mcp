@@ -2,22 +2,45 @@ package org.javalens.mcp.tools.analysis;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.eclipse.jdt.core.JavaCore;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.core.project.model.LoadWarning;
 import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
-import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.GetDiagnosticsTool;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.UnaryOperator;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
+/**
+ * get_diagnostics on simple-maven's Calculator and RefactoringTarget, and project-wide on the
+ * capped-lists and legacy-compliance-maven projects, whose every diagnostic can be read from
+ * their source. Every expectation is the whole payload, through execute() and through the
+ * JSON-RPC envelope. Offsets are read from the fixture as checked out, so line endings do not
+ * matter; JDT reports an unused import on the imported name, an unused field on its name, an
+ * unresolved type on its name and a missing semicolon on the token before it, each end offset
+ * inclusive. A missing semicolon is a recovery of the enclosing BlockStatements scope.
+ *
+ * <p>RefactoringTarget never uses its imports of ArrayList, Map, HashMap and IOException (lines
+ * 3 to 6) nor reads its private constant MAX_SIZE (line 19). capped-lists: Assembly.java names
+ * the unresolved type Widget (line 7) in Assembly and never reads Spare's private field spare
+ * (line 15); its other 18 files have no diagnostic.
+ */
 class GetDiagnosticsToolTest {
 
     @RegisterExtension
@@ -40,283 +63,340 @@ class GetDiagnosticsToolTest {
             .resolve("src/main/java/com/example/RefactoringTarget.java").toString();
     }
 
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> getData(ToolResponse r) { return (Map<String, Object>) r.getData(); }
-
     @Test
-    @DisplayName("a syntax-broken file is reported with errors, single-file and project-wide")
+    @DisplayName("a syntax-broken file is reported with its syntax error, single-file and project-wide")
     void syntaxError_reportedAsError() throws Exception {
-        JdtServiceImpl mutableService = helper.loadProjectCopy("simple-maven");
-        java.nio.file.Path projectCopy = mutableService.getProjectRoot();
-        java.nio.file.Path calculator =
-            projectCopy.resolve("src/main/java/com/example/Calculator.java");
-        java.nio.file.Files.writeString(calculator,
-            java.nio.file.Files.readString(calculator).replace("public class", "public clazz"));
+        JdtServiceImpl mutableService = helper.loadProjectCopy("capped-lists");
+        Path hot = mutableService.getProjectRoot().resolve(HOT);
+        Files.writeString(hot, Files.readString(hot).replace("return 1;", "return 1"));
+        String hotSource = Files.readString(hot);
+        int one = hotSource.indexOf("return 1") + "return ".length();
+        Map<String, Object> syntaxError = diagnostic(HOT, 8, one, one, "error",
+            "Syntax error, insert \";\" to complete BlockStatements", INSERT_TO_COMPLETE, "SYNTAX");
 
         GetDiagnosticsTool mutableTool = new GetDiagnosticsTool(() -> mutableService);
+        EnvelopeHarness mutableEnvelope = new EnvelopeHarness(mutableService);
+        String assembly = Files.readString(mutableService.getProjectRoot().resolve(ASSEMBLY));
 
-        // Single file
         ObjectNode fileArgs = objectMapper.createObjectNode();
-        fileArgs.put("filePath", calculator.toString());
-        ToolResponse single = mutableTool.execute(fileArgs);
-        assertTrue(single.isSuccess(), () -> "single-file: " + single.getError());
-        Map<String, Object> singleData = getData(single);
-        assertTrue(((Number) singleData.get("errorCount")).intValue() > 0,
-            () -> "a file with a syntax error must report errors; got: " + singleData);
-
-        // Whole project
-        ToolResponse project = mutableTool.execute(objectMapper.createObjectNode());
-        assertTrue(project.isSuccess());
-        Map<String, Object> projectData = getData(project);
-        assertTrue(((Number) projectData.get("errorCount")).intValue() > 0,
-            () -> "the project-wide scan must include the broken file's errors; got "
-                + "errorCount=" + projectData.get("errorCount")
-                + " filesChecked=" + projectData.get("filesChecked"));
+        fileArgs.put("filePath", hot.toString());
+        ObjectNode projectArgs = objectMapper.createObjectNode();
+        assertAll(
+            () -> assertPayload(mutableTool, mutableEnvelope, fileArgs,
+                diagnostics(1, 0, 1, List.of(syntaxError)), UnaryOperator.identity()),
+            () -> assertPayload(mutableTool, mutableEnvelope, projectArgs,
+                diagnostics(2, 1, 19, List.of(syntaxError, widgetError(assembly), spareWarning(assembly))),
+                byFile()));
     }
 
     @Test
-    @DisplayName("a project declaring a pre-1.8 compiler level still reports syntax errors")
+    @DisplayName("a project declaring a pre-1.8 compiler level still reports syntax errors, and the load says it analyzes at 1.8")
     void legacyCompliance_syntaxErrorStillReported() throws Exception {
-        // Modern JDT (Eclipse 2025-12) does not support compliance below 1.8.
-        // Legacy enterprise poms still declare 1.6/1.7; applying that level
-        // verbatim must not silently disable problem detection.
+        // Modern JDT does not support compliance below 1.8. Legacy enterprise poms still
+        // declare 1.6/1.7; applying that level verbatim must not silently disable problem
+        // detection, so the load clamps it to 1.8 and says so.
         JdtServiceImpl legacyService = helper.loadProjectCopy("legacy-compliance-maven");
-        java.nio.file.Path projectCopy = legacyService.getProjectRoot();
-        java.nio.file.Path old = projectCopy.resolve("src/main/java/com/legacy/Old.java");
-        java.nio.file.Files.writeString(old,
-            java.nio.file.Files.readString(old).replace("public class", "public clazz"));
+        Path old = legacyService.getProjectRoot().resolve("src/main/java/com/legacy/Old.java");
+        Files.writeString(old, Files.readString(old).replace("+ name;", "+ name"));
+        String oldSource = Files.readString(old);
+        int name = oldSource.indexOf("+ name") + "+ ".length();
 
-        GetDiagnosticsTool legacyTool = new GetDiagnosticsTool(() -> legacyService);
-        ToolResponse r = legacyTool.execute(objectMapper.createObjectNode());
-        assertTrue(r.isSuccess(), () -> "project-wide: " + r.getError());
-        Map<String, Object> data = getData(r);
-        assertTrue(((Number) data.get("errorCount")).intValue() > 0,
-            () -> "a syntax error must be reported even when the declared compliance (1.6) "
-                + "predates JDT's supported range; got: " + data);
+        Map<String, Object> syntaxError = diagnostic("src/main/java/com/legacy/Old.java", 5, name,
+            name + "name".length() - 1, "error", "Syntax error, insert \";\" to complete BlockStatements",
+            INSERT_TO_COMPLETE, "SYNTAX");
+        assertPayload(new GetDiagnosticsTool(() -> legacyService), new EnvelopeHarness(legacyService),
+            objectMapper.createObjectNode(), diagnostics(1, 0, 1, List.of(syntaxError)), UnaryOperator.identity());
 
-        assertTrue(legacyService.getWarnings().stream()
-                .anyMatch(w -> "COMPLIANCE_LEVEL_UNSUPPORTED".equals(w.code())),
-            () -> "the clamp must be surfaced as a load warning; got: " + legacyService.getWarnings());
+        List<List<String>> warnings = legacyService.getWarnings().stream()
+            .map(w -> List.of(w.code(), w.message(), w.remediation()))
+            .toList();
+        assertEquals(List.of(List.of(LoadWarning.COMPLIANCE_LEVEL_UNSUPPORTED,
+                "Declared Java source level 1.6 is outside JDT's supported range; analyzing at 1.8 instead",
+                "JDT supports compliance 1.8 through " + JavaCore.latestSupportedJavaVersion()
+                    + ". Diagnostics reflect level 1.8; code valid only under the older level may show "
+                    + "additional errors.")),
+            warnings);
     }
 
-    @Test @DisplayName("gets diagnostics for clean file")
+    @Test @DisplayName("Calculator.java has no diagnostic")
     void getsDiagnosticsForCleanFile() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", calculatorPath);
-
-        ToolResponse r = tool.execute(args);
-
-        assertTrue(r.isSuccess());
-        Map<String, Object> data = getData(r);
-        assertEquals(0, data.get("totalDiagnostics"));
-        assertEquals(0, data.get("errorCount"));
-        assertEquals(0, data.get("warningCount"));
-        assertEquals(1, data.get("filesChecked"));
+        assertPayload(args, diagnostics(0, 0, 1, List.of()));
     }
 
-    @Test @DisplayName("supports severity filter and maxResults")
-    void supportsSeverityFilterAndMaxResults() {
+    @Test @DisplayName("severity=error on Calculator gives no diagnostic; maxResults=1 on RefactoringTarget lists its first warning and reports the cut")
+    void supportsSeverityFilterAndMaxResults() throws Exception {
         ObjectNode withSeverity = objectMapper.createObjectNode();
         withSeverity.put("filePath", calculatorPath);
         withSeverity.put("severity", "error");
-        assertTrue(tool.execute(withSeverity).isSuccess());
 
         ObjectNode withMax = objectMapper.createObjectNode();
+        withMax.put("filePath", refactoringTargetPath);
         withMax.put("maxResults", 1);
-        @SuppressWarnings("unchecked")
-        List<?> diags = (List<?>) getData(tool.execute(withMax)).get("diagnostics");
-        assertTrue(diags.size() <= 1);
+        assertAll(
+            () -> assertPayload(withSeverity, diagnostics(0, 0, 1, List.of())),
+            () -> assertCut(withMax, List.of(refactoringTargetWarnings().get(0))));
     }
 
-    @Test @DisplayName("analyzes whole project")
-    void analyzesWholeProject() {
-        ToolResponse r = tool.execute(objectMapper.createObjectNode());
-
-        assertTrue(r.isSuccess());
-        assertTrue((Integer) getData(r).get("filesChecked") > 0);
+    @Test @DisplayName("Without filePath every file of capped-lists is checked: the unresolved Widget and the unused field")
+    void analyzesWholeProject() throws Exception {
+        JdtServiceImpl capped = helper.loadProject("capped-lists");
+        String assembly = Files.readString(capped.getProjectRoot().resolve(ASSEMBLY));
+        assertPayload(new GetDiagnosticsTool(() -> capped), new EnvelopeHarness(capped),
+            objectMapper.createObjectNode(),
+            diagnostics(1, 1, 19, List.of(widgetError(assembly), spareWarning(assembly))), byFile());
     }
 
     @Test @DisplayName("non-existent file -> exact FILE_NOT_FOUND")
     void handlesInvalidFilePath() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", "/nonexistent/File.java");
-        ToolResponse r = tool.execute(args);
-        assertFalse(r.isSuccess());
-        assertEquals(org.javalens.mcp.models.ErrorInfo.FILE_NOT_FOUND, r.getError().getCode());
-        assertEquals("File not found: /nonexistent/File.java", r.getError().getMessage());
+        assertPayload(args, Map.of("success", false, "error", Map.of(
+            "code", "FILE_NOT_FOUND",
+            "message", "File not found: /nonexistent/File.java",
+            "hint", "Verify the file path is correct and the file exists")));
     }
 
     // ========== Behavior-matrix coverage ==========
 
-    @SuppressWarnings("unchecked")
-    private List<Map<String, Object>> diagsOf(ToolResponse r) {
-        return (List<Map<String, Object>>) getData(r).get("diagnostics");
-    }
-
     @Test
-    @DisplayName("RefactoringTarget.java surfaces unused-import warnings (4 unused imports)")
-    void refactoringTarget_unusedImportWarnings() {
-        String refactoringPath = helper.getFixturePath("simple-maven")
-            .resolve("src/main/java/com/example/RefactoringTarget.java").toString();
-        ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", refactoringPath);
-        args.put("severity", "warning");
-        args.put("maxResults", 100);
-
-        ToolResponse r = tool.execute(args);
-        assertTrue(r.isSuccess());
-        // ArrayList, Map, HashMap, IOException are imported but never used in this file.
-        // JDT categorizes unused-import as UNNECESSARY_CODE — pin the category, not just
-        // the message text.
-        int unusedImportCount = 0;
-        for (Map<String, Object> d : diagsOf(r)) {
-            String msg = (String) d.get("message");
-            if (msg != null && msg.contains("import") && msg.contains("never used")) {
-                unusedImportCount++;
-                assertEquals("UNNECESSARY_CODE", d.get("category"),
-                    "unused-import diagnostics must carry category UNNECESSARY_CODE; got: " + d);
-            }
-        }
-        assertEquals(4, unusedImportCount,
-            "RefactoringTarget has exactly 4 unused imports; got: " + diagsOf(r));
-    }
-
-    @Test
-    @DisplayName("Unused-import warnings sit at exact 0-based lines {3,4,5,6}")
-    void refactoringTarget_unusedImports_exactZeroBasedLines() {
+    @DisplayName("RefactoringTarget.java with severity=warning: its four unused imports and its unused constant")
+    void refactoringTarget_unusedImportWarnings() throws Exception {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", refactoringTargetPath);
         args.put("severity", "warning");
         args.put("maxResults", 100);
-
-        ToolResponse r = tool.execute(args);
-        assertTrue(r.isSuccess());
-
-        // Imports (0-based): List(2, used), ArrayList(3), Map(4), HashMap(5),
-        // IOException(6). The four unused imports warn at their declaration lines;
-        // a dropped zero-based conversion would shift the set to {4,5,6,7}.
-        java.util.Set<Integer> lines = unusedImportLines(diagsOf(r));
-        assertEquals(java.util.Set.of(3, 4, 5, 6), lines,
-            "exactly four unused-import warnings at their exact 0-based lines; got: " + diagsOf(r));
+        assertPayload(args, diagnostics(0, 5, 1, refactoringTargetWarnings()));
     }
 
-    private java.util.Set<Integer> unusedImportLines(List<Map<String, Object>> diags) {
-        java.util.Set<Integer> lines = new java.util.TreeSet<>();
-        for (Map<String, Object> d : diags) {
-            String msg = (String) d.get("message");
-            if (msg != null && msg.contains("import") && msg.contains("never used")) {
-                lines.add(((Number) d.get("line")).intValue());
-            }
-        }
-        return lines;
+    @Test
+    @DisplayName("Unused-import warnings sit at exact 0-based lines 3 to 6 (severity given as Warning)")
+    void refactoringTarget_unusedImports_exactZeroBasedLines() throws Exception {
+        // Imports (0-based): List (2, used), ArrayList (3), Map (4), HashMap (5), IOException (6).
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", refactoringTargetPath);
+        args.put("severity", "Warning");
+        args.put("maxResults", 100);
+        assertPayload(args, diagnostics(0, 5, 1, refactoringTargetWarnings()));
     }
 
     // ========== MCP envelope seam (exact authored values through processMessage) ==========
 
     @Test
-    @DisplayName("Through the real MCP envelope: unused-import warnings sit at lines {3,4,5,6}")
-    void envelope_unusedImports_exactLines() {
+    @DisplayName("Through the real MCP envelope: maxResults=5, exactly RefactoringTarget's five warnings, lists them all, not truncated")
+    void envelope_unusedImports_exactLines() throws Exception {
         ObjectNode args = envelope.args();
         args.put("filePath", refactoringTargetPath);
         args.put("severity", "warning");
-        args.put("maxResults", 100);
-        JsonNode payload = envelope.assertEnvelopeFidelity("get_diagnostics", args);
-
-        assertTrue(payload.get("success").asBoolean(),
-            () -> "get_diagnostics failed through the envelope: " + payload);
-        java.util.Set<Integer> lines = new java.util.TreeSet<>();
-        for (JsonNode d : payload.get("data").get("diagnostics")) {
-            String msg = d.get("message").asText();
-            if (msg.contains("import") && msg.contains("never used")) {
-                lines.add(d.get("line").asInt());
-            }
-        }
-        assertEquals(java.util.Set.of(3, 4, 5, 6), lines,
-            "unused-import warning lines must survive the JSON-RPC envelope");
+        args.put("maxResults", 5);
+        assertPayload(args, diagnostics(0, 5, 1, refactoringTargetWarnings()));
     }
 
     @Test
     @DisplayName("Each diagnostic entry carries filePath, line, startOffset, endOffset, severity, message, problemId, category")
-    void diagnosticEntry_includesFullShape() {
-        String refactoringPath = helper.getFixturePath("simple-maven")
-            .resolve("src/main/java/com/example/RefactoringTarget.java").toString();
+    void diagnosticEntry_includesFullShape() throws Exception {
         ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", refactoringPath);
+        args.put("filePath", refactoringTargetPath);
         args.put("maxResults", 100);
-
-        ToolResponse r = tool.execute(args);
-        assertTrue(r.isSuccess());
-        List<Map<String, Object>> diags = diagsOf(r);
-        assertFalse(diags.isEmpty(), "RefactoringTarget has known warnings; list must be non-empty");
-        for (Map<String, Object> d : diags) {
-            for (String key : List.of("filePath", "line", "startOffset", "endOffset",
-                    "severity", "message", "problemId", "category")) {
-                assertNotNull(d.get(key), key + " missing on diagnostic: " + d);
-            }
-        }
+        assertPayload(args, diagnostics(0, 5, 1, refactoringTargetWarnings()));
     }
 
     @Test
-    @DisplayName("severity='error' returns only error-severity diagnostics")
-    void severityErrorOnly() {
+    @DisplayName("severity='error' over capped-lists returns only the unresolved Widget")
+    void severityErrorOnly() throws Exception {
+        JdtServiceImpl capped = helper.loadProject("capped-lists");
+        String assembly = Files.readString(capped.getProjectRoot().resolve(ASSEMBLY));
         ObjectNode args = objectMapper.createObjectNode();
         args.put("severity", "error");
         args.put("maxResults", 100);
-
-        ToolResponse r = tool.execute(args);
-        assertTrue(r.isSuccess());
-        for (Map<String, Object> d : diagsOf(r)) {
-            assertEquals("error", d.get("severity"),
-                "All entries must be errors when severity=error; got: " + d);
-        }
+        assertPayload(new GetDiagnosticsTool(() -> capped), new EnvelopeHarness(capped), args,
+            diagnostics(1, 0, 19, List.of(widgetError(assembly))), UnaryOperator.identity());
     }
 
     @Test
-    @DisplayName("severity='warning' returns only warning-severity diagnostics")
-    void severityWarningOnly() {
+    @DisplayName("severity='warning' over capped-lists returns only the unused field")
+    void severityWarningOnly() throws Exception {
+        JdtServiceImpl capped = helper.loadProject("capped-lists");
+        String assembly = Files.readString(capped.getProjectRoot().resolve(ASSEMBLY));
         ObjectNode args = objectMapper.createObjectNode();
         args.put("severity", "warning");
         args.put("maxResults", 100);
-
-        ToolResponse r = tool.execute(args);
-        assertTrue(r.isSuccess());
-        for (Map<String, Object> d : diagsOf(r)) {
-            assertEquals("warning", d.get("severity"),
-                "All entries must be warnings when severity=warning; got: " + d);
-        }
+        assertPayload(new GetDiagnosticsTool(() -> capped), new EnvelopeHarness(capped), args,
+            diagnostics(0, 1, 19, List.of(spareWarning(assembly))), UnaryOperator.identity());
     }
 
     @Test
-    @DisplayName("totalDiagnostics == diagnostics.size(); errorCount + warningCount == totalDiagnostics for severity=all")
-    void counts_consistent() {
+    @DisplayName("totalDiagnostics == diagnostics.size(); errorCount + warningCount == totalDiagnostics for severity=all over capped-lists")
+    void counts_consistent() throws Exception {
+        JdtServiceImpl capped = helper.loadProject("capped-lists");
+        String assembly = Files.readString(capped.getProjectRoot().resolve(ASSEMBLY));
         ObjectNode args = objectMapper.createObjectNode();
         args.put("severity", "all");
         args.put("maxResults", 1000);
-
-        ToolResponse r = tool.execute(args);
-        assertTrue(r.isSuccess());
-        Map<String, Object> data = getData(r);
-        int total = ((Number) data.get("totalDiagnostics")).intValue();
-        int errors = ((Number) data.get("errorCount")).intValue();
-        int warnings = ((Number) data.get("warningCount")).intValue();
-        assertEquals(total, diagsOf(r).size(),
-            "totalDiagnostics must equal diagnostics.size()");
-        assertEquals(total, errors + warnings,
-            "errorCount + warningCount must equal totalDiagnostics; got total=" + total
-                + " errors=" + errors + " warnings=" + warnings);
+        assertPayload(new GetDiagnosticsTool(() -> capped), new EnvelopeHarness(capped), args,
+            diagnostics(1, 1, 19, List.of(widgetError(assembly), spareWarning(assembly))), byFile());
     }
 
     @Test
-    @DisplayName("maxResults=1 caps to exactly 1 and meta.truncated is true (project has > 1 diagnostic)")
-    void maxResults_capsAndTruncated() {
+    @DisplayName("maxResults=1 on RefactoringTarget lists exactly its first warning and meta.truncated is true")
+    void maxResults_capsAndTruncated() throws Exception {
         ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", refactoringTargetPath);
         args.put("maxResults", 1);
+        assertCut(args, List.of(refactoringTargetWarnings().get(0)));
+    }
 
-        ToolResponse r = tool.execute(args);
-        assertTrue(r.isSuccess());
-        // The project-wide scan has > 1 diagnostic (>= 4 unused-import warnings), so the
-        // cap is hit exactly and truncation is signalled.
-        assertEquals(1, diagsOf(r).size());
-        assertEquals(Boolean.TRUE, r.getMeta().getTruncated());
+    // ========== exact payload helpers ==========
+
+    private static final String HOT = "src/main/java/org/capped/impact/Hot.java";
+    private static final String ASSEMBLY = "src/main/java/org/capped/use/Assembly.java";
+    private static final String REFACTORING_TARGET = "src/main/java/com/example/RefactoringTarget.java";
+
+    /** IProblem.UnusedImport, UnusedPrivateField, UndefinedType and ParsingErrorInsertToComplete. */
+    private static final int UNUSED_IMPORT = 268435844;
+    private static final int UNUSED_PRIVATE_FIELD = 570425421;
+    private static final int UNDEFINED_TYPE = 16777218;
+    private static final int INSERT_TO_COMPLETE = 1610612976;
+
+    private static final List<String> NEXT_TOOLS = List.of(
+        "go_to_definition to navigate to error location",
+        "get_document_symbols to see file structure");
+
+    /** RefactoringTarget's five warnings, in source order. */
+    private List<Map<String, Object>> refactoringTargetWarnings() throws Exception {
+        String source = Files.readString(Path.of(refactoringTargetPath));
+        List<Map<String, Object>> warnings = new ArrayList<>();
+        int line = 3;
+        for (String imported : List.of("java.util.ArrayList", "java.util.Map", "java.util.HashMap",
+                "java.io.IOException")) {
+            int start = source.indexOf("import " + imported + ";") + "import ".length();
+            warnings.add(diagnostic(REFACTORING_TARGET, line++, start, start + imported.length() - 1, "warning",
+                "The import " + imported + " is never used", UNUSED_IMPORT, "UNNECESSARY_CODE"));
+        }
+        int maxSize = source.indexOf("MAX_SIZE");
+        warnings.add(diagnostic(REFACTORING_TARGET, 19, maxSize, maxSize + "MAX_SIZE".length() - 1, "warning",
+            "The value of the field RefactoringTarget.MAX_SIZE is not used", UNUSED_PRIVATE_FIELD,
+            "UNNECESSARY_CODE"));
+        return warnings;
+    }
+
+    /** The unresolved type Widget in {@code assembly}, the text of Assembly.java. */
+    private static Map<String, Object> widgetError(String assembly) {
+        int start = assembly.indexOf("Widget part;");
+        return diagnostic(ASSEMBLY, 7, start, start + "Widget".length() - 1, "error",
+            "Widget cannot be resolved to a type", UNDEFINED_TYPE, "TYPE");
+    }
+
+    /** Spare's unused private field in {@code assembly}, the text of Assembly.java. */
+    private static Map<String, Object> spareWarning(String assembly) {
+        int start = assembly.indexOf("int spare;") + "int ".length();
+        return diagnostic(ASSEMBLY, 15, start, start + "spare".length() - 1, "warning",
+            "The value of the field Spare.spare is not used", UNUSED_PRIVATE_FIELD, "UNNECESSARY_CODE");
+    }
+
+    private static Map<String, Object> diagnostic(String file, int line, int start, int end, String severity,
+                                                  String message, int problemId, String category) {
+        Map<String, Object> diagnostic = new LinkedHashMap<>();
+        diagnostic.put("filePath", file);
+        diagnostic.put("line", line);
+        diagnostic.put("startOffset", start);
+        diagnostic.put("endOffset", end);
+        diagnostic.put("severity", severity);
+        diagnostic.put("message", message);
+        diagnostic.put("problemId", problemId);
+        diagnostic.put("category", category);
+        return diagnostic;
+    }
+
+    /** The success payload listing every one of {@code diagnostics}, none cut. */
+    private static Map<String, Object> diagnostics(int errors, int warnings, int filesChecked,
+                                                   List<Map<String, Object>> diagnostics) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("totalDiagnostics", diagnostics.size());
+        data.put("errorCount", errors);
+        data.put("warningCount", warnings);
+        data.put("filesChecked", filesChecked);
+        data.put("diagnostics", diagnostics);
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("totalCount", diagnostics.size());
+        meta.put("returnedCount", diagnostics.size());
+        meta.put("truncated", false);
+        meta.put("suggestedNextTools", NEXT_TOOLS);
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("success", true);
+        payload.put("data", data);
+        payload.put("meta", meta);
+        return payload;
+    }
+
+    /**
+     * The one-file payload for {@code args} lists exactly {@code listed}, checks one file and
+     * reports the cut. Exact counts are impossible here: the scan stops one diagnostic past
+     * maxResults, so totalDiagnostics, errorCount, warningCount and meta.totalCount count the
+     * diagnostics listed, not every diagnostic of the file; they are left out and every other
+     * field is pinned.
+     */
+    private void assertCut(ObjectNode args, List<Map<String, Object>> listed) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("filesChecked", 1);
+        data.put("diagnostics", listed);
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("returnedCount", listed.size());
+        meta.put("truncated", true);
+        meta.put("suggestedNextTools", NEXT_TOOLS);
+        Map<String, Object> expected = new LinkedHashMap<>();
+        expected.put("success", true);
+        expected.put("data", data);
+        expected.put("meta", meta);
+        assertPayload(tool, envelope, args, expected, payload -> {
+            JsonNode copy = payload.deepCopy();
+            ((ObjectNode) copy.path("data")).remove(List.of("totalDiagnostics", "errorCount", "warningCount"));
+            ((ObjectNode) copy.path("meta")).remove("totalCount");
+            return copy;
+        });
+    }
+
+    /**
+     * The payload with its diagnostics in file order: a project-wide scan visits the files in
+     * the project's package order, and the sort is stable, so each file's diagnostics keep their
+     * source order.
+     */
+    private static UnaryOperator<JsonNode> byFile() {
+        return payload -> {
+            JsonNode copy = payload.deepCopy();
+            if (copy.path("data") instanceof ObjectNode data && data.get("diagnostics") instanceof ArrayNode list) {
+                List<JsonNode> sorted = new ArrayList<>();
+                list.forEach(sorted::add);
+                sorted.sort(Comparator.comparing(diagnostic -> diagnostic.path("filePath").asText()));
+                data.putArray("diagnostics").addAll(sorted);
+            }
+            return copy;
+        };
+    }
+
+    private void assertPayload(ObjectNode args, Map<String, Object> expected) {
+        assertPayload(tool, envelope, args, expected, UnaryOperator.identity());
+    }
+
+    /**
+     * The payload of {@code diagnosticsTool} through execute(), read back from the JSON text it
+     * serializes to as a client reads it, and through {@code harness}'s JSON-RPC envelope both
+     * equal {@code expected} after {@code normalize}.
+     */
+    private void assertPayload(GetDiagnosticsTool diagnosticsTool, EnvelopeHarness harness, ObjectNode args,
+                               Map<String, Object> expected, UnaryOperator<JsonNode> normalize) {
+        JsonNode expectedJson = objectMapper.valueToTree(expected);
+        JsonNode direct;
+        try {
+            direct = normalize.apply(objectMapper.readTree(
+                objectMapper.writeValueAsString(diagnosticsTool.execute(args.deepCopy()))));
+        } catch (Exception e) {
+            throw new AssertionError("execute() payload does not serialize for " + args, e);
+        }
+        JsonNode wire = normalize.apply(harness.assertEnvelopeFidelity("get_diagnostics", args));
+        assertAll(
+            () -> assertEquals(expectedJson, direct, "execute() payload for " + args),
+            () -> assertEquals(expectedJson, wire, "envelope payload for " + args));
     }
 }
