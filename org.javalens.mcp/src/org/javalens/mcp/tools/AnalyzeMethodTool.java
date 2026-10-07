@@ -31,10 +31,10 @@ import org.eclipse.jdt.core.dom.SuperMethodReference;
 import org.eclipse.jdt.core.dom.TypeDeclarationStatement;
 import org.eclipse.jdt.core.dom.TypeMethodReference;
 import org.eclipse.jdt.core.search.SearchMatch;
-import org.eclipse.jdt.internal.corext.dom.Bindings;
 import org.javalens.core.IJdtService;
 import org.javalens.core.MethodFormatter;
 import org.javalens.core.ModifierFormatter;
+import org.javalens.core.search.ModelHierarchy;
 import org.javalens.core.search.SearchService;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
@@ -158,15 +158,14 @@ public class AnalyzeMethodTool extends AbstractTool {
             // Incoming calls (callers)
             data.put("callers", findCallers(method, service, maxCallers));
 
-            // The method's declaration, with bindings: its callees and the method it overrides
-            // are read from it.
+            // The method's declaration, with bindings: its callees are read from it.
             MethodDeclaration declaration = findDeclaration(method, cu);
 
             // Outgoing calls (callees)
             data.put("callees", findCallees(declaration, maxCallees));
 
             // Override info
-            data.put("overrides", findOverrideInfo(method, declaration, service));
+            data.put("overrides", findOverrideInfo(method, service));
 
             return ToolResponse.success(data, ResponseMeta.builder()
                 .suggestedNextTools(List.of(
@@ -469,58 +468,49 @@ public class AnalyzeMethodTool extends AbstractTool {
         callees.add(callee);
     }
 
-    private Map<String, Object> findOverrideInfo(IMethod method, MethodDeclaration declaration,
-                                                 IJdtService service) {
+    /**
+     * The method {@code method} overrides and the methods overriding it, as the compiler binds
+     * them over the hierarchy the Java model holds (SearchService.hierarchyOf): the nearest
+     * declaration it overrides in its superclass chain, else in its interfaces, visible from its
+     * package ({@code Bindings.findOverriddenMethod}, which JDT's own quick fixes use); and every
+     * method of a subtype that overrides it, by file and position, in local and anonymous classes
+     * in and after lambda bodies too. The binding knows an anonymous class's supertype and a type
+     * parameter's argument ({@code compareTo(String)} overrides {@code Comparable<T>.compareTo(T)}).
+     * A static or private method or a constructor overrides nothing and is overridden by nothing.
+     * A lambda expression is no member of its own: its method answers for the nearest enclosing
+     * method with a name.
+     */
+    private Map<String, Object> findOverrideInfo(IMethod method, IJdtService service) {
         Map<String, Object> result = new LinkedHashMap<>();
 
         try {
-            // The method this one overrides, as the compiler binds it
-            IMethodBinding overridden = findOverriddenMethod(declaration);
+            IMethod subject = ElementNames.enclosingMethod(method);
+            ModelHierarchy hierarchy = service.getSearchService().hierarchyOf(subject.getDeclaringType());
+
+            IMethod overridden = hierarchy.overridden(subject);
             if (overridden != null) {
                 Map<String, Object> superInfo = new LinkedHashMap<>();
-                superInfo.put("method", overridden.getName());
-                superInfo.put("qualifiedType", ElementNames.qualifiedName(overridden.getDeclaringClass()));
+                superInfo.put("method", overridden.getElementName());
+                superInfo.put("qualifiedType", ElementNames.qualifiedName(overridden.getDeclaringType()));
                 result.put("overrides", superInfo);
             }
 
-            // Find every overriding method
-            List<SearchMatch> overriders = service.getSearchService()
-                .findOverridingMethods(method, SearchService.ALL_MATCHES).matches();
+            List<IMethod> overriders = hierarchy.overriding(subject);
             if (!overriders.isEmpty()) {
                 List<Map<String, Object>> overriderList = new ArrayList<>();
-                for (SearchMatch match : overriders) {
-                    if (match.getElement() instanceof IMethod overrider) {
-                        if (!overrider.equals(method)) { // Exclude self
-                            Map<String, Object> info = new LinkedHashMap<>();
-                            info.put("method", overrider.getElementName());
-                            info.put("qualifiedType", ElementNames.qualifiedName(overrider.getDeclaringType()));
-                            overriderList.add(info);
-                        }
-                    }
+                for (IMethod overrider : overriders) {
+                    Map<String, Object> info = new LinkedHashMap<>();
+                    info.put("method", overrider.getElementName());
+                    info.put("qualifiedType", ElementNames.qualifiedName(overrider.getDeclaringType()));
+                    overriderList.add(info);
                 }
-                if (!overriderList.isEmpty()) {
-                    result.put("overriddenBy", overriderList);
-                }
+                result.put("overriddenBy", overriderList);
             }
         } catch (Exception e) {
             log.debug("Error finding override info: {}", e.getMessage());
         }
 
         return result;
-    }
-
-    /**
-     * The method {@code declaration} overrides, as JDT finds it from the compiler's bindings
-     * ({@code Bindings.findOverriddenMethod}, which JDT's own quick fixes use to find the method
-     * a method overrides): the nearest declaration of a method it overrides in its superclass
-     * chain, else in its interfaces, visible from its package. The binding knows an anonymous
-     * class's supertype and a type parameter's argument ({@code compareTo(String)} overrides
-     * {@code Comparable<T>.compareTo(T)}). A static or private method or a constructor overrides
-     * nothing.
-     */
-    private IMethodBinding findOverriddenMethod(MethodDeclaration declaration) {
-        IMethodBinding binding = declaration == null ? null : declaration.resolveBinding();
-        return binding == null ? null : Bindings.findOverriddenMethod(binding, true);
     }
 
     private MethodDeclaration findEnclosingMethod(ASTNode node) {

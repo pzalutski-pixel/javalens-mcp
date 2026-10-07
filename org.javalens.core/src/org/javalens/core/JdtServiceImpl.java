@@ -10,8 +10,10 @@ import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IJavaProject;
+import org.eclipse.jdt.core.IMember;
 import org.eclipse.jdt.core.IPackageFragment;
 import org.eclipse.jdt.core.IPackageFragmentRoot;
+import org.eclipse.jdt.core.IParent;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.JavaCore;
 import org.eclipse.jdt.core.JavaModelException;
@@ -768,8 +770,10 @@ public class JdtServiceImpl implements IJdtService {
             IType type = javaProject.findType(typeName);
             // JDT can return the OUTER type when asked for a nested type via dotted form
             // (e.g. findType("p.Outer.Inner") may return Outer). Validate that the simple
-            // name matches the last segment; if not, force the nested-resolution path.
-            if (type != null) {
+            // name matches the last segment; if not, force the nested-resolution path. JDT can
+            // also answer with a handle the model does not hold (a member "1" of Outer for
+            // p.Outer.1), so the type must exist.
+            if (type != null && type.exists()) {
                 String lastSeg = typeName.substring(typeName.lastIndexOf('.') + 1);
                 if (type.getElementName().equals(lastSeg)) {
                     return type;
@@ -782,10 +786,17 @@ public class JdtServiceImpl implements IJdtService {
             while (lastDot > 0) {
                 String candidate = typeName.substring(0, lastDot) + "$" + typeName.substring(lastDot + 1);
                 IType nested = javaProject.findType(candidate);
-                if (nested != null) {
+                if (nested != null && nested.exists()) {
                     return nested;
                 }
                 lastDot = typeName.lastIndexOf('.', lastDot - 1);
+            }
+
+            // A local or anonymous class by the Java model's '$' form (p.Outer$Local, p.Outer$1,
+            // p.Outer$Inner$2), which JDT's lookup of named types does not know.
+            IType local = findLocalByModelName(typeName);
+            if (local != null) {
+                return local;
             }
 
             // Try searching for simple name in all packages
@@ -809,6 +820,42 @@ public class JdtServiceImpl implements IJdtService {
         } catch (JavaModelException e) {
             log.warn("Error finding type {}: {}", typeName, e.getMessage());
             return null;
+        }
+    }
+
+    /**
+     * The local or anonymous class, a class declared in a method, field or initializer at any
+     * depth, whose model name ({@link IType#getFullyQualifiedName()}, '$' between nested types) is
+     * {@code typeName}, within the compilation unit of the top-level type named before the first
+     * '$'. A name the unit gives to more than one such class (two local classes of one name in
+     * different members) names none of them, as does a name no class carries.
+     */
+    private IType findLocalByModelName(String typeName) throws JavaModelException {
+        int dollar = typeName.indexOf('$');
+        if (dollar <= 0) {
+            return null;
+        }
+        IType outer = javaProject.findType(typeName.substring(0, dollar));
+        if (outer == null || !outer.exists() || outer.getCompilationUnit() == null) {
+            return null;
+        }
+        List<IType> named = new ArrayList<>();
+        collectLocalTypesNamed(outer.getCompilationUnit(), false, typeName, named);
+        return named.size() == 1 ? named.get(0) : null;
+    }
+
+    private static void collectLocalTypesNamed(IParent parent, boolean local, String typeName, List<IType> into)
+            throws JavaModelException {
+        for (IJavaElement child : parent.getChildren()) {
+            if (child instanceof IType type) {
+                if (local && typeName.equals(type.getFullyQualifiedName())) {
+                    into.add(type);
+                }
+                collectLocalTypesNamed(type, local, typeName, into);
+            } else if (child instanceof IMember && child instanceof IParent nested) {
+                // A method, field or initializer: the classes declared in it are local.
+                collectLocalTypesNamed(nested, true, typeName, into);
+            }
         }
     }
 

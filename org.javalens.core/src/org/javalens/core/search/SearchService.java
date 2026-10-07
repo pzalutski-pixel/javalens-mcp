@@ -463,6 +463,20 @@ public class SearchService {
     }
 
     /**
+     * The supertypes and subtypes of {@code type}, and the methods overriding its methods or
+     * overridden by them, as the Java model holds them ({@link ModelHierarchy}): local and
+     * anonymous classes under the model's numbering, in and after lambda bodies. Computed for this
+     * call; nothing is kept between calls.
+     *
+     * @param type a type of the Java model, source or class file
+     * @throws IllegalArgumentException when {@code type} is a lambda expression, which the model
+     *     does not hold as a type
+     */
+    public ModelHierarchy hierarchyOf(IType type) throws CoreException {
+        return new ModelHierarchy(type, project, engine, scope);
+    }
+
+    /**
      * Get type hierarchy for a type.
      * Fast because it uses the index.
      */
@@ -642,7 +656,7 @@ public class SearchService {
      * (Parser.consumeEnterAnonymousClassBody), so the model's element at such a reference is the
      * anonymous class, and the reference belongs to the member enclosing the creation.
      */
-    private static SearchMatch withModelElement(SearchMatch match) {
+    static SearchMatch withModelElement(SearchMatch match) {
         if (!(match.getElement() instanceof IJavaElement element) || !withinLocalScope(element)
             || !(element.getAncestor(IJavaElement.COMPILATION_UNIT) instanceof ICompilationUnit unit)) {
             return match;

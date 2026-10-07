@@ -7,7 +7,6 @@ import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IField;
 import org.eclipse.jdt.core.IMethod;
 import org.eclipse.jdt.core.IType;
-import org.eclipse.jdt.core.ITypeHierarchy;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.Signature;
 import org.javalens.core.ElementKindResolver;
@@ -15,6 +14,7 @@ import org.javalens.core.IJdtService;
 import org.javalens.core.MethodFormatter;
 import org.javalens.core.ModifierFormatter;
 import org.javalens.core.TypeKindResolver;
+import org.javalens.core.search.ModelHierarchy;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
 import org.slf4j.Logger;
@@ -118,10 +118,11 @@ public class GetTypeMembersTool extends AbstractTool {
 
             // Collect inherited members if requested
             if (includeInherited) {
-                ITypeHierarchy hierarchy = service.getSearchService().getTypeHierarchy(type);
-                IType[] supertypes = hierarchy.getAllSuperclasses(type);
+                // Superclasses from the nearest, then the interfaces of every supertype, as the
+                // Java model holds them, for local and anonymous classes too
+                ModelHierarchy hierarchy = service.getSearchService().hierarchyOf(type);
 
-                for (IType supertype : supertypes) {
+                for (IType supertype : hierarchy.allSuperclasses()) {
                     String declaredIn = ElementNames.qualifiedName(supertype);
                     if (memberKind == null || "method".equals(memberKind)) {
                         collectMethods(supertype, methods, service, declaredIn);
@@ -132,8 +133,7 @@ public class GetTypeMembersTool extends AbstractTool {
                 }
 
                 // Include interface default methods
-                IType[] interfaces = hierarchy.getAllSuperInterfaces(type);
-                for (IType iface : interfaces) {
+                for (IType iface : hierarchy.allSuperInterfaces()) {
                     String declaredIn = ElementNames.qualifiedName(iface);
                     if (memberKind == null || "method".equals(memberKind)) {
                         collectMethods(iface, methods, service, declaredIn);

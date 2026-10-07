@@ -1,16 +1,13 @@
 package org.javalens.mcp.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IPath;
-import org.eclipse.jdt.core.Flags;
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IMethod;
 import org.eclipse.jdt.core.IType;
-import org.eclipse.jdt.core.ITypeHierarchy;
 import org.eclipse.jdt.core.JavaModelException;
-import org.eclipse.core.runtime.CoreException;
-import org.eclipse.jdt.core.Signature;
 import org.javalens.core.IJdtService;
 import org.javalens.core.MethodFormatter;
 import org.javalens.core.ModifierFormatter;
@@ -90,12 +87,9 @@ public class GetSuperMethodTool extends AbstractTool {
                 return ToolResponse.symbolNotFound("No symbol found at position");
             }
 
-            IMethod method = null;
-            if (element instanceof IMethod m) {
-                method = m;
-            } else {
-                method = (IMethod) element.getAncestor(IJavaElement.METHOD);
-            }
+            // The method at the position or enclosing it. A lambda expression is no member of
+            // its own: a position in it belongs to the nearest enclosing method with a name.
+            IMethod method = ElementNames.enclosingMethod(element);
 
             if (method == null) {
                 return ToolResponse.symbolNotFound("No method found at position");
@@ -132,66 +126,18 @@ public class GetSuperMethodTool extends AbstractTool {
         }
     }
 
-    private IMethod findSuperMethod(IMethod method, IJdtService service) throws JavaModelException, CoreException {
+    /**
+     * The method {@code method} overrides as the compiler binds it ({@code Bindings.findOverriddenMethod}
+     * through SearchService.hierarchyOf): the nearest declaration in the superclass chain, else in
+     * the interfaces, visible from its package; null for a static or private method, a constructor
+     * and a method overriding none.
+     */
+    private IMethod findSuperMethod(IMethod method, IJdtService service) throws CoreException {
         IType declaringType = method.getDeclaringType();
         if (declaringType == null) {
             return null;
         }
-
-        String methodName = method.getElementName();
-        String[] paramTypes = method.getParameterTypes();
-
-        // Get type hierarchy
-        ITypeHierarchy hierarchy = service.getSearchService().getTypeHierarchy(declaringType);
-
-        // Check superclasses first
-        IType[] superclasses = hierarchy.getAllSuperclasses(declaringType);
-        for (IType superclass : superclasses) {
-            IMethod superMethod = findMatchingMethod(superclass, methodName, paramTypes);
-            if (superMethod != null) {
-                return superMethod;
-            }
-        }
-
-        // Check interfaces
-        IType[] interfaces = hierarchy.getAllSuperInterfaces(declaringType);
-        for (IType iface : interfaces) {
-            IMethod superMethod = findMatchingMethod(iface, methodName, paramTypes);
-            if (superMethod != null) {
-                return superMethod;
-            }
-        }
-
-        return null;
-    }
-
-    private IMethod findMatchingMethod(IType type, String methodName, String[] paramTypes) throws JavaModelException {
-        for (IMethod m : type.getMethods()) {
-            if (!m.getElementName().equals(methodName)) {
-                continue;
-            }
-
-            String[] mParamTypes = m.getParameterTypes();
-            if (mParamTypes.length != paramTypes.length) {
-                continue;
-            }
-
-            boolean match = true;
-            for (int i = 0; i < paramTypes.length; i++) {
-                // Compare simplified type names
-                String t1 = Signature.getSimpleName(Signature.toString(paramTypes[i]));
-                String t2 = Signature.getSimpleName(Signature.toString(mParamTypes[i]));
-                if (!t1.equals(t2)) {
-                    match = false;
-                    break;
-                }
-            }
-
-            if (match) {
-                return m;
-            }
-        }
-        return null;
+        return service.getSearchService().hierarchyOf(declaringType).overridden(method);
     }
 
     private Map<String, Object> createMethodInfo(IMethod method, IJdtService service) throws JavaModelException {

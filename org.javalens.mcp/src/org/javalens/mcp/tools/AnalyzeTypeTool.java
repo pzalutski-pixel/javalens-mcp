@@ -6,7 +6,6 @@ import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IField;
 import org.eclipse.jdt.core.IMethod;
 import org.eclipse.jdt.core.IType;
-import org.eclipse.jdt.core.ITypeHierarchy;
 import org.eclipse.jdt.core.ITypeParameter;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.Signature;
@@ -18,6 +17,7 @@ import org.javalens.core.IJdtService;
 import org.javalens.core.MethodFormatter;
 import org.javalens.core.ModifierFormatter;
 import org.javalens.core.TypeKindResolver;
+import org.javalens.core.search.ModelHierarchy;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
 import org.slf4j.Logger;
@@ -261,10 +261,11 @@ public class AnalyzeTypeTool extends AbstractTool {
         Map<String, Object> hierarchy = new LinkedHashMap<>();
 
         try {
-            ITypeHierarchy typeHierarchy = service.getSearchService().getTypeHierarchy(type);
+            // The hierarchy as the Java model holds it, local and anonymous classes included
+            ModelHierarchy typeHierarchy = service.getSearchService().hierarchyOf(type);
 
             // Superclass
-            IType superclass = typeHierarchy.getSuperclass(type);
+            IType superclass = typeHierarchy.superclass();
             if (superclass != null && !"java.lang.Object".equals(superclass.getFullyQualifiedName())) {
                 hierarchy.put("superclass", Map.of(
                     "name", ElementNames.typeName(superclass),
@@ -273,8 +274,8 @@ public class AnalyzeTypeTool extends AbstractTool {
             }
 
             // Interfaces
-            IType[] interfaces = typeHierarchy.getSuperInterfaces(type);
-            if (interfaces.length > 0) {
+            List<IType> interfaces = typeHierarchy.superInterfaces();
+            if (!interfaces.isEmpty()) {
                 List<Map<String, Object>> interfaceList = new ArrayList<>();
                 for (IType iface : interfaces) {
                     interfaceList.add(Map.of(
@@ -285,9 +286,9 @@ public class AnalyzeTypeTool extends AbstractTool {
                 hierarchy.put("interfaces", interfaceList);
             }
 
-            // Subtypes
-            IType[] subtypes = typeHierarchy.getAllSubtypes(type);
-            if (subtypes.length > 0) {
+            // Subtypes, by file and position
+            List<IType> subtypes = typeHierarchy.allSubtypes();
+            if (!subtypes.isEmpty()) {
                 List<Map<String, Object>> subtypeList = new ArrayList<>();
                 for (IType subtype : subtypes) {
                     if (subtypeList.size() >= 20) break; // Limit subtypes
@@ -297,7 +298,7 @@ public class AnalyzeTypeTool extends AbstractTool {
                     ));
                 }
                 hierarchy.put("subtypes", subtypeList);
-                hierarchy.put("subtypeCount", subtypes.length);
+                hierarchy.put("subtypeCount", subtypes.size());
             }
 
         } catch (Exception e) {

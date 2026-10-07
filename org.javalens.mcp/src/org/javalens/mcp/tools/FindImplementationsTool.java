@@ -9,9 +9,9 @@ import org.eclipse.jdt.core.IMethod;
 import org.eclipse.jdt.core.ISourceRange;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.JavaModelException;
-import org.eclipse.jdt.core.Signature;
 import org.javalens.core.IJdtService;
 import org.javalens.core.TypeKindResolver;
+import org.javalens.core.search.ModelHierarchy;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
 import org.slf4j.Logger;
@@ -25,9 +25,10 @@ import java.util.Map;
 import java.util.function.Supplier;
 
 /**
- * Find implementations of an interface or extensions of a class.
- * Uses ITypeHierarchy.getAllSubtypes so transitive implementors via sub-interface
- * chains or multi-level extension are included.
+ * Find implementations of an interface or extensions of a class: every subtype, direct or
+ * not, as the Java model holds it (SearchService.hierarchyOf), local and anonymous classes in
+ * and after lambda bodies included; for a method, every method of a subtype that overrides it
+ * as the compiler binds it, overrides of a method declared with a type parameter included.
  */
 public class FindImplementationsTool extends AbstractTool {
 
@@ -100,13 +101,15 @@ public class FindImplementationsTool extends AbstractTool {
                 return ToolResponse.symbolNotFound("No symbol found at position");
             }
 
-            // Must be a type or method
+            // Must be a type or method. A lambda expression is no member of its own: the
+            // position belongs to the nearest enclosing member that has a name.
             IType targetType = null;
             IMethod targetMethod = null;
+            IJavaElement named = ElementNames.namedMember(element);
 
-            if (element instanceof IType type) {
+            if (named instanceof IType type) {
                 targetType = type;
-            } else if (element instanceof IMethod method) {
+            } else if (named instanceof IMethod method) {
                 targetMethod = method;
                 targetType = method.getDeclaringType();
             } else {
@@ -118,31 +121,30 @@ public class FindImplementationsTool extends AbstractTool {
                 }
             }
 
-            // Use type hierarchy for full transitive implementor/subtype walk. The previous
-            // IMPLEMENTORS-based search returned only direct implementors, silently dropping
-            // subtypes reached via sub-interface chains or multi-level extension.
-            IType[] subtypes = service.getSearchService().getAllSubtypes(targetType);
+            // Every subtype, direct or not, as the Java model holds it; for a method, every
+            // method of a subtype that overrides it as the compiler binds it.
+            ModelHierarchy hierarchy = service.getSearchService().hierarchyOf(targetType);
 
             // Count eligible candidates separately from the displayed list so truncated
             // reports accurately. Comparing implementations.size() to maxResults would
             // fire a false-positive when actual eligible == maxResults exactly.
             List<Map<String, Object>> implementations = new ArrayList<>();
-            int eligibleCount = 0;
-            for (IType subtype : subtypes) {
-                if (targetMethod != null) {
-                    IMethod overrider = findMatchingMethod(subtype, targetMethod);
-                    if (overrider == null) continue;
-                    eligibleCount++;
-                    if (implementations.size() < maxResults) {
-                        Map<String, Object> implInfo = createMethodImplementationInfo(subtype, overrider, service);
-                        if (implInfo != null) implementations.add(implInfo);
-                    }
-                } else {
-                    eligibleCount++;
-                    if (implementations.size() < maxResults) {
-                        Map<String, Object> implInfo = createTypeImplementationInfo(subtype, service);
-                        if (implInfo != null) implementations.add(implInfo);
-                    }
+            int eligibleCount;
+            if (targetMethod != null) {
+                List<IMethod> overriders = hierarchy.overriding(targetMethod);
+                eligibleCount = overriders.size();
+                for (IMethod overrider : overriders) {
+                    if (implementations.size() >= maxResults) break;
+                    Map<String, Object> implInfo = createMethodImplementationInfo(overrider.getDeclaringType(), overrider, service);
+                    if (implInfo != null) implementations.add(implInfo);
+                }
+            } else {
+                List<IType> subtypes = hierarchy.allSubtypes();
+                eligibleCount = subtypes.size();
+                for (IType subtype : subtypes) {
+                    if (implementations.size() >= maxResults) break;
+                    Map<String, Object> implInfo = createTypeImplementationInfo(subtype, service);
+                    if (implInfo != null) implementations.add(implInfo);
                 }
             }
 
@@ -224,23 +226,5 @@ public class FindImplementationsTool extends AbstractTool {
             info.put("line", line);
             info.put("column", column);
         }
-    }
-
-    private IMethod findMatchingMethod(IType type, IMethod target) throws JavaModelException {
-        String targetName = target.getElementName();
-        String[] targetParamTypes = target.getParameterTypes();
-        for (IMethod m : type.getMethods()) {
-            if (!m.getElementName().equals(targetName)) continue;
-            String[] mParamTypes = m.getParameterTypes();
-            if (mParamTypes.length != targetParamTypes.length) continue;
-            boolean match = true;
-            for (int i = 0; i < targetParamTypes.length; i++) {
-                String a = Signature.getSimpleName(Signature.toString(targetParamTypes[i]));
-                String b = Signature.getSimpleName(Signature.toString(mParamTypes[i]));
-                if (!a.equals(b)) { match = false; break; }
-            }
-            if (match) return m;
-        }
-        return null;
     }
 }

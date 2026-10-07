@@ -5,10 +5,10 @@ import org.eclipse.core.runtime.IPath;
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IType;
-import org.eclipse.jdt.core.ITypeHierarchy;
 import org.eclipse.jdt.core.JavaModelException;
 import org.javalens.core.IJdtService;
 import org.javalens.core.TypeKindResolver;
+import org.javalens.core.search.ModelHierarchy;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
 import org.slf4j.Logger;
@@ -22,8 +22,9 @@ import java.util.Map;
 import java.util.function.Supplier;
 
 /**
- * Get the type hierarchy (supertypes and subtypes) for a Java type.
- * Uses JDT's ITypeHierarchy for fast, indexed hierarchy traversal.
+ * Get the type hierarchy (supertypes and subtypes) for a Java type, as the Java model holds it
+ * (SearchService.hierarchyOf): local and anonymous classes in and after lambda bodies included,
+ * lambda expressions not.
  */
 public class GetTypeHierarchyTool extends AbstractTool {
 
@@ -102,15 +103,15 @@ public class GetTypeHierarchyTool extends AbstractTool {
                 return ToolResponse.symbolNotFound("No type found at position or by name");
             }
 
-            // Get type hierarchy
-            ITypeHierarchy hierarchy = service.getSearchService().getTypeHierarchy(targetType);
+            // The hierarchy as the Java model holds it, local and anonymous classes included
+            ModelHierarchy hierarchy = service.getSearchService().hierarchyOf(targetType);
 
             // Build response data
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("type", createTypeInfo(targetType, service));
 
-            // Get superclasses
-            IType[] superclasses = hierarchy.getAllSuperclasses(targetType);
+            // Superclasses, from the nearest
+            List<IType> superclasses = hierarchy.allSuperclasses();
             List<Map<String, Object>> superclassList = new ArrayList<>();
             for (IType superclass : superclasses) {
                 if (superclassList.size() >= maxDepth) break;
@@ -118,8 +119,8 @@ public class GetTypeHierarchyTool extends AbstractTool {
             }
             data.put("superclasses", superclassList);
 
-            // Get implemented interfaces
-            IType[] interfaces = hierarchy.getAllSuperInterfaces(targetType);
+            // Interfaces of every supertype
+            List<IType> interfaces = hierarchy.allSuperInterfaces();
             List<Map<String, Object>> interfaceList = new ArrayList<>();
             for (IType iface : interfaces) {
                 if (interfaceList.size() >= maxDepth) break;
@@ -127,8 +128,8 @@ public class GetTypeHierarchyTool extends AbstractTool {
             }
             data.put("interfaces", interfaceList);
 
-            // Get subtypes
-            IType[] subtypes = hierarchy.getAllSubtypes(targetType);
+            // Every subtype, by file and position
+            List<IType> subtypes = hierarchy.allSubtypes();
             List<Map<String, Object>> subtypeList = new ArrayList<>();
             for (IType subtype : subtypes) {
                 if (subtypeList.size() >= maxDepth) break;
@@ -136,16 +137,16 @@ public class GetTypeHierarchyTool extends AbstractTool {
             }
             data.put("subtypes", subtypeList);
 
-            data.put("totalSuperclasses", superclasses.length);
-            data.put("totalInterfaces", interfaces.length);
-            data.put("totalSubtypes", subtypes.length);
+            data.put("totalSuperclasses", superclasses.size());
+            data.put("totalInterfaces", interfaces.size());
+            data.put("totalSubtypes", subtypes.size());
 
             return ToolResponse.success(data, ResponseMeta.builder()
-                .totalCount(superclasses.length + interfaces.length + subtypes.length)
+                .totalCount(superclasses.size() + interfaces.size() + subtypes.size())
                 .returnedCount(superclassList.size() + interfaceList.size() + subtypeList.size())
-                .truncated(superclassList.size() < superclasses.length ||
-                          interfaceList.size() < interfaces.length ||
-                          subtypeList.size() < subtypes.length)
+                .truncated(superclassList.size() < superclasses.size() ||
+                          interfaceList.size() < interfaces.size() ||
+                          subtypeList.size() < subtypes.size())
                 .suggestedNextTools(List.of(
                     "get_type_members to see members of a specific type",
                     "find_implementations to find all implementors",

@@ -133,7 +133,10 @@ public interface IJdtService {
     IType getTypeAtPosition(Path filePath, int line, int column);
 
     /**
-     * Find a type by its fully qualified or simple name.
+     * Find a type by its fully qualified or simple name. A member type is named with '.' before
+     * its own name; a local or anonymous class by the Java model's '$' form
+     * ({@code pkg.Outer$Local}, {@code pkg.Outer$1}), which names no type when two local classes
+     * of the unit share it.
      *
      * @param typeName Type name (e.g., "String" or "java.lang.String")
      * @return IType or null if not found
