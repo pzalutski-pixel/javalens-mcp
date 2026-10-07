@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.eclipse.jdt.core.Flags;
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IJavaElement;
+import org.eclipse.jdt.core.IMember;
 import org.eclipse.jdt.core.IMethod;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.ITypeParameter;
@@ -180,7 +181,7 @@ public class AnalyzeMethodTool extends AbstractTool {
 
         // Declaring type
         IType declaringType = method.getDeclaringType();
-        info.put("declaringType", declaringType.getFullyQualifiedName());
+        info.put("declaringType", ElementNames.qualifiedName(declaringType));
 
         info.put("signature", MethodFormatter.signature(method));
         String returnType = MethodFormatter.returnTypeSimpleName(method);
@@ -243,29 +244,30 @@ public class AnalyzeMethodTool extends AbstractTool {
             for (SearchMatch match : references) {
                 if (callers.size() >= maxCallers) break;
 
-                Object element = match.getElement();
-                if (element instanceof IJavaElement javaElement) {
-                    IMethod enclosingMethod = (IMethod) javaElement.getAncestor(IJavaElement.METHOD);
-                    if (enclosingMethod != null) {
-                        String key = enclosingMethod.getHandleIdentifier();
-                        if (!seenCallers.contains(key)) {
-                            seenCallers.add(key);
+                // A call is attributed to the member holding it that has a name: a call in a
+                // lambda belongs to the method, initializer or field the lambda is written in.
+                // An initializer or field initializer calls as <initializer>.
+                if (match.getElement() instanceof IJavaElement javaElement
+                        && ElementNames.namedMember(javaElement) instanceof IMember caller
+                        && !(caller instanceof IType)) {
+                    String key = caller.getHandleIdentifier();
+                    if (!seenCallers.contains(key)) {
+                        seenCallers.add(key);
 
-                            Map<String, Object> caller = new LinkedHashMap<>();
-                            caller.put("method", enclosingMethod.getElementName());
-                            caller.put("type", enclosingMethod.getDeclaringType().getElementName());
-                            caller.put("qualifiedType", enclosingMethod.getDeclaringType().getFullyQualifiedName());
+                        Map<String, Object> callerInfo = new LinkedHashMap<>();
+                        callerInfo.put("method", caller instanceof IMethod ? caller.getElementName()
+                            : ElementNames.INITIALIZER);
+                        callerInfo.put("qualifiedType", ElementNames.qualifiedName(caller.getDeclaringType()));
 
-                            // Call site location
-                            ICompilationUnit callerCu = enclosingMethod.getCompilationUnit();
-                            if (callerCu != null && callerCu.getResource() != null) {
-                                caller.put("file", service.getPathUtils().formatPath(
-                                    callerCu.getResource().getLocation().toOSString()));
-                                caller.put("callLine", service.getLineNumber(callerCu, match.getOffset()));
-                            }
-
-                            callers.add(caller);
+                        // Call site location
+                        ICompilationUnit callerCu = caller.getCompilationUnit();
+                        if (callerCu != null && callerCu.getResource() != null) {
+                            callerInfo.put("file", service.getPathUtils().formatPath(
+                                callerCu.getResource().getLocation().toOSString()));
+                            callerInfo.put("callLine", service.getLineNumber(callerCu, match.getOffset()));
                         }
+
+                        callers.add(callerInfo);
                     }
                 }
             }
@@ -327,7 +329,7 @@ public class AnalyzeMethodTool extends AbstractTool {
                         if (callees.size() >= maxCallees) return false;
                         IMethodBinding binding = node.resolveConstructorBinding();
                         if (binding != null) {
-                            addCallee(binding, "CONSTRUCTOR", binding.getDeclaringClass().getName(),
+                            addCallee(binding, "CONSTRUCTOR", ElementNames.typeExpression(binding.getDeclaringClass()),
                                 ast.getLineNumber(node.getStartPosition()), seenCallees, callees);
                         }
                         return true;
@@ -338,7 +340,7 @@ public class AnalyzeMethodTool extends AbstractTool {
                         if (callees.size() >= maxCallees) return false;
                         IMethodBinding binding = node.resolveConstructorBinding();
                         if (binding != null) {
-                            addCallee(binding, "THIS_CONSTRUCTOR", binding.getDeclaringClass().getName(),
+                            addCallee(binding, "THIS_CONSTRUCTOR", ElementNames.typeExpression(binding.getDeclaringClass()),
                                 ast.getLineNumber(node.getStartPosition()), seenCallees, callees);
                         }
                         return true;
@@ -349,7 +351,7 @@ public class AnalyzeMethodTool extends AbstractTool {
                         if (callees.size() >= maxCallees) return false;
                         IMethodBinding binding = node.resolveConstructorBinding();
                         if (binding != null) {
-                            addCallee(binding, "SUPER_CONSTRUCTOR", binding.getDeclaringClass().getName(),
+                            addCallee(binding, "SUPER_CONSTRUCTOR", ElementNames.typeExpression(binding.getDeclaringClass()),
                                 ast.getLineNumber(node.getStartPosition()), seenCallees, callees);
                         }
                         return true;
@@ -411,8 +413,7 @@ public class AnalyzeMethodTool extends AbstractTool {
 
         ITypeBinding declaringClass = binding.getDeclaringClass();
         if (declaringClass != null) {
-            callee.put("declaringType", declaringClass.getName());
-            callee.put("qualifiedType", declaringClass.getQualifiedName());
+            callee.put("qualifiedType", ElementNames.qualifiedName(declaringClass));
         }
 
         // Build signature
@@ -420,7 +421,7 @@ public class AnalyzeMethodTool extends AbstractTool {
         ITypeBinding[] paramTypes = binding.getParameterTypes();
         for (int i = 0; i < paramTypes.length; i++) {
             if (i > 0) sig.append(", ");
-            sig.append(paramTypes[i].getName());
+            sig.append(ElementNames.typeExpression(paramTypes[i]));
         }
         sig.append(")");
         callee.put("signature", sig.toString());
@@ -439,8 +440,7 @@ public class AnalyzeMethodTool extends AbstractTool {
             if (superMethod != null) {
                 Map<String, Object> superInfo = new LinkedHashMap<>();
                 superInfo.put("method", superMethod.getElementName());
-                superInfo.put("type", superMethod.getDeclaringType().getElementName());
-                superInfo.put("qualifiedType", superMethod.getDeclaringType().getFullyQualifiedName());
+                superInfo.put("qualifiedType", ElementNames.qualifiedName(superMethod.getDeclaringType()));
                 result.put("overrides", superInfo);
             }
 
@@ -454,8 +454,7 @@ public class AnalyzeMethodTool extends AbstractTool {
                         if (!overrider.equals(method)) { // Exclude self
                             Map<String, Object> info = new LinkedHashMap<>();
                             info.put("method", overrider.getElementName());
-                            info.put("type", overrider.getDeclaringType().getElementName());
-                            info.put("qualifiedType", overrider.getDeclaringType().getFullyQualifiedName());
+                            info.put("qualifiedType", ElementNames.qualifiedName(overrider.getDeclaringType()));
                             overriderList.add(info);
                         }
                     }

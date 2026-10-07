@@ -112,7 +112,7 @@ class FindAffectedTestsToolTest {
 
         List<Map<String, Object>> tests = testMethods(r);
         assertEquals(1, tests.size(), () -> "tests: " + tests);
-        assertEquals("WidgetTest", tests.get(0).get("className"));
+        assertEquals("com.reach.WidgetTest", tests.get(0).get("className"));
         assertEquals("computesViaMember", tests.get(0).get("methodName"));
     }
 
@@ -161,7 +161,7 @@ class FindAffectedTestsToolTest {
         assertEquals(2, tests.size());
 
         Map<String, Object> direct = tests.get(0);
-        assertEquals("TestedOnlyTest", direct.get("className"));
+        assertEquals("com.reach.TestedOnlyTest", direct.get("className"));
         assertEquals("doublesInput", direct.get("methodName"));
         assertEquals("com.reach.TestedOnlyTest#doublesInput()", direct.get("key"));
         assertEquals("src/test/java/com/reach/TestedOnlyTest.java", direct.get("filePath"));

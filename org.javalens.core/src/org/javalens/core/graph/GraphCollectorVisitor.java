@@ -1,6 +1,7 @@
 package org.javalens.core.graph;
 
 import org.eclipse.jdt.core.ICompilationUnit;
+import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTVisitor;
 import org.eclipse.jdt.core.dom.AbstractTypeDeclaration;
@@ -59,10 +60,13 @@ final class GraphCollectorVisitor extends ASTVisitor {
     private final Set<GraphEdge> edges;
     private final Map<String, Set<String>> overrides;
     private final Set<String> mains;
+    /** Type binding key -> graph type key, shared by the visitors of one build. */
+    private final Map<String, String> typeKeys;
 
     GraphCollectorVisitor(ICompilationUnit source, CompilationUnit ast,
                           Map<String, GraphNode> nodes, Set<GraphEdge> edges,
-                          Map<String, Set<String>> overrides, Set<String> mains) {
+                          Map<String, Set<String>> overrides, Set<String> mains,
+                          Map<String, String> typeKeys) {
         this.ast = ast;
         this.filePath = source.getResource() != null && source.getResource().getLocation() != null
             ? source.getResource().getLocation().toOSString()
@@ -71,6 +75,7 @@ final class GraphCollectorVisitor extends ASTVisitor {
         this.edges = edges;
         this.overrides = overrides;
         this.mains = mains;
+        this.typeKeys = typeKeys;
     }
 
     // ========== Node registration ==========
@@ -356,15 +361,28 @@ final class GraphCollectorVisitor extends ASTVisitor {
         return methodKey(binding);
     }
 
-    private static String typeKey(ITypeBinding binding) {
+    /**
+     * A type's key: its model element's fully qualified name, with {@code $} between nested
+     * types, as {@link ProjectGraph#keyOf} names the same type. A local or anonymous type, and
+     * a type nested in one, has no qualified name and no key.
+     */
+    private String typeKey(ITypeBinding binding) {
         if (binding == null) {
             return null;
         }
-        String qualified = binding.getErasure().getQualifiedName();
-        return qualified.isEmpty() ? null : qualified;
+        ITypeBinding type = binding.getErasure();
+        if (type.getQualifiedName().isEmpty()) {
+            return null;
+        }
+        return typeKeys.computeIfAbsent(type.getKey(), bindingKey -> {
+            if (type.getJavaElement() instanceof IType element) {
+                return element.getFullyQualifiedName();
+            }
+            throw new IllegalStateException("No type element for the type " + bindingKey);
+        });
     }
 
-    private static String methodKey(IMethodBinding binding) {
+    private String methodKey(IMethodBinding binding) {
         if (binding == null) {
             return null;
         }
@@ -381,7 +399,7 @@ final class GraphCollectorVisitor extends ASTVisitor {
         return typeKey + "#" + name + "(" + params + ")";
     }
 
-    private static String fieldKey(IVariableBinding binding) {
+    private String fieldKey(IVariableBinding binding) {
         if (binding == null || binding.getDeclaringClass() == null
             || !binding.getDeclaringClass().isFromSource()) {
             return null;

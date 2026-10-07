@@ -250,7 +250,7 @@ public class InlineMethodTool extends AbstractTool {
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("filePath", service.getPathUtils().formatPath(path));
             data.put("methodName", method.getElementName());
-            data.put("methodClass", method.getDeclaringType().getElementName());
+            data.put("methodClass", ElementNames.qualifiedName(method.getDeclaringType()));
             data.put("parameterCount", params.size());
             data.put("isExpressionContext", isExpressionContext);
             data.put("inlinedCode", inlinedCode);

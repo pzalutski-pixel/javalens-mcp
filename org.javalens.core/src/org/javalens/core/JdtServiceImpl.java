@@ -743,18 +743,18 @@ public class JdtServiceImpl implements IJdtService {
         }
     }
 
+    /**
+     * The type at the position, or else the type enclosing the element there. A lambda
+     * expression is no type of its own: a position in a lambda body is within the type the
+     * lambda is written in.
+     */
     @Override
     public IType getTypeAtPosition(Path filePath, int line, int column) {
-        IJavaElement element = getElementAtPosition(filePath, line, column);
-        if (element instanceof IType type) {
-            return type;
+        IJavaElement current = getElementAtPosition(filePath, line, column);
+        while (current != null && !(current instanceof IType type && !type.isLambda())) {
+            current = current.getParent();
         }
-        // If the element is within a type, try to get the enclosing type
-        if (element != null) {
-            IType enclosingType = (IType) element.getAncestor(IJavaElement.TYPE);
-            return enclosingType;
-        }
-        return null;
+        return (IType) current;
     }
 
     @Override

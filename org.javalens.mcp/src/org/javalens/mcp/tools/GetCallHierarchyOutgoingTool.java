@@ -154,7 +154,7 @@ public class GetCallHierarchyOutgoingTool extends AbstractTool {
             String methodName = methodBinding.getName();
             ITypeBinding declaringTypeBinding = methodBinding.getDeclaringClass();
             String declaringClass = declaringTypeBinding != null ?
-                declaringTypeBinding.getQualifiedName() : "Unknown";
+                ElementNames.qualifiedName(declaringTypeBinding) : "Unknown";
             String signature = buildSignature(methodBinding);
 
             // Collect all callees
@@ -303,10 +303,10 @@ public class GetCallHierarchyOutgoingTool extends AbstractTool {
         Map<String, Object> callee = new LinkedHashMap<>();
         callee.put("method", binding.getName());
         ITypeBinding declaring = binding.getDeclaringClass();
-        callee.put("declaringClass", declaring != null ? declaring.getQualifiedName() : "Unknown");
+        callee.put("declaringClass", declaring != null ? ElementNames.qualifiedName(declaring) : "Unknown");
         callee.put("signature", buildSignature(binding));
         ITypeBinding returnType = binding.getReturnType();
-        callee.put("returnType", returnType != null ? returnType.getName() : "");
+        callee.put("returnType", returnType != null ? ElementNames.typeExpression(returnType) : "");
         callee.put("callType", "METHOD_REFERENCE");
         callee.put("isFromSource", declaring != null && declaring.isFromSource());
         callee.put("callLocation", buildCallLocation(node, ast, filePath, service));
@@ -318,9 +318,9 @@ public class GetCallHierarchyOutgoingTool extends AbstractTool {
                                   Path filePath, IJdtService service, String callType) {
         Map<String, Object> callee = new LinkedHashMap<>();
         callee.put("method", binding.getName());
-        callee.put("declaringClass", binding.getDeclaringClass().getQualifiedName());
+        callee.put("declaringClass", ElementNames.qualifiedName(binding.getDeclaringClass()));
         callee.put("signature", buildSignature(binding));
-        callee.put("returnType", binding.getReturnType().getName());
+        callee.put("returnType", ElementNames.typeExpression(binding.getReturnType()));
         callee.put("callType", callType);
         callee.put("isFromSource", binding.getDeclaringClass().isFromSource());
         callee.put("callLocation", buildCallLocation(node, ast, filePath, service));
@@ -332,9 +332,9 @@ public class GetCallHierarchyOutgoingTool extends AbstractTool {
                                        Path filePath, IJdtService service) {
         Map<String, Object> callee = new LinkedHashMap<>();
         callee.put("method", binding.getName());
-        callee.put("declaringClass", binding.getDeclaringClass().getQualifiedName());
+        callee.put("declaringClass", ElementNames.qualifiedName(binding.getDeclaringClass()));
         callee.put("signature", buildSignature(binding));
-        callee.put("returnType", binding.getReturnType().getName());
+        callee.put("returnType", ElementNames.typeExpression(binding.getReturnType()));
         callee.put("callType", "SUPER_METHOD");
         callee.put("isFromSource", binding.getDeclaringClass().isFromSource());
         callee.put("callLocation", buildCallLocation(node, ast, filePath, service));
@@ -346,9 +346,9 @@ public class GetCallHierarchyOutgoingTool extends AbstractTool {
                                        Path filePath, IJdtService service) {
         Map<String, Object> callee = new LinkedHashMap<>();
         callee.put("method", "<init>");
-        callee.put("declaringClass", binding.getDeclaringClass().getQualifiedName());
-        callee.put("signature", "new " + binding.getDeclaringClass().getName() + buildParamList(binding));
-        callee.put("returnType", binding.getDeclaringClass().getName());
+        callee.put("declaringClass", ElementNames.qualifiedName(binding.getDeclaringClass()));
+        callee.put("signature", "new " + ElementNames.typeExpression(binding.getDeclaringClass()) + buildParamList(binding));
+        callee.put("returnType", ElementNames.typeExpression(binding.getDeclaringClass()));
         callee.put("callType", "CONSTRUCTOR");
         callee.put("isFromSource", binding.getDeclaringClass().isFromSource());
         callee.put("callLocation", buildCallLocation(node, ast, filePath, service));
@@ -360,7 +360,7 @@ public class GetCallHierarchyOutgoingTool extends AbstractTool {
                                            Path filePath, IJdtService service) {
         Map<String, Object> callee = new LinkedHashMap<>();
         callee.put("method", "<init>");
-        callee.put("declaringClass", binding.getDeclaringClass().getQualifiedName());
+        callee.put("declaringClass", ElementNames.qualifiedName(binding.getDeclaringClass()));
         callee.put("signature", "this" + buildParamList(binding));
         callee.put("callType", "THIS_CONSTRUCTOR");
         callee.put("isFromSource", binding.getDeclaringClass().isFromSource());
@@ -373,7 +373,7 @@ public class GetCallHierarchyOutgoingTool extends AbstractTool {
                                             Path filePath, IJdtService service) {
         Map<String, Object> callee = new LinkedHashMap<>();
         callee.put("method", "<init>");
-        callee.put("declaringClass", binding.getDeclaringClass().getQualifiedName());
+        callee.put("declaringClass", ElementNames.qualifiedName(binding.getDeclaringClass()));
         callee.put("signature", "super" + buildParamList(binding));
         callee.put("callType", "SUPER_CONSTRUCTOR");
         callee.put("isFromSource", binding.getDeclaringClass().isFromSource());
@@ -396,7 +396,7 @@ public class GetCallHierarchyOutgoingTool extends AbstractTool {
         ITypeBinding[] params = method.getParameterTypes();
         for (int i = 0; i < params.length; i++) {
             if (i > 0) sig.append(", ");
-            sig.append(params[i].getName());
+            sig.append(ElementNames.typeExpression(params[i]));
         }
         sig.append(")");
         return sig.toString();
@@ -407,7 +407,7 @@ public class GetCallHierarchyOutgoingTool extends AbstractTool {
         ITypeBinding[] params = method.getParameterTypes();
         for (int i = 0; i < params.length; i++) {
             if (i > 0) sig.append(", ");
-            sig.append(params[i].getName());
+            sig.append(ElementNames.typeExpression(params[i]));
         }
         sig.append(")");
         return sig.toString();

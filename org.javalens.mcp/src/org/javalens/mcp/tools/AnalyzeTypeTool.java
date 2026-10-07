@@ -131,9 +131,9 @@ public class AnalyzeTypeTool extends AbstractTool {
     private Map<String, Object> createTypeInfo(IType type, IJdtService service, ICompilationUnit cu)
             throws JavaModelException {
         Map<String, Object> info = new LinkedHashMap<>();
-        info.put("name", type.getElementName());
-        info.put("qualifiedName", type.getFullyQualifiedName());
-        info.put("package", type.getPackageFragment().getElementName());
+        info.put("name", ElementNames.typeName(type));
+        info.put("qualifiedName", ElementNames.qualifiedName(type));
+        info.put("package", ElementNames.packageName(type.getPackageFragment().getElementName()));
 
         info.put("kind", TypeKindResolver.kindOf(type));
 
@@ -200,7 +200,7 @@ public class AnalyzeTypeTool extends AbstractTool {
         List<Map<String, Object>> nestedTypes = new ArrayList<>();
         for (IType nested : type.getTypes()) {
             Map<String, Object> nestedInfo = new LinkedHashMap<>();
-            nestedInfo.put("name", nested.getElementName());
+            nestedInfo.put("name", ElementNames.typeName(nested));
             nestedInfo.put("kind", TypeKindResolver.kindOf(nested));
             nestedInfo.put("modifiers", ModifierFormatter.format(nested.getFlags()));
             nestedTypes.add(nestedInfo);
@@ -267,8 +267,8 @@ public class AnalyzeTypeTool extends AbstractTool {
             IType superclass = typeHierarchy.getSuperclass(type);
             if (superclass != null && !"java.lang.Object".equals(superclass.getFullyQualifiedName())) {
                 hierarchy.put("superclass", Map.of(
-                    "name", superclass.getElementName(),
-                    "qualifiedName", superclass.getFullyQualifiedName()
+                    "name", ElementNames.typeName(superclass),
+                    "qualifiedName", ElementNames.qualifiedName(superclass)
                 ));
             }
 
@@ -278,8 +278,8 @@ public class AnalyzeTypeTool extends AbstractTool {
                 List<Map<String, Object>> interfaceList = new ArrayList<>();
                 for (IType iface : interfaces) {
                     interfaceList.add(Map.of(
-                        "name", iface.getElementName(),
-                        "qualifiedName", iface.getFullyQualifiedName()
+                        "name", ElementNames.typeName(iface),
+                        "qualifiedName", ElementNames.qualifiedName(iface)
                     ));
                 }
                 hierarchy.put("interfaces", interfaceList);
@@ -292,8 +292,8 @@ public class AnalyzeTypeTool extends AbstractTool {
                 for (IType subtype : subtypes) {
                     if (subtypeList.size() >= 20) break; // Limit subtypes
                     subtypeList.add(Map.of(
-                        "name", subtype.getElementName(),
-                        "qualifiedName", subtype.getFullyQualifiedName()
+                        "name", ElementNames.typeName(subtype),
+                        "qualifiedName", ElementNames.qualifiedName(subtype)
                     ));
                 }
                 hierarchy.put("subtypes", subtypeList);

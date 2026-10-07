@@ -117,8 +117,8 @@ public class SuggestImportsTool extends AbstractTool {
 
                         Map<String, Object> candidate = new LinkedHashMap<>();
                         candidate.put("fullyQualifiedName", fqn);
-                        candidate.put("packageName", packageName);
-                        candidate.put("simpleName", type.getElementName());
+                        candidate.put("packageName", ElementNames.packageName(packageName));
+                        candidate.put("simpleName", ElementNames.typeName(type));
                         candidate.put("relevance", relevance);
                         candidate.put("isInterface", type.isInterface());
                         candidate.put("isClass", type.isClass());

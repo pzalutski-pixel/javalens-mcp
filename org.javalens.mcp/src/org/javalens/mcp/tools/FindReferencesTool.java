@@ -113,14 +113,14 @@ public class FindReferencesTool extends AbstractTool {
             }
 
             Map<String, Object> data = new LinkedHashMap<>();
-            data.put("symbol", element.getElementName());
+            data.put("symbol", ElementNames.name(element));
             data.put("symbolKind", getElementKind(element));
 
-            // Add containing type info
+            // The declaring type of a method or field, fully qualified
             if (element instanceof IMethod method && method.getDeclaringType() != null) {
-                data.put("containingType", method.getDeclaringType().getElementName());
+                data.put("containingType", ElementNames.qualifiedName(method.getDeclaringType()));
             } else if (element instanceof IField field && field.getDeclaringType() != null) {
-                data.put("containingType", field.getDeclaringType().getElementName());
+                data.put("containingType", ElementNames.qualifiedName(field.getDeclaringType()));
             }
 
             data.put("totalCount", result.totalEncountered());

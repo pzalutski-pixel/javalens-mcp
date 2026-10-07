@@ -111,7 +111,7 @@ public class FindImplementationsTool extends AbstractTool {
                 targetType = method.getDeclaringType();
             } else {
                 // Try to get the type from the element's ancestor
-                targetType = (IType) element.getAncestor(IJavaElement.TYPE);
+                targetType = ElementNames.enclosingType(element);
                 if (targetType == null) {
                     return ToolResponse.invalidParameter("position",
                         "Symbol at position is not a type or method");
@@ -147,7 +147,7 @@ public class FindImplementationsTool extends AbstractTool {
             }
 
             Map<String, Object> data = new LinkedHashMap<>();
-            data.put("symbol", targetType.getElementName());
+            data.put("symbol", ElementNames.typeName(targetType));
 
             try {
                 data.put("isInterface", targetType.isInterface());
@@ -182,8 +182,8 @@ public class FindImplementationsTool extends AbstractTool {
     private Map<String, Object> createTypeImplementationInfo(IType type, IJdtService service) {
         try {
             Map<String, Object> info = new LinkedHashMap<>();
-            info.put("name", type.getElementName());
-            info.put("qualifiedName", type.getFullyQualifiedName());
+            info.put("name", ElementNames.typeName(type));
+            info.put("qualifiedName", ElementNames.qualifiedName(type));
             info.put("kind", TypeKindResolver.kindOf(type));
             populateLocation(type, info, service, type.getNameRange());
             return info;
@@ -196,8 +196,8 @@ public class FindImplementationsTool extends AbstractTool {
     private Map<String, Object> createMethodImplementationInfo(IType type, IMethod method, IJdtService service) {
         try {
             Map<String, Object> info = new LinkedHashMap<>();
-            info.put("name", type.getElementName());
-            info.put("qualifiedName", type.getFullyQualifiedName());
+            info.put("name", ElementNames.typeName(type));
+            info.put("qualifiedName", ElementNames.qualifiedName(type));
             info.put("kind", TypeKindResolver.kindOf(type));
             info.put("method", method.getElementName());
             populateLocation(method, info, service, method.getNameRange());

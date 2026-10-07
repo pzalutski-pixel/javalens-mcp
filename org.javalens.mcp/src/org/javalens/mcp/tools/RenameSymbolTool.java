@@ -125,6 +125,17 @@ public class RenameSymbolTool extends AbstractTool {
                 return ToolResponse.symbolNotFound("No symbol at position");
             }
 
+            // An initializer and an anonymous class have no name, so there is nothing to rename.
+            if (element.getElementType() == IJavaElement.INITIALIZER) {
+                return ToolResponse.invalidParameter("position",
+                    "Symbol at position is an initializer, which has no name to rename");
+            }
+            if (element instanceof IType type && type.isAnonymous()) {
+                return ToolResponse.invalidParameter("position",
+                    "Symbol at position is the anonymous class " + ElementNames.qualifiedName(type)
+                        + ", which has no name to rename");
+            }
+
             String oldName = element.getElementName();
             String symbolKind = getElementKind(element);
 

@@ -111,7 +111,7 @@ public class GetCallHierarchyIncomingTool extends AbstractTool {
             // Get method metadata
             String methodName = method.getElementName();
             IType declaringType = method.getDeclaringType();
-            String declaringClass = declaringType != null ? declaringType.getFullyQualifiedName() : "Unknown";
+            String declaringClass = declaringType != null ? ElementNames.qualifiedName(declaringType) : "Unknown";
             String signature = buildMethodSignature(method);
 
             // Every reference to this method: extraction skips matches it cannot place,
@@ -188,22 +188,23 @@ public class GetCallHierarchyIncomingTool extends AbstractTool {
                     }
                 }
 
-                // Find the enclosing method (the caller)
-                IMethod callerMethod = (IMethod) javaElement.getAncestor(IJavaElement.METHOD);
-                if (callerMethod != null) {
+                // The caller is the member holding the call that has a name: a call in a
+                // lambda belongs to the method, initializer or field the lambda is written in.
+                IJavaElement caller = ElementNames.namedMember(javaElement);
+                if (caller instanceof IMethod callerMethod) {
                     info.put("callerMethod", callerMethod.getElementName());
                     info.put("callerSignature", buildMethodSignature(callerMethod));
 
                     IType callerType = callerMethod.getDeclaringType();
                     if (callerType != null) {
-                        info.put("callerClass", callerType.getFullyQualifiedName());
+                        info.put("callerClass", ElementNames.qualifiedName(callerType));
                     }
                 } else {
                     // Called from initializer or field declaration
-                    IType enclosingType = (IType) javaElement.getAncestor(IJavaElement.TYPE);
+                    IType enclosingType = caller == null ? null : ElementNames.enclosingType(caller);
                     if (enclosingType != null) {
-                        info.put("callerMethod", "<initializer>");
-                        info.put("callerClass", enclosingType.getFullyQualifiedName());
+                        info.put("callerMethod", ElementNames.INITIALIZER);
+                        info.put("callerClass", ElementNames.qualifiedName(enclosingType));
                     }
                 }
 

@@ -88,7 +88,7 @@ public class GetTypeHierarchyTool extends AbstractTool {
                 if (targetType == null) {
                     IJavaElement element = service.getElementAtPosition(path, line, column);
                     if (element != null) {
-                        targetType = (IType) element.getAncestor(IJavaElement.TYPE);
+                        targetType = ElementNames.enclosingType(element);
                     }
                 }
             }
@@ -159,11 +159,11 @@ public class GetTypeHierarchyTool extends AbstractTool {
         }
     }
 
-    private Map<String, Object> createTypeInfo(IType type, IJdtService service) {
+    private Map<String, Object> createTypeInfo(IType type, IJdtService service) throws JavaModelException {
         Map<String, Object> info = new LinkedHashMap<>();
 
-        info.put("name", type.getElementName());
-        info.put("qualifiedName", type.getFullyQualifiedName());
+        info.put("name", ElementNames.typeName(type));
+        info.put("qualifiedName", ElementNames.qualifiedName(type));
 
         info.put("kind", TypeKindResolver.kindOf(type));
 

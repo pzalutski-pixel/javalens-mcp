@@ -106,25 +106,11 @@ public class GetEnclosingElementTool extends AbstractTool {
                 data.put("element", createElementInfo(element, service));
             }
 
-            // Find enclosing method
-            IMethod enclosingMethod = null;
-            if (element != null) {
-                if (element instanceof IMethod m) {
-                    enclosingMethod = m;
-                } else {
-                    enclosingMethod = (IMethod) element.getAncestor(IJavaElement.METHOD);
-                }
-            }
-
-            // Find enclosing type
-            IType enclosingType = null;
-            if (element != null) {
-                if (element instanceof IType t) {
-                    enclosingType = t;
-                } else {
-                    enclosingType = (IType) element.getAncestor(IJavaElement.TYPE);
-                }
-            }
+            // The enclosing method and type, the element itself included; a lambda expression
+            // is neither, so a position in a lambda body is within the method and type the
+            // lambda is written in.
+            IMethod enclosingMethod = element == null ? null : ElementNames.enclosingMethod(element);
+            IType enclosingType = element == null ? null : ElementNames.enclosingType(element);
 
             // Fallback: position resolved to a field/type reference inside a method body
             // (e.g., `lastResult = a + b;` from add()'s body). The ancestor chain doesn't
@@ -185,9 +171,9 @@ public class GetEnclosingElementTool extends AbstractTool {
         }
     }
 
-    private Map<String, Object> createElementInfo(IJavaElement element, IJdtService service) {
+    private Map<String, Object> createElementInfo(IJavaElement element, IJdtService service) throws JavaModelException {
         Map<String, Object> info = new LinkedHashMap<>();
-        info.put("name", element.getElementName());
+        info.put("name", ElementNames.name(element));
         info.put("kind", getElementKind(element));
         return info;
     }
@@ -212,8 +198,8 @@ public class GetEnclosingElementTool extends AbstractTool {
 
     private Map<String, Object> createTypeInfo(IType type, IJdtService service) throws JavaModelException {
         Map<String, Object> info = new LinkedHashMap<>();
-        info.put("name", type.getElementName());
-        info.put("qualifiedName", type.getFullyQualifiedName());
+        info.put("name", ElementNames.typeName(type));
+        info.put("qualifiedName", ElementNames.qualifiedName(type));
 
         info.put("kind", TypeKindResolver.kindOf(type));
 

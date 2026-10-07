@@ -113,8 +113,8 @@ public class MoveTypeToNewFileTool extends AbstractTool {
             int totalEdits = outcome.editsByFile().values().stream().mapToInt(List::size).sum();
 
             Map<String, Object> data = new LinkedHashMap<>();
-            data.put("typeName", type.getElementName());
-            data.put("fromType", type.getDeclaringType().getFullyQualifiedName());
+            data.put("typeName", ElementNames.typeName(type));
+            data.put("fromType", ElementNames.qualifiedName(type.getDeclaringType()));
             data.put("createdFiles", outcome.createdFiles());
             data.put("totalEdits", totalEdits);
             data.put("filesAffected", outcome.editsByFile().size());

@@ -87,7 +87,6 @@ class AnalyzeMethodCallersOverridersTest {
             String type = String.format("Handler%02d", i);
             overriders.add(Map.of(
                 "method", "handle",
-                "type", type,
                 "qualifiedType", "org.example.capped.Handlers$" + type));
         }
         assertPayload(at(HANDLERS, 7, 16), payload(
@@ -149,7 +148,6 @@ class AnalyzeMethodCallersOverridersTest {
     private static Map<String, Object> caller(String method, int callLine) {
         Map<String, Object> caller = new LinkedHashMap<>();
         caller.put("method", method);
-        caller.put("type", "Dispatch");
         caller.put("qualifiedType", "org.example.capped.Dispatch");
         caller.put("file", DISPATCH);
         caller.put("callLine", callLine);

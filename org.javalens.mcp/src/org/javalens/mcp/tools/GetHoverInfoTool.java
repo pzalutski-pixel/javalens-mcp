@@ -111,7 +111,7 @@ public class GetHoverInfoTool extends AbstractTool {
     private Map<String, Object> createHoverInfo(IJavaElement element, IJdtService service) throws JavaModelException {
         Map<String, Object> info = new LinkedHashMap<>();
 
-        info.put("name", element.getElementName());
+        info.put("name", ElementNames.name(element));
         info.put("kind", getElementKind(element));
 
         // Build signature based on element type
@@ -157,7 +157,7 @@ public class GetHoverInfoTool extends AbstractTool {
             // Declaring type
             IType declaringType = member.getDeclaringType();
             if (declaringType != null) {
-                info.put("declaringType", declaringType.getFullyQualifiedName());
+                info.put("declaringType", ElementNames.qualifiedName(declaringType));
             }
         }
 
@@ -196,7 +196,7 @@ public class GetHoverInfoTool extends AbstractTool {
                 sig.append("class ");
             }
 
-            sig.append(type.getElementName());
+            sig.append(ElementNames.typeName(type));
             sig.append(formatTypeParameterClause(type.getTypeParameters()));
 
             String superclass = type.getSuperclassName();

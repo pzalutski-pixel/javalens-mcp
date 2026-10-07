@@ -68,6 +68,11 @@ public class SearchSymbolsTool extends AbstractTool {
               (record components are not field declarations)
             Without kind, every type is searched (no methods or fields).
             Any other kind is rejected with INVALID_PARAMETER.
+            Anonymous classes have no name to match and are never results.
+
+            A method's or field's containingType is its declaring type's fully qualified
+            name (pkg.Outer$Inner; an anonymous class is pkg.Outer$1). A type in the
+            default package reports its package as "(default package)".
 
             EXAMPLES:
             - search_symbols(query="Order*") - types starting with Order
@@ -181,26 +186,32 @@ public class SearchSymbolsTool extends AbstractTool {
     }
 
     /**
-     * The declarations a kind keeps: a type kind keeps the types {@link TypeKindResolver}
+     * The declarations a kind keeps: a type kind keeps the named types {@link TypeKindResolver}
      * names with it, method keeps declared methods (not lambda methods, which are lambda
      * expressions), and field keeps every field, whatever its finer kind (field, constant or
-     * enumConstant).
+     * enumConstant). Without a kind, every named type is kept. A type with no name, an
+     * anonymous class, is never kept: a name pattern cannot match it.
      */
     private static Predicate<IJavaElement> accepts(String kind) {
-        if (kind == null) return element -> true;
+        if (kind == null) return SearchSymbolsTool::isNamed;
         return switch (kind) {
             case "method" -> element -> element instanceof IMethod method && !method.isLambdaMethod()
                 && "method".equals(ElementKindResolver.kindOf(method));
             case "field" -> element -> element instanceof IField;
-            default -> element -> element instanceof IType type && kind.equals(TypeKindResolver.kindOf(type));
+            default -> element -> element instanceof IType type && isNamed(type)
+                && kind.equals(TypeKindResolver.kindOf(type));
         };
+    }
+
+    private static boolean isNamed(IJavaElement element) {
+        return !element.getElementName().isEmpty();
     }
 
     private Map<String, Object> createSymbolInfo(SearchMatch match, IJavaElement javaElement, IJdtService service) {
         Map<String, Object> info = new LinkedHashMap<>();
 
         try {
-            info.put("name", javaElement.getElementName());
+            info.put("name", ElementNames.name(javaElement));
             info.put("kind", ElementKindResolver.kindOf(javaElement));
 
             // Location info
@@ -222,21 +233,21 @@ public class SearchSymbolsTool extends AbstractTool {
 
             // Type-specific info
             if (javaElement instanceof IType type) {
-                info.put("qualifiedName", type.getFullyQualifiedName());
+                info.put("qualifiedName", ElementNames.qualifiedName(type));
                 if (type.getPackageFragment() != null) {
-                    info.put("package", type.getPackageFragment().getElementName());
+                    info.put("package", ElementNames.packageName(type.getPackageFragment().getElementName()));
                 }
             } else if (javaElement instanceof IMethod method) {
                 info.put("signature", getMethodSignature(method));
                 if (method.getDeclaringType() != null) {
-                    info.put("containingType", method.getDeclaringType().getElementName());
+                    info.put("containingType", ElementNames.qualifiedName(method.getDeclaringType()));
                 }
             } else if (javaElement instanceof IField field) {
                 // Render the readable type name (e.g. "int", "String"), consistent with
                 // every other tool, not the raw JVM type signature ("I", "QString;").
                 info.put("type", org.eclipse.jdt.core.Signature.toString(field.getTypeSignature()));
                 if (field.getDeclaringType() != null) {
-                    info.put("containingType", field.getDeclaringType().getElementName());
+                    info.put("containingType", ElementNames.qualifiedName(field.getDeclaringType()));
                 }
             }
 

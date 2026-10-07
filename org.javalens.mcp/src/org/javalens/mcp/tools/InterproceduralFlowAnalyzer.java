@@ -25,14 +25,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 /**
  * Bounded interprocedural flow tracking for analyze_data_flow's followCalls
@@ -74,7 +72,7 @@ final class InterproceduralFlowAnalyzer {
         if (binding == null) {
             return flows;
         }
-        String methodKey = methodKey(binding);
+        String methodKey = ElementNames.methodKey(binding);
 
         // Taint seeds: the selected method's parameters.
         for (Object parameter : selected.parameters()) {
@@ -225,7 +223,7 @@ final class InterproceduralFlowAnalyzer {
                 descendIntoCallee(declaration, i, site, ast, origin, depth, steps);
             } else if (!declaring.isFromSource() && origin.fact().equals("taint")) {
                 emitFlow(origin, steps, sink("escape", site.toString(), methodKey,
-                    lineOf(ast, site), methodKey(declaration)));
+                    lineOf(ast, site), ElementNames.methodKey(declaration)));
             }
         }
     }
@@ -260,13 +258,13 @@ final class InterproceduralFlowAnalyzer {
             List<Map<String, Object>> nextSteps = new ArrayList<>(steps);
             Map<String, Object> step = new LinkedHashMap<>();
             step.put("kind", "argument");
-            step.put("callee", methodKey(declaration));
+            step.put("callee", ElementNames.methodKey(declaration));
             step.put("parameter", parameter.getName().getIdentifier());
             step.put("argIndex", argIndex);
             step.put("line", lineOf(callerAst, site));
             nextSteps.add(step);
 
-            walkFrame(origin, calleeMethod, calleeAst, methodKey(declaration),
+            walkFrame(origin, calleeMethod, calleeAst, ElementNames.methodKey(declaration),
                 parameterBinding, depth + 1, nextSteps);
         } catch (Exception e) {
             log.debug("Could not descend into callee {}: {}", declaration.getName(), e.getMessage());
@@ -359,17 +357,6 @@ final class InterproceduralFlowAnalyzer {
             }
         });
         return result[0];
-    }
-
-    private static String methodKey(IMethodBinding binding) {
-        IMethodBinding declaration = binding.getMethodDeclaration();
-        ITypeBinding declaring = declaration.getDeclaringClass();
-        String typeName = declaring.getErasure().getQualifiedName();
-        String name = declaration.isConstructor() ? declaring.getName() : declaration.getName();
-        String params = Arrays.stream(declaration.getParameterTypes())
-            .map(ITypeBinding::getName)
-            .collect(Collectors.joining(","));
-        return typeName + "#" + name + "(" + params + ")";
     }
 
     private static int lineOf(CompilationUnit ast, ASTNode node) {

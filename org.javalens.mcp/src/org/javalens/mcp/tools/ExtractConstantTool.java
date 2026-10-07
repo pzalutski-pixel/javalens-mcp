@@ -188,7 +188,8 @@ public class ExtractConstantTool extends AbstractTool {
 
             // Find the containing type declaration
             AbstractTypeDeclaration containingType = findContainingType(expression);
-            if (containingType == null) {
+            ITypeBinding containingBinding = containingType == null ? null : containingType.resolveBinding();
+            if (containingBinding == null) {
                 return ToolResponse.invalidParameter("selection", "Cannot find containing type");
             }
 
@@ -247,7 +248,7 @@ public class ExtractConstantTool extends AbstractTool {
             data.put("constantType", typeName);
             data.put("expressionText", expressionText);
             data.put("declaration", declaration);
-            data.put("containingType", containingType.getName().getIdentifier());
+            data.put("containingType", ElementNames.qualifiedName(containingBinding));
             data.put("edits", edits);
 
             return ToolResponse.success(data, ResponseMeta.builder()

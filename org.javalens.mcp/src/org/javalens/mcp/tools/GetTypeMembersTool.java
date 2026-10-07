@@ -122,7 +122,7 @@ public class GetTypeMembersTool extends AbstractTool {
                 IType[] supertypes = hierarchy.getAllSuperclasses(type);
 
                 for (IType supertype : supertypes) {
-                    String declaredIn = supertype.getFullyQualifiedName();
+                    String declaredIn = ElementNames.qualifiedName(supertype);
                     if (memberKind == null || "method".equals(memberKind)) {
                         collectMethods(supertype, methods, service, declaredIn);
                     }
@@ -134,7 +134,7 @@ public class GetTypeMembersTool extends AbstractTool {
                 // Include interface default methods
                 IType[] interfaces = hierarchy.getAllSuperInterfaces(type);
                 for (IType iface : interfaces) {
-                    String declaredIn = iface.getFullyQualifiedName();
+                    String declaredIn = ElementNames.qualifiedName(iface);
                     if (memberKind == null || "method".equals(memberKind)) {
                         collectMethods(iface, methods, service, declaredIn);
                     }
@@ -212,10 +212,10 @@ public class GetTypeMembersTool extends AbstractTool {
         }
     }
 
-    private Map<String, Object> createTypeInfo(IType type, IJdtService service) {
+    private Map<String, Object> createTypeInfo(IType type, IJdtService service) throws JavaModelException {
         Map<String, Object> info = new LinkedHashMap<>();
-        info.put("name", type.getElementName());
-        info.put("qualifiedName", type.getFullyQualifiedName());
+        info.put("name", ElementNames.typeName(type));
+        info.put("qualifiedName", ElementNames.qualifiedName(type));
 
         info.put("kind", TypeKindResolver.kindOf(type));
 
@@ -297,8 +297,8 @@ public class GetTypeMembersTool extends AbstractTool {
     private Map<String, Object> createNestedTypeInfo(IType type, IJdtService service, String declaredIn) {
         try {
             Map<String, Object> info = new LinkedHashMap<>();
-            info.put("name", type.getElementName());
-            info.put("qualifiedName", type.getFullyQualifiedName());
+            info.put("name", ElementNames.typeName(type));
+            info.put("qualifiedName", ElementNames.qualifiedName(type));
 
             info.put("kind", TypeKindResolver.kindOf(type));
 

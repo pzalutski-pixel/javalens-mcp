@@ -93,7 +93,7 @@ public class GoToDefinitionTool extends AbstractTool {
 
             // Get the source range for the definition
             Map<String, Object> result = new LinkedHashMap<>();
-            result.put("symbol", element.getElementName());
+            result.put("symbol", ElementNames.name(element));
             result.put("kind", getElementKind(element));
 
             // Get location of the declaration
@@ -119,12 +119,12 @@ public class GoToDefinitionTool extends AbstractTool {
 
             // Add containing type info
             if (element instanceof IMethod method && method.getDeclaringType() != null) {
-                result.put("containingType", method.getDeclaringType().getFullyQualifiedName());
+                result.put("containingType", ElementNames.qualifiedName(method.getDeclaringType()));
             } else if (element instanceof IField field && field.getDeclaringType() != null) {
-                result.put("containingType", field.getDeclaringType().getFullyQualifiedName());
+                result.put("containingType", ElementNames.qualifiedName(field.getDeclaringType()));
             } else if (element instanceof IType type) {
                 if (type.getPackageFragment() != null) {
-                    result.put("package", type.getPackageFragment().getElementName());
+                    result.put("package", ElementNames.packageName(type.getPackageFragment().getElementName()));
                 }
             }
 

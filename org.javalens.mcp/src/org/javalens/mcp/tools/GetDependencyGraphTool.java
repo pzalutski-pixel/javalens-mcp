@@ -116,9 +116,12 @@ public class GetDependencyGraphTool extends AbstractTool {
             List<Map<String, Object>> nodeList = new ArrayList<>();
             for (String node : nodes) {
                 Map<String, Object> nodeInfo = new LinkedHashMap<>();
+                String kind = nodeKinds.getOrDefault(node, "unknown");
                 nodeInfo.put("name", node);
-                nodeInfo.put("kind", nodeKinds.getOrDefault(node, "unknown"));
-                nodeInfo.put("package", extractPackage(node));
+                nodeInfo.put("kind", kind);
+                // A type node's package; a type in the default package is in "(default package)".
+                nodeInfo.put("package", "package".equals(kind)
+                    ? extractPackage(node) : ElementNames.packageName(extractPackage(node)));
                 nodeList.add(nodeInfo);
             }
 

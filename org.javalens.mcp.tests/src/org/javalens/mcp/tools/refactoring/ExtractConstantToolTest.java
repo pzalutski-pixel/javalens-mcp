@@ -236,7 +236,7 @@ class ExtractConstantToolTest {
     void containingType_reported() {
         ToolResponse r = tool.execute(prefixArgs("DEFAULT_PREFIX"));
         assertTrue(r.isSuccess());
-        assertEquals("RefactoringTarget", getData(r).get("containingType"));
+        assertEquals("com.example.RefactoringTarget", getData(r).get("containingType"));
     }
 
     @Test

@@ -63,7 +63,7 @@ class InlineMethodToolTest {
         Map<String, Object> data = getData(response);
 
         assertEquals("doubleValue", data.get("methodName"));
-        assertEquals("RefactoringTarget", data.get("methodClass"));
+        assertEquals("com.example.RefactoringTarget", data.get("methodClass"));
 
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> edits = (List<Map<String, Object>>) data.get("edits");
@@ -234,7 +234,7 @@ class InlineMethodToolTest {
     void methodClass_reported() {
         ToolResponse r = tool.execute(doubleValueArgs());
         assertTrue(r.isSuccess());
-        assertEquals("RefactoringTarget", getData(r).get("methodClass"));
+        assertEquals("com.example.RefactoringTarget", getData(r).get("methodClass"));
     }
 
     @Test
@@ -322,7 +322,7 @@ class InlineMethodToolTest {
             () -> "inline_method failed through the envelope: " + payload);
         JsonNode data = payload.get("data");
         assertEquals("doubleValue", data.get("methodName").asText());
-        assertEquals("RefactoringTarget", data.get("methodClass").asText());
+        assertEquals("com.example.RefactoringTarget", data.get("methodClass").asText());
         JsonNode edits = data.get("edits");
         assertEquals(1, edits.size(), "inline_method emits exactly one edit through the envelope");
         assertEquals("(x * 2)", edits.get(0).get("newText").asText(),

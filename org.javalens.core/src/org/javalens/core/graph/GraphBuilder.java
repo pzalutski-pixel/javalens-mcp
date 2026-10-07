@@ -34,6 +34,7 @@ final class GraphBuilder {
         Set<ProjectGraph.GraphEdge> edges = new LinkedHashSet<>();
         Map<String, Set<String>> overrides = new HashMap<>();
         Set<String> mains = new HashSet<>();
+        Map<String, String> typeKeys = new HashMap<>();
 
         ICompilationUnit[] units = collectSourceUnits(project);
 
@@ -44,7 +45,7 @@ final class GraphBuilder {
         parser.createASTs(units, new String[0], new ASTRequestor() {
             @Override
             public void acceptAST(ICompilationUnit source, CompilationUnit ast) {
-                ast.accept(new GraphCollectorVisitor(source, ast, nodes, edges, overrides, mains));
+                ast.accept(new GraphCollectorVisitor(source, ast, nodes, edges, overrides, mains, typeKeys));
             }
         }, null);
 

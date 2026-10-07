@@ -112,7 +112,7 @@ public class GetSymbolInfoTool extends AbstractTool {
     private Map<String, Object> createElementInfo(IJavaElement element, IJdtService service) throws JavaModelException {
         Map<String, Object> info = new LinkedHashMap<>();
 
-        info.put("name", element.getElementName());
+        info.put("name", ElementNames.name(element));
         info.put("kind", getElementKind(element));
 
         // Add type-specific info
@@ -135,7 +135,7 @@ public class GetSymbolInfoTool extends AbstractTool {
 
             IType declaringType = member.getDeclaringType();
             if (declaringType != null) {
-                info.put("declaringType", declaringType.getFullyQualifiedName());
+                info.put("declaringType", ElementNames.qualifiedName(declaringType));
             }
         }
 
@@ -160,7 +160,7 @@ public class GetSymbolInfoTool extends AbstractTool {
     }
 
     private void addTypeInfo(Map<String, Object> info, IType type, IJdtService service) throws JavaModelException {
-        info.put("qualifiedName", type.getFullyQualifiedName());
+        info.put("qualifiedName", ElementNames.qualifiedName(type));
 
         // Annotation types report isInterface()=true, so check isAnnotation first.
         if (type.isAnnotation()) {

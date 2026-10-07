@@ -54,7 +54,7 @@ class FindFieldWritesToolTest {
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
         assertEquals("userName", data.get("field"));
-        assertEquals("RefactoringTarget", data.get("declaringType"));
+        assertEquals("com.example.RefactoringTarget", data.get("declaringType"));
 
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> writes = (List<Map<String, Object>>) data.get("writeLocations");
@@ -194,7 +194,7 @@ class FindFieldWritesToolTest {
         assertTrue(r.isSuccess());
         Map<String, Object> data = getData(r);
         assertEquals("lastResult", data.get("field"));
-        assertEquals("Calculator", data.get("declaringType"));
+        assertEquals("com.example.Calculator", data.get("declaringType"));
 
         List<Map<String, Object>> writes = writesOf(r);
         assertEquals(3, writes.size(),
@@ -375,7 +375,7 @@ class FindFieldWritesToolTest {
             + (r.getError() != null ? r.getError().getMessage() : "n/a"));
         Map<String, Object> data = getData(r);
         assertEquals("value", data.get("field"));
-        assertEquals("GenericClass", data.get("declaringType"));
+        assertEquals("com.example.genericunused.GenericClass", data.get("declaringType"));
 
         List<Map<String, Object>> writes = (List<Map<String, Object>>) data.get("writeLocations");
         assertNotNull(writes);
@@ -416,7 +416,7 @@ class FindFieldWritesToolTest {
             () -> "find_field_writes failed through the envelope: " + payload);
         JsonNode data = payload.get("data");
         assertEquals("lastResult", data.get("field").asText());
-        assertEquals("Calculator", data.get("declaringType").asText());
+        assertEquals("com.example.Calculator", data.get("declaringType").asText());
         assertEquals("I", data.get("fieldType").asText(), "int field signature 'I' through the envelope");
         assertEquals(3, data.get("totalWriteLocations").asInt(),
             "exactly three writes (add/subtract/multiply) through the envelope");

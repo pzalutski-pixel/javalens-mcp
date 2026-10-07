@@ -26,6 +26,8 @@ import java.util.stream.Collectors;
  *       simple type name: {@code com.example.Foo#Foo()})</li>
  *   <li>field — {@code com.example.Foo#count}</li>
  * </ul>
+ * A type is named as the Java model names it, fully qualified with {@code $}
+ * between nested types: {@code com.example.Foo$Bar}, {@code com.example.Foo$Bar#run()}.
  *
  * <p>Edge ownership: edges discovered in a method body belong to that method;
  * edges in field initializers or initializer blocks belong to the declaring
@@ -247,10 +249,10 @@ public final class ProjectGraph {
      */
     public String keyOf(IJavaElement element) throws JavaModelException {
         if (element instanceof IType type) {
-            return type.getFullyQualifiedName('.');
+            return type.getFullyQualifiedName();
         }
         if (element instanceof IMethod method) {
-            String typeKey = method.getDeclaringType().getFullyQualifiedName('.');
+            String typeKey = method.getDeclaringType().getFullyQualifiedName();
             String name = method.isConstructor()
                 ? method.getDeclaringType().getElementName()
                 : method.getElementName();
@@ -260,7 +262,7 @@ public final class ProjectGraph {
             return typeKey + "#" + name + "(" + params + ")";
         }
         if (element instanceof IField field) {
-            return field.getDeclaringType().getFullyQualifiedName('.') + "#" + field.getElementName();
+            return field.getDeclaringType().getFullyQualifiedName() + "#" + field.getElementName();
         }
         return null;
     }

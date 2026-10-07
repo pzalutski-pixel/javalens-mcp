@@ -56,19 +56,19 @@ class SearchSymbolsPagingTest {
     /** The fourteen fields named log, in search order. */
     private static final List<Map<String, Object>> LOG_FIELDS = List.of(
         field(JOURNAL, "log", "constant", 10, 32, "Object", "Journal"),
-        field(JOURNAL, "log", "constant", 21, 36, "Object", "Audit"),
-        field(JOURNAL, "log", "constant", 25, 36, "Object", "Billing"),
-        field(JOURNAL, "log", "constant", 29, 36, "Object", "Cache"),
-        field(JOURNAL, "log", "constant", 33, 36, "Object", "Delivery"),
-        field(JOURNAL, "log", "constant", 37, 36, "Object", "Export"),
-        field(JOURNAL, "log", "constant", 41, 36, "Object", "Feed"),
-        field(JOURNAL, "log", "constant", 45, 36, "Object", "Gateway"),
-        field(JOURNAL, "log", "constant", 49, 36, "Object", "History"),
-        field(JOURNAL, "log", "constant", 53, 36, "Object", "Inbox"),
-        field(JOURNAL, "log", "constant", 57, 36, "Object", "Job"),
-        field(JOURNAL, "log", "enumConstant", 62, 8, "Sink", "Sink"),
-        field(JOURNAL, "log", "field", 66, 22, "Object", "Recorder"),
-        field(JOURNAL, "log", "field", 70, 15, "Object", "Session"));
+        field(JOURNAL, "log", "constant", 21, 36, "Object", "Journal$Audit"),
+        field(JOURNAL, "log", "constant", 25, 36, "Object", "Journal$Billing"),
+        field(JOURNAL, "log", "constant", 29, 36, "Object", "Journal$Cache"),
+        field(JOURNAL, "log", "constant", 33, 36, "Object", "Journal$Delivery"),
+        field(JOURNAL, "log", "constant", 37, 36, "Object", "Journal$Export"),
+        field(JOURNAL, "log", "constant", 41, 36, "Object", "Journal$Feed"),
+        field(JOURNAL, "log", "constant", 45, 36, "Object", "Journal$Gateway"),
+        field(JOURNAL, "log", "constant", 49, 36, "Object", "Journal$History"),
+        field(JOURNAL, "log", "constant", 53, 36, "Object", "Journal$Inbox"),
+        field(JOURNAL, "log", "constant", 57, 36, "Object", "Journal$Job"),
+        field(JOURNAL, "log", "enumConstant", 62, 8, "Sink", "Journal$Sink"),
+        field(JOURNAL, "log", "field", 66, 22, "Object", "Journal$Recorder"),
+        field(JOURNAL, "log", "field", 70, 15, "Object", "Journal$Session"));
 
     /** The eleven classes named *Signal, in source order: lines 41 to 71, every third line. */
     private static final List<Map<String, Object>> SIGNAL_CLASSES = signalTypes("class", 41, 17,
@@ -148,7 +148,7 @@ class SearchSymbolsPagingTest {
         method.put("line", 12);
         method.put("column", 9);
         method.put("signature", "log(String message)");
-        method.put("containingType", "Journal");
+        method.put("containingType", PACKAGE + ".Journal");
         assertPayload(seams, search("log", "method", 0, 50), page("log", "method", 0, List.of(method), 1));
     }
 
@@ -288,8 +288,9 @@ class SearchSymbolsPagingTest {
         return payload;
     }
 
+    /** A field result; its containing type, fully qualified, is {@code containerBinaryName} in org.example.paging. */
     private static Map<String, Object> field(String file, String name, String kind, int line, int column,
-                                             String type, String containingType) {
+                                             String type, String containerBinaryName) {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("name", name);
         result.put("kind", kind);
@@ -297,7 +298,7 @@ class SearchSymbolsPagingTest {
         result.put("line", line);
         result.put("column", column);
         result.put("type", type);
-        result.put("containingType", containingType);
+        result.put("containingType", PACKAGE + "." + containerBinaryName);
         return result;
     }
 

@@ -59,11 +59,12 @@ class SearchSymbolsKindTest {
     // Methods; the constructors Catalog(), Catalog(int) and the compact Item constructor are not
     // methods, and neither are the lambdas inside test(String). Catalog's methods precede its member
     // types' methods in search order.
+    // Each containing type is fully qualified.
     private static final Map<String, Object> COUNT_METHOD = method("count", 25, 15, "count()", "Catalog");
     private static final Map<String, Object> REGISTER = method("register", 29, 16, "register(String name)", "Catalog");
     private static final Map<String, Object> TEST = method("test", 60, 12, "test(String s)", "Catalog");
-    private static final Map<String, Object> PLACE = method("place", 38, 13, "place(Item item)", "Shelf");
-    private static final Map<String, Object> SUMMARY = method("summary", 52, 22, "summary()", "Item");
+    private static final Map<String, Object> PLACE = method("place", 38, 13, "place(Item item)", "Catalog$Shelf");
+    private static final Map<String, Object> SUMMARY = method("summary", 52, 22, "summary()", "Catalog$Item");
 
     // Field declarations, each with its finer kind. The record components title and pages,
     // the parameters count, name and item, and the local variable entry are not field declarations.
@@ -71,9 +72,9 @@ class SearchSymbolsKindTest {
     private static final Map<String, Object> CREATED = field("created", "field", 12, 15, "int", "Catalog");
     private static final Map<String, Object> LABEL = field("LABEL", "constant", 14, 31, "String", "Catalog");
     private static final Map<String, Object> WIDTH = field("width", "field", 16, 14, "int", "Catalog");
-    private static final Map<String, Object> LIGHT = field("LIGHT", "enumConstant", 42, 8, "Shade", "Shade");
-    private static final Map<String, Object> DARK = field("DARK", "enumConstant", 43, 8, "Shade", "Shade");
-    private static final Map<String, Object> DEPTH = field("depth", "field", 45, 20, "int", "Shade");
+    private static final Map<String, Object> LIGHT = field("LIGHT", "enumConstant", 42, 8, "Shade", "Catalog$Shade");
+    private static final Map<String, Object> DARK = field("DARK", "enumConstant", 43, 8, "Shade", "Catalog$Shade");
+    private static final Map<String, Object> DEPTH = field("depth", "field", 45, 20, "int", "Catalog$Shade");
 
     private static final String ACCEPTED =
         "Must be one of class, interface, enum, record, annotation, method, field (case-insensitive); got: ";
@@ -230,7 +231,9 @@ class SearchSymbolsKindTest {
         return result;
     }
 
-    private static Map<String, Object> method(String name, int line, int column, String signature, String containingType) {
+    /** A method result; its containing type is {@code containerBinaryName} in package org.example.kinds. */
+    private static Map<String, Object> method(String name, int line, int column, String signature,
+                                              String containerBinaryName) {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("name", name);
         result.put("kind", "method");
@@ -238,11 +241,13 @@ class SearchSymbolsKindTest {
         result.put("line", line);
         result.put("column", column);
         result.put("signature", signature);
-        result.put("containingType", containingType);
+        result.put("containingType", PACKAGE + "." + containerBinaryName);
         return result;
     }
 
-    private static Map<String, Object> field(String name, String kind, int line, int column, String type, String containingType) {
+    /** A field result; its containing type is {@code containerBinaryName} in package org.example.kinds. */
+    private static Map<String, Object> field(String name, String kind, int line, int column, String type,
+                                             String containerBinaryName) {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("name", name);
         result.put("kind", kind);
@@ -250,7 +255,7 @@ class SearchSymbolsKindTest {
         result.put("line", line);
         result.put("column", column);
         result.put("type", type);
-        result.put("containingType", containingType);
+        result.put("containingType", PACKAGE + "." + containerBinaryName);
         return result;
     }
 }

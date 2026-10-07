@@ -106,7 +106,7 @@ public class GetJavadocTool extends AbstractTool {
             }
 
             Map<String, Object> data = new LinkedHashMap<>();
-            data.put("symbol", element.getElementName());
+            data.put("symbol", ElementNames.name(element));
             data.put("kind", getElementKind(element));
 
             // Get Javadoc source

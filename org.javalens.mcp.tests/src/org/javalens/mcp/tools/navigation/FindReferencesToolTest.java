@@ -106,7 +106,7 @@ class FindReferencesToolTest {
         Map<String, Object> data = getData(response);
         assertEquals("add", data.get("symbol"));
         assertEquals("method", data.get("symbolKind"));
-        assertEquals("Calculator", data.get("containingType"));
+        assertEquals("com.example.Calculator", data.get("containingType"));
         assertNotNull(getReferences(data));
     }
 
@@ -269,7 +269,7 @@ class FindReferencesToolTest {
 
         assertEquals("pet", data.get("symbol"));
         assertEquals("field", data.get("symbolKind"));
-        assertEquals("FieldHolder", data.get("containingType"));
+        assertEquals("com.example.FieldHolder", data.get("containingType"));
 
         List<Map<String, Object>> references = getReferences(data);
         Set<String> referencingFiles = references.stream()

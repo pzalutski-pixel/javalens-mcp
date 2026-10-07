@@ -126,7 +126,7 @@ public class FindFieldWritesTool extends AbstractTool {
             data.put("field", field.getElementName());
 
             if (field.getDeclaringType() != null) {
-                data.put("declaringType", field.getDeclaringType().getElementName());
+                data.put("declaringType", ElementNames.qualifiedName(field.getDeclaringType()));
             }
 
             try {

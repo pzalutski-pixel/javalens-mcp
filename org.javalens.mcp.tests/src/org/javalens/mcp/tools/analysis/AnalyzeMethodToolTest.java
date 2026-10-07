@@ -282,9 +282,8 @@ class AnalyzeMethodToolTest {
         Map<String, Object> overrides = (Map<String, Object>) getData(r).get("overrides");
         Map<String, Object> superInfo = (Map<String, Object>) overrides.get("overrides");
         assertNotNull(superInfo, "Dog.speak overrides Animal.speak; super info missing; got: " + overrides);
-        assertEquals("speak", superInfo.get("method"));
-        assertEquals("Animal", superInfo.get("type"));
-        assertEquals("com.example.Animal", superInfo.get("qualifiedType"));
+        assertEquals(Map.of("method", "speak", "qualifiedType", "com.example.Animal"), superInfo,
+            "super method, by name and qualified type only");
         // Dog.speak is not itself overridden.
         assertFalse(overrides.containsKey("overriddenBy"),
             "Dog.speak has no overriders; got: " + overrides);
@@ -310,9 +309,8 @@ class AnalyzeMethodToolTest {
         List<Map<String, Object>> overriddenBy = (List<Map<String, Object>>) overrides.get("overriddenBy");
         assertNotNull(overriddenBy, "Animal.speak is overridden by Dog.speak; got: " + overrides);
         assertEquals(1, overriddenBy.size());
-        assertEquals("speak", overriddenBy.get(0).get("method"));
-        assertEquals("Dog", overriddenBy.get(0).get("type"));
-        assertEquals("com.example.Dog", overriddenBy.get(0).get("qualifiedType"));
+        assertEquals(Map.of("method", "speak", "qualifiedType", "com.example.Dog"), overriddenBy.get(0),
+            "overrider, by name and qualified type only");
     }
 
     // ========== T-2 cross-tool consistency ==========

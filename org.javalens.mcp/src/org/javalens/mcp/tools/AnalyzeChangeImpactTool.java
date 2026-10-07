@@ -3,6 +3,7 @@ package org.javalens.mcp.tools;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IJavaElement;
+import org.eclipse.jdt.core.IMember;
 import org.eclipse.jdt.core.IMethod;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.search.SearchMatch;
@@ -122,21 +123,25 @@ public class AnalyzeChangeImpactTool extends AbstractTool {
                         Map<String, Object> callSite = formatMatch(match, service);
                         callSite.put("depth", d + 1);
 
-                        // Extract enclosing method
+                        // The member holding the reference that has a name: a reference in a
+                        // lambda belongs to the method, initializer or field the lambda is
+                        // written in; an initializer or field initializer is <initializer>.
                         IJavaElement matchElement = (IJavaElement) match.getElement();
-                        if (matchElement != null) {
-                            IJavaElement enclosing = matchElement.getAncestor(IJavaElement.METHOD);
-                            if (enclosing instanceof IMethod enclosingMethod) {
-                                callSite.put("enclosingMethod", enclosingMethod.getElementName());
-                                IType declaringType = enclosingMethod.getDeclaringType();
-                                if (declaringType != null) {
-                                    callSite.put("enclosingType", declaringType.getFullyQualifiedName());
-                                }
-                                // Add enclosing method to next level for deeper analysis
-                                if (d + 1 < depth) {
-                                    nextLevel.add(enclosingMethod);
-                                }
+                        IJavaElement enclosing = matchElement == null ? null : ElementNames.namedMember(matchElement);
+                        if (enclosing instanceof IMethod enclosingMethod) {
+                            callSite.put("enclosingMethod", enclosingMethod.getElementName());
+                            IType declaringType = enclosingMethod.getDeclaringType();
+                            if (declaringType != null) {
+                                callSite.put("enclosingType", ElementNames.qualifiedName(declaringType));
                             }
+                            // Add enclosing method to next level for deeper analysis
+                            if (d + 1 < depth) {
+                                nextLevel.add(enclosingMethod);
+                            }
+                        } else if (enclosing instanceof IMember member && !(enclosing instanceof IType)
+                                && member.getDeclaringType() != null) {
+                            callSite.put("enclosingMethod", ElementNames.INITIALIZER);
+                            callSite.put("enclosingType", ElementNames.qualifiedName(member.getDeclaringType()));
                         }
 
                         allCallSites.add(callSite);
@@ -162,7 +167,7 @@ public class AnalyzeChangeImpactTool extends AbstractTool {
             }
 
             Map<String, Object> data = new LinkedHashMap<>();
-            data.put("symbol", element.getElementName());
+            data.put("symbol", ElementNames.name(element));
             data.put("symbolType", element.getClass().getSimpleName().replace("Sourced", "").replace("Impl", ""));
             data.put("depth", depth);
             data.put("directReferences", allCallSites.stream().filter(c -> (int) c.get("depth") == 1).count());
@@ -200,7 +205,7 @@ public class AnalyzeChangeImpactTool extends AbstractTool {
         if (key == null || graph.node(key) == null) {
             return ToolResponse.invalidParameter("transitive",
                 "transitive analysis supports project methods, fields, and types; "
-                    + "no graph node for '" + element.getElementName() + "'");
+                    + "no graph node for '" + ElementNames.name(element) + "'");
         }
 
         // Type-aware: a type's blast radius includes callers of its members,
@@ -229,7 +234,7 @@ public class AnalyzeChangeImpactTool extends AbstractTool {
         List<String> returned = truncated ? affectedMethods.subList(0, maxResults) : affectedMethods;
 
         Map<String, Object> data = new LinkedHashMap<>();
-        data.put("symbol", element.getElementName());
+        data.put("symbol", ElementNames.name(element));
         data.put("symbolType", element.getClass().getSimpleName().replace("Sourced", "").replace("Impl", ""));
         data.put("transitive", true);
         data.put("totalAffectedMethods", total);

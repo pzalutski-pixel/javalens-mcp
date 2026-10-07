@@ -28,7 +28,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -37,7 +36,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Supplier;
-import java.util.stream.Collectors;
 
 /**
  * Assemble the project's HTTP surface: effective routes composed from
@@ -237,7 +235,7 @@ public class GetHttpEndpointsTool extends AbstractTool {
         Map<String, Object> endpoint = new LinkedHashMap<>();
         endpoint.put("httpMethod", httpMethod);
         endpoint.put("path", composePath(classPrefix, methodPath));
-        endpoint.put("handler", methodKey(method.resolveBinding()));
+        endpoint.put("handler", ElementNames.methodKey(method.resolveBinding()));
         endpoint.put("framework", framework);
         endpoint.put("filePath", service.getPathUtils().formatPath(
             cu.getResource().getLocation().toOSString()));
@@ -308,16 +306,6 @@ public class GetHttpEndpointsTool extends AbstractTool {
             value = (Expression) array.expressions().get(0);
         }
         return value instanceof StringLiteral literal ? literal.getLiteralValue() : "";
-    }
-
-    private static String methodKey(IMethodBinding binding) {
-        IMethodBinding declaration = binding.getMethodDeclaration();
-        ITypeBinding declaring = declaration.getDeclaringClass();
-        String params = Arrays.stream(declaration.getParameterTypes())
-            .map(ITypeBinding::getName)
-            .collect(Collectors.joining(","));
-        return declaring.getErasure().getQualifiedName() + "#" + declaration.getName()
-            + "(" + params + ")";
     }
 
     private static CompilationUnit parse(ICompilationUnit cu) {

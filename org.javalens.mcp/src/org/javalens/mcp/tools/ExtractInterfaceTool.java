@@ -247,9 +247,9 @@ public class ExtractInterfaceTool extends AbstractTool {
             }
 
             Map<String, Object> data = new LinkedHashMap<>();
-            data.put("className", type.getElementName());
+            data.put("className", ElementNames.typeName(type));
             data.put("interfaceName", interfaceName);
-            data.put("packageName", packageName);
+            data.put("packageName", ElementNames.packageName(packageName));
             data.put("interfaceFilePath", service.getPathUtils().formatPath(interfacePath));
             data.put("interfaceContent", interfaceContent.toString());
             data.put("extractedMethods", extractedMethods);

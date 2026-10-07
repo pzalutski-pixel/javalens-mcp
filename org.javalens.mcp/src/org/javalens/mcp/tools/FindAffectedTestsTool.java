@@ -99,7 +99,7 @@ public class FindAffectedTestsTool extends AbstractTool {
             if (key == null || graph.node(key) == null) {
                 return ToolResponse.invalidParameter("position",
                     "affected-test analysis supports project methods, fields, and types; "
-                        + "no graph node for '" + element.getElementName() + "'");
+                        + "no graph node for '" + ElementNames.name(element) + "'");
             }
 
             // Type-aware: selecting a class aggregates coverage of all its
@@ -117,7 +117,7 @@ public class FindAffectedTestsTool extends AbstractTool {
                     continue;
                 }
                 Map<String, Object> entry = new LinkedHashMap<>();
-                entry.put("className", test.className());
+                entry.put("className", ElementNames.qualifiedName(test.element().getDeclaringType()));
                 entry.put("methodName", test.methodName());
                 entry.put("key", testKey);
                 entry.put("filePath", service.getPathUtils().formatPath(test.file()));
@@ -139,7 +139,7 @@ public class FindAffectedTestsTool extends AbstractTool {
             List<Map<String, Object>> returned = truncated ? entries.subList(0, maxResults) : entries;
 
             Map<String, Object> data = new LinkedHashMap<>();
-            data.put("symbol", element.getElementName());
+            data.put("symbol", ElementNames.name(element));
             data.put("symbolType", element.getClass().getSimpleName().replace("Sourced", "").replace("Impl", ""));
             data.put("testMethodCount", total);
             data.put("testMethods", returned);

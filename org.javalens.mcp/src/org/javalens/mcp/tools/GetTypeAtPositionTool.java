@@ -87,7 +87,7 @@ public class GetTypeAtPositionTool extends AbstractTool {
                 // Try getting element and finding enclosing type
                 IJavaElement element = service.getElementAtPosition(path, line, column);
                 if (element != null) {
-                    type = (IType) element.getAncestor(IJavaElement.TYPE);
+                    type = ElementNames.enclosingType(element);
                 }
             }
 
@@ -114,8 +114,8 @@ public class GetTypeAtPositionTool extends AbstractTool {
     private Map<String, Object> createTypeInfo(IType type, IJdtService service) throws JavaModelException {
         Map<String, Object> info = new LinkedHashMap<>();
 
-        info.put("name", type.getElementName());
-        info.put("qualifiedName", type.getFullyQualifiedName());
+        info.put("name", ElementNames.typeName(type));
+        info.put("qualifiedName", ElementNames.qualifiedName(type));
 
         info.put("kind", TypeKindResolver.kindOf(type));
 
@@ -143,7 +143,7 @@ public class GetTypeAtPositionTool extends AbstractTool {
 
         IType declaringType = type.getDeclaringType();
         if (declaringType != null) {
-            info.put("declaringType", declaringType.getFullyQualifiedName());
+            info.put("declaringType", ElementNames.qualifiedName(declaringType));
             info.put("isNested", true);
         }
 

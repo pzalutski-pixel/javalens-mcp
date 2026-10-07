@@ -10,6 +10,7 @@ import org.eclipse.jdt.core.IPackageFragment;
 import org.eclipse.jdt.core.IPackageFragmentRoot;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.ITypeHierarchy;
+import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTParser;
@@ -23,6 +24,7 @@ import org.eclipse.jdt.core.dom.SuperConstructorInvocation;
 import org.eclipse.jdt.core.search.IJavaSearchConstants;
 import org.eclipse.jdt.core.search.IJavaSearchScope;
 import org.eclipse.jdt.core.search.MethodReferenceMatch;
+import org.eclipse.jdt.core.search.ReferenceMatch;
 import org.eclipse.jdt.core.search.SearchEngine;
 import org.eclipse.jdt.core.search.SearchMatch;
 import org.eclipse.jdt.core.search.SearchParticipant;
@@ -160,7 +162,7 @@ public class SearchService {
                         return;
                     }
                     if (passing[0] >= offset && page.size() < limit) {
-                        page.add(match);
+                        page.add(withModelElement(match));
                     }
                     passing[0]++;
                 }
@@ -405,7 +407,7 @@ public class SearchService {
                         && "java".equalsIgnoreCase(f.getFileExtension())) {
                         totalEncountered[0]++;
                         if (filtered.size() < maxResults) {
-                            filtered.add(match);
+                            filtered.add(withModelElement(match));
                         }
                     }
                 }
@@ -611,7 +613,7 @@ public class SearchService {
                         && "java".equalsIgnoreCase(f.getFileExtension())) {
                         totalEncountered[0]++;
                         if (filtered.size() < maxResults) {
-                            filtered.add(match);
+                            filtered.add(withModelElement(match));
                         }
                     }
                 }
@@ -622,6 +624,60 @@ public class SearchService {
         log.debug("Fine-grain search for {} (type={}) found {} after .java filter (total={})",
             type.getFullyQualifiedName(), referenceType, filtered.size(), totalEncountered[0]);
         return new SearchResult(filtered, totalEncountered[0]);
+    }
+
+    /**
+     * {@code match}, its element replaced by the one the Java model holds at the match position
+     * when search named it with a handle of its own: anything in a local or anonymous class or
+     * in a lambda expression. Search counts the classes of a lambda body under the lambda, and
+     * the classes written directly in a member without those of its lambdas, while the model,
+     * which has no lambda elements, counts both under the member; such a handle names a class the
+     * model does not hold or a sibling of the right one. A reference in a lambda body belongs,
+     * in the model, to the nearest enclosing member. A declaration keeps its kind and name, so a
+     * lambda's own declaration is left as search reports it.
+     */
+    private static SearchMatch withModelElement(SearchMatch match) {
+        if (!(match.getElement() instanceof IJavaElement element) || !withinLocalScope(element)
+            || !(element.getAncestor(IJavaElement.COMPILATION_UNIT) instanceof ICompilationUnit unit)) {
+            return match;
+        }
+        try {
+            IJavaElement model = unit.getElementAt(match.getOffset());
+            if (model != null && ((match instanceof ReferenceMatch && isLambda(element))
+                || (model.getElementType() == element.getElementType()
+                    && model.getElementName().equals(element.getElementName())))) {
+                match.setElement(model);
+            }
+        } catch (JavaModelException e) {
+            log.debug("No model element at {} for {}: {}", match.getOffset(), element, e.getMessage());
+        }
+        return match;
+    }
+
+    /** Whether {@code element} or an element enclosing it is a local or anonymous class or a lambda. */
+    private static boolean withinLocalScope(IJavaElement element) {
+        for (IJavaElement current = element; current != null; current = current.getParent()) {
+            if (current instanceof IType type && (type.isLambda() || isLocalOrAnonymous(type))) {
+                return true;
+            }
+            if (current instanceof IMethod method && method.isLambdaMethod()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isLocalOrAnonymous(IType type) {
+        try {
+            return type.isLocal() || type.isAnonymous();
+        } catch (JavaModelException e) {
+            return false;
+        }
+    }
+
+    private static boolean isLambda(IJavaElement element) {
+        return (element instanceof IMethod method && method.isLambdaMethod())
+            || (element instanceof IType type && type.isLambda());
     }
 
     /**
@@ -683,7 +739,7 @@ public class SearchService {
         public void acceptSearchMatch(SearchMatch match) {
             totalEncountered++;
             if (matches.size() < maxResults) {
-                matches.add(match);
+                matches.add(withModelElement(match));
             }
         }
 

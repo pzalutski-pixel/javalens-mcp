@@ -56,14 +56,15 @@ class SearchSymbolsToolTest {
     /**
      * add(String) overridden by the anonymous ArrayList subclass in
      * AnonymousClassExamples.nonFunctionalInterface: its @Override is on line 127, the
-     * declaration on line 128.
+     * declaration on line 128. That subclass is the ninth anonymous class of
+     * AnonymousClassExamples in source order, so its qualified name ends in $9.
      */
-    private static final Map<String, Object> ANONYMOUS_ADD =
-        method("add", MAIN + "AnonymousClassExamples.java", 128, 27, "add(String s)", "");
+    private static final Map<String, Object> ANONYMOUS_ADD = method("add", MAIN + "AnonymousClassExamples.java",
+        128, 27, "add(String s)", "com.example.AnonymousClassExamples$9");
     private static final Map<String, Object> CALCULATOR_ADD =
-        method("add", MAIN + "Calculator.java", 14, 15, "add(int a, int b)", "Calculator");
-    private static final Map<String, Object> ADD_USER =
-        method("addUser", MAIN + "service/UserService.java", 27, 19, "addUser(String username)", "UserService");
+        method("add", MAIN + "Calculator.java", 14, 15, "add(int a, int b)", "com.example.Calculator");
+    private static final Map<String, Object> ADD_USER = method("addUser", MAIN + "service/UserService.java",
+        27, 19, "addUser(String username)", "com.example.service.UserService");
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private SearchSymbolsTool tool;
@@ -165,7 +166,7 @@ class SearchSymbolsToolTest {
         lastResult.put("line", 6);
         lastResult.put("column", 16);
         lastResult.put("type", "int");
-        lastResult.put("containingType", "Calculator");
+        lastResult.put("containingType", "com.example.Calculator");
         assertPayload(args("lastResult", "Field", null, null), page("lastResult", "Field", 0, List.of(lastResult), 1));
     }
 
@@ -176,7 +177,7 @@ class SearchSymbolsToolTest {
     }
 
     @Test
-    @DisplayName("Method results for add carry signature and containingType: the anonymous class's add (containingType empty) and Calculator.add")
+    @DisplayName("Method results for add carry signature and fully qualified containingType: the anonymous class's add (AnonymousClassExamples$9) and Calculator.add")
     void methodResult_includesSignatureAndContainingType() {
         assertPayload(args("add", "Method", 1000, null),
             page("add", "Method", 0, List.of(ANONYMOUS_ADD, CALCULATOR_ADD), 2));
