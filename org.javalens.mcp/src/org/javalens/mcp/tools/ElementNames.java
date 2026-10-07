@@ -132,15 +132,30 @@ final class ElementNames {
 
     /**
      * The type {@code binding} denotes as it is written in a signature: the binding's name, with
-     * type arguments when it has them; an anonymous class by {@link #typeName}, an array of local
-     * or anonymous classes by its element type's name followed by its dimensions.
+     * type arguments when it has them; a captured wildcard by the wildcard it captures
+     * ({@code ? extends Foo}, {@code ? super Foo}, {@code ?}); an anonymous class by
+     * {@link #typeName}. An array is named by its element type followed by its dimensions, a
+     * parameterized type by its generic type followed by its type arguments, each named as this
+     * names a type, so a capture or an anonymous class within them is named too.
      */
     static String typeExpression(ITypeBinding binding) {
+        if (binding.isCapture()) {
+            return typeExpression(binding.getWildcard());
+        }
+        if (binding.isWildcardType()) {
+            ITypeBinding bound = binding.getBound();
+            return bound == null ? "?" : (binding.isUpperbound() ? "? extends " : "? super ") + typeExpression(bound);
+        }
         if (binding.isAnonymous()) {
             return modelType(typeOf(binding)).getTypeQualifiedName();
         }
-        if (binding.isArray() && (binding.getElementType().isLocal() || binding.getElementType().isAnonymous())) {
+        if (binding.isArray()) {
             return typeExpression(binding.getElementType()) + "[]".repeat(binding.getDimensions());
+        }
+        if (binding.isParameterizedType()) {
+            return binding.getTypeDeclaration().getName() + Arrays.stream(binding.getTypeArguments())
+                .map(ElementNames::typeExpression)
+                .collect(Collectors.joining(",", "<", ">"));
         }
         return binding.getName();
     }

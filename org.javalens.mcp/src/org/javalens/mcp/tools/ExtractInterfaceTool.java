@@ -133,6 +133,10 @@ public class ExtractInterfaceTool extends AbstractTool {
             if (type == null) {
                 return ToolResponse.symbolNotFound("No class found at position");
             }
+            if (type.isAnonymous()) {
+                return ToolResponse.invalidParameter("position", "Class at position is the anonymous class "
+                    + ElementNames.qualifiedName(type) + ", which cannot declare an implements clause");
+            }
 
             // Verify it's a class (not interface or enum)
             if (type.isInterface()) {

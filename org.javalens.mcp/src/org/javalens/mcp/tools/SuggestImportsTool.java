@@ -105,6 +105,12 @@ public class SuggestImportsTool extends AbstractTool {
                         String fqn = type.getFullyQualifiedName();
                         String packageName = type.getPackageFragment().getElementName();
 
+                        // An import names a type by its package (JLS 7.5): a type in the
+                        // default package cannot be imported.
+                        if (packageName.isEmpty()) {
+                            return;
+                        }
+
                         // Skip internal/impl packages
                         if (packageName.contains(".internal.") ||
                             packageName.contains(".impl.") ||
@@ -117,7 +123,7 @@ public class SuggestImportsTool extends AbstractTool {
 
                         Map<String, Object> candidate = new LinkedHashMap<>();
                         candidate.put("fullyQualifiedName", fqn);
-                        candidate.put("packageName", ElementNames.packageName(packageName));
+                        candidate.put("packageName", packageName);
                         candidate.put("simpleName", ElementNames.typeName(type));
                         candidate.put("relevance", relevance);
                         candidate.put("isInterface", type.isInterface());

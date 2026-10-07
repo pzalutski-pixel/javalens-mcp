@@ -80,6 +80,14 @@ public class PullUpTool extends AbstractTool {
         try {
             Path path = Path.of(filePath);
             IJavaElement element = service.getElementAtPosition(path, line, column);
+            if (element != null && element.getElementType() == IJavaElement.INITIALIZER) {
+                return ToolResponse.invalidParameter("position",
+                    "Symbol at position is an initializer, not a method or field to pull up");
+            }
+            if (element instanceof IType type && type.isAnonymous()) {
+                return ToolResponse.invalidParameter("position", "Symbol at position is the anonymous class "
+                    + ElementNames.qualifiedName(type) + ", not a method or field to pull up");
+            }
             if (!(element instanceof IMember member) || element instanceof IType) {
                 return ToolResponse.invalidParameter("position", "No method or field at position");
             }

@@ -7,6 +7,7 @@ import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.tools.FindFieldWritesTool;
 import org.javalens.mcp.tools.FindReferencesTool;
+import org.javalens.mcp.tools.GetComplexityMetricsTool;
 import org.javalens.mcp.tools.SearchSymbolsTool;
 import org.javalens.mcp.tools.Tool;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,7 +27,8 @@ import static org.javalens.mcp.tools.unnamed.UnnamedElements.success;
 /**
  * A member's containing type is reported by its fully qualified name, whether the container
  * is a member class, a local class or an anonymous class: search_symbols and find_references
- * {@code containingType}, find_field_writes {@code declaringType}.
+ * {@code containingType}, find_field_writes {@code declaringType}, get_complexity_metrics
+ * {@code methods[].type}.
  */
 class ContainingTypeTest {
 
@@ -128,6 +130,49 @@ class ContainingTypeTest {
         assertPayload(mapper, tool, envelope, position(32, 16), success(data, meta));
     }
 
+    @Test
+    @DisplayName("get_complexity_metrics names each method's type fully: Events and its member classes Events$Sink and Events$Recorder")
+    void complexityMetrics_methodTypes() {
+        // Events.java: 144 lines, 24 of them blank, no comments. The methods of the type
+        // declarations in source order, member classes in their place among Events' members;
+        // methods of local and anonymous classes are counted in the method declaring them. No
+        // method has a decision point or calls a method of its own name: each has cyclomatic
+        // complexity 1 and cognitive complexity 0.
+        List<Map<String, Object>> methods = List.of(
+            metrics("record", EVENTS_TYPE, 16, 3, 1),
+            metrics("accept", EVENTS_TYPE + "$Sink", 21, 1, 1),
+            metrics("accept", EVENTS_TYPE + "$Recorder", 25, 3, 1),
+            metrics("listener", EVENTS_TYPE, 30, 9, 0),
+            metrics("names", EVENTS_TYPE, 40, 10, 0),
+            metrics("sink", EVENTS_TYPE, 51, 7, 0),
+            metrics("later", EVENTS_TYPE, 59, 7, 0),
+            metrics("tally", EVENTS_TYPE, 67, 17, 0),
+            metrics("audit", EVENTS_TYPE, 85, 8, 0),
+            metrics("weigh", EVENTS_TYPE, 94, 3, 1),
+            metrics("pair", EVENTS_TYPE, 98, 13, 0),
+            metrics("deferred", EVENTS_TYPE, 112, 13, 0),
+            metrics("label", EVENTS_TYPE, 126, 3, 0),
+            metrics("span", EVENTS_TYPE, 130, 5, 3),
+            metrics("blanks", EVENTS_TYPE, 136, 7, 0));
+        Map<String, Object> data = map(
+            "file", map("path", EVENTS, "physicalLOC", 144, "blankLines", 24, "commentLines", 0, "codeLOC", 120),
+            "summary", map(
+                "totalCyclomaticComplexity", 15,
+                "totalCognitiveComplexity", 0,
+                "averageMethodCC", 1.0,
+                "maxMethodCC", 1,
+                "methodCount", 15),
+            "riskAssessment", map("highRiskMethods", 0, "mediumRiskMethods", 0, "lowRiskMethods", 15),
+            "methods", methods);
+        Map<String, Object> meta = map(
+            "totalCount", 15,
+            "returnedCount", 15,
+            "suggestedNextTools", List.of("get_dependency_graph to analyze dependencies"));
+        ObjectNode args = mapper.createObjectNode();
+        args.put("filePath", events);
+        assertPayload(mapper, new GetComplexityMetricsTool(() -> service), envelope, args, success(data, meta));
+    }
+
     private ObjectNode search(String query, String kind) {
         ObjectNode args = mapper.createObjectNode();
         args.put("query", query);
@@ -167,6 +212,12 @@ class ContainingTypeTest {
                                              String containingType) {
         return map("name", name, "kind", kind, "filePath", EVENTS, "line", line, "column", column,
             "type", type, "containingType", containingType);
+    }
+
+    private static Map<String, Object> metrics(String name, String type, int line, int physicalLoc,
+                                               int parameterCount) {
+        return map("name", name, "type", type, "line", line, "cyclomaticComplexity", 1, "cognitiveComplexity", 0,
+            "physicalLOC", physicalLoc, "parameterCount", parameterCount, "risk", "low");
     }
 
     private static Map<String, Object> reference(int line, int column, String context) {

@@ -81,11 +81,23 @@ public class PushDownTool extends AbstractTool {
         try {
             Path path = Path.of(filePath);
             IJavaElement element = service.getElementAtPosition(path, line, column);
+            if (element != null && element.getElementType() == IJavaElement.INITIALIZER) {
+                return ToolResponse.invalidParameter("position",
+                    "Symbol at position is an initializer, not a method or field to push down");
+            }
+            if (element instanceof IType type && type.isAnonymous()) {
+                return ToolResponse.invalidParameter("position", "Symbol at position is the anonymous class "
+                    + ElementNames.qualifiedName(type) + ", not a method or field to push down");
+            }
             if (!(element instanceof IMember member) || element instanceof IType) {
                 return ToolResponse.invalidParameter("position", "No method or field at position");
             }
 
             IType declaringType = member.getDeclaringType();
+            if (declaringType.isAnonymous()) {
+                return ToolResponse.invalidParameter("position", "Member at position is declared in the anonymous class "
+                    + ElementNames.qualifiedName(declaringType) + ", which no class can extend");
+            }
             ITypeHierarchy hierarchy = declaringType.newTypeHierarchy(null);
             IType[] subclasses = hierarchy.getSubclasses(declaringType);
             if (subclasses == null || subclasses.length == 0) {

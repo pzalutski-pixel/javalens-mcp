@@ -123,4 +123,22 @@ public class Events {
         };
         return List.of(pending, now);
     }
+
+    public String label() {
+        return "events";
+    }
+
+    static int span(List<? extends CharSequence> texts, List<? super String> sink, List<?> any) {
+        CharSequence first = texts.get(0);
+        sink.add("span");
+        return first.length() + any.subList(0, 1).size();
+    }
+
+    static List<Object> blanks() {
+        return List.of(
+            new Runnable() { public void run() { } },
+            new Iterable<String>() { public java.util.Iterator<String> iterator() { return List.<String>of().iterator(); } },
+            new ThreadLocal<String>() { },
+            new Object() { });
+    }
 }

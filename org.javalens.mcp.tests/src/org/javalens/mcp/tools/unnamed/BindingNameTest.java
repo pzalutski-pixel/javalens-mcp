@@ -25,7 +25,9 @@ import static org.javalens.mcp.tools.unnamed.UnnamedElements.success;
  * Tools that read callees from resolved bindings name each type the way the model-based tools
  * do: a declaring class by its fully qualified name without type arguments, an anonymous class
  * by its type-qualified name ({@code Events$1}) and a local class by its simple name, also as
- * a parameter type ({@code Counter[]}).
+ * a parameter type ({@code Counter[]}). A captured wildcard, which has no name, is named by the
+ * wildcard it captures ({@code ? extends CharSequence}), also as a type argument
+ * ({@code List<?>}).
  */
 class BindingNameTest {
 
@@ -192,6 +194,74 @@ class BindingNameTest {
             "overrides", map());
         assertPayload(mapper, new AnalyzeMethodTool(() -> service), envelope, position(67, 8),
             success(data, map("suggestedNextTools", ANALYZE_NEXT_TOOLS)));
+    }
+
+    @Test
+    @DisplayName("get_call_hierarchy_outgoing of span names each captured wildcard as the wildcard: ? extends CharSequence, ? super String, List<?>")
+    void outgoingCapturedWildcards() {
+        // span(List<? extends CharSequence> texts, List<? super String> sink, List<?> any): a call
+        // on a parameter sees its wildcard captured, so get returns the capture of
+        // ? extends CharSequence, add takes the capture of ? super String and subList returns a
+        // List of the capture of ?. The size() call is visited before subList(), the call it is
+        // made on; both start at any.
+        Map<String, Object> data = map(
+            "method", "span",
+            "declaringClass", EVENTS_TYPE,
+            "signature", "span(List<? extends CharSequence>, List<? super String>, List<?>)",
+            "totalCallees", 5,
+            "callees", List.of(
+                libraryCallee("get", "java.util.List", "get(int)", "? extends CharSequence", location(131, 29)),
+                libraryCallee("add", "java.util.List", "add(? super String)", "boolean", location(132, 8)),
+                libraryCallee("length", "java.lang.CharSequence", "length()", "int", location(133, 15)),
+                libraryCallee("size", "java.util.List", "size()", "int", location(133, 32)),
+                libraryCallee("subList", "java.util.List", "subList(int, int)", "List<?>", location(133, 32))));
+        assertPayload(mapper, new GetCallHierarchyOutgoingTool(() -> service), envelope, position(130, 15),
+            success(data, outgoingMeta(5)));
+    }
+
+    @Test
+    @DisplayName("analyze_method of span names the captured wildcard of add's parameter ? super String")
+    void analyzeMethodCapturedWildcards() {
+        String list = "java.util.List";
+        Map<String, Object> data = map(
+            "method", map(
+                "name", "span",
+                "constructor", false,
+                "modifiers", List.of("static"),
+                "declaringType", EVENTS_TYPE,
+                "signature", "span(List<? extends CharSequence> texts, List<? super String> sink, List<?> any): int",
+                "returnType", "int",
+                "file", EVENTS,
+                "line", 130),
+            "parameters", List.of(
+                map("type", "List<? extends CharSequence>", "name", "texts"),
+                map("type", "List<? super String>", "name", "sink"),
+                map("type", "List<?>", "name", "any")),
+            "callers", map("count", 0, "list", List.of()),
+            "callees", map("count", 5, "list", List.of(
+                map("name", "get", "kind", "METHOD", "qualifiedType", list, "signature", "get(int)", "callLine", 131),
+                map("name", "add", "kind", "METHOD", "qualifiedType", list, "signature", "add(? super String)",
+                    "callLine", 132),
+                map("name", "length", "kind", "METHOD", "qualifiedType", "java.lang.CharSequence",
+                    "signature", "length()", "callLine", 133),
+                map("name", "size", "kind", "METHOD", "qualifiedType", list, "signature", "size()", "callLine", 133),
+                map("name", "subList", "kind", "METHOD", "qualifiedType", list, "signature", "subList(int, int)",
+                    "callLine", 133))),
+            "overrides", map());
+        assertPayload(mapper, new AnalyzeMethodTool(() -> service), envelope, position(130, 15),
+            success(data, map("suggestedNextTools", ANALYZE_NEXT_TOOLS)));
+    }
+
+    private static Map<String, Object> libraryCallee(String method, String declaringClass, String signature,
+                                                     String returnType, Map<String, Object> location) {
+        return map(
+            "method", method,
+            "declaringClass", declaringClass,
+            "signature", signature,
+            "returnType", returnType,
+            "callType", "METHOD",
+            "isFromSource", false,
+            "callLocation", location);
     }
 
     private ObjectNode position(int line, int column) {

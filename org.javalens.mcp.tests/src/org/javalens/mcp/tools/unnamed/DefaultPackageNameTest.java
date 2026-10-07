@@ -26,8 +26,9 @@ import static org.javalens.mcp.tools.unnamed.UnnamedElements.without;
 
 /**
  * The default package is reported as "(default package)" wherever a tool reports a package
- * name. Loose (Loose.java, no package declaration) is a public class with the one public method
- * {@code greet(): String} on line 2 and nothing else.
+ * name, and a type in it is never offered for import. Loose (Loose.java, no package
+ * declaration) is a public class with the one public method {@code greet(): String} on line 2
+ * and nothing else.
  */
 class DefaultPackageNameTest {
 
@@ -130,32 +131,51 @@ class DefaultPackageNameTest {
     }
 
     @Test
-    @DisplayName("suggest_imports for Loose reports the candidate's package as (default package)")
+    @DisplayName("suggest_imports for Loose offers no candidate: no import can name a type in the default package")
     void suggestImports() {
         ObjectNode args = mapper.createObjectNode();
         args.put("typeName", "Loose");
-        // No JDK or project type other than Loose is named Loose; its package matches no ranked
-        // prefix, so its relevance is the default 30.
+        // Loose is the only type named Loose, in the JDK or the project, and an import names a
+        // type by its package (JLS 7.5), which the default package does not have.
         Map<String, Object> data = map(
             "typeName", "Loose",
+            "totalCandidates", 0,
+            "candidates", List.of());
+        assertPayload(mapper, new SuggestImportsTool(() -> service), envelope, args,
+            success(data, suggestImportsMeta(0)));
+    }
+
+    @Test
+    @DisplayName("suggest_imports for Events offers com.example.unnamed.Events, a type in a named package of the same project")
+    void suggestImportsNamedPackage() {
+        ObjectNode args = mapper.createObjectNode();
+        args.put("typeName", "Events");
+        // The JDK's only type named Events, com.sun.tools.jdi.JDWP.Event.Composite.Events, is in
+        // a com.sun package, which suggest_imports never offers. A com.* package ranks 40.
+        Map<String, Object> data = map(
+            "typeName", "Events",
             "totalCandidates", 1,
             "candidates", List.of(map(
-                "fullyQualifiedName", "Loose",
-                "packageName", DEFAULT_PACKAGE,
-                "simpleName", "Loose",
-                "relevance", 30,
+                "fullyQualifiedName", "com.example.unnamed.Events",
+                "packageName", "com.example.unnamed",
+                "simpleName", "Events",
+                "relevance", 40,
                 "isInterface", false,
                 "isClass", true,
                 "isEnum", false,
-                "fixId", "add_import:Loose")));
-        Map<String, Object> meta = map(
-            "totalCount", 1,
-            "returnedCount", 1,
+                "fixId", "add_import:com.example.unnamed.Events")));
+        assertPayload(mapper, new SuggestImportsTool(() -> service), envelope, args,
+            success(data, suggestImportsMeta(1)));
+    }
+
+    private static Map<String, Object> suggestImportsMeta(int count) {
+        return map(
+            "totalCount", count,
+            "returnedCount", count,
             "truncated", false,
             "suggestedNextTools", List.of(
                 "apply_quick_fix with fixId to add the import",
                 "get_quick_fixes to see all available fixes"));
-        assertPayload(mapper, new SuggestImportsTool(() -> service), envelope, args, success(data, meta));
     }
 
     @Test

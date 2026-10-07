@@ -35,8 +35,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * {@code record}; {@code weigh(String)}; {@code pair()} declaring two anonymous classes, a
  * Comparable and a Supplier (anonymous classes 4 and 5); {@code deferred()} declaring a lambda
  * whose body declares an anonymous Object subclass (anonymous class 6), then directly another
- * (anonymous class 7). The methods of anonymous classes 4 to 7 call {@code weigh}. Loose.java
- * declares {@code Loose} in the default package.
+ * (anonymous class 7). The methods of anonymous classes 4 to 7 call {@code weigh}. Then
+ * {@code label()}, Events' one public instance method; {@code span(List<? extends CharSequence>,
+ * List<? super String>, List<?>)}, whose calls on its parameters capture their wildcards; and
+ * {@code blanks()}, returning four one-line anonymous classes: a Runnable, an
+ * {@code Iterable<String>}, a {@code ThreadLocal<String>} subclass and an Object subclass
+ * (anonymous classes 8 to 11). Loose.java declares {@code Loose} in the default package.
  *
  * <p>JDT numbers anonymous classes per enclosing type in source order, lambda bodies included,
  * so the first three are {@code Events$1}, {@code Events$2} and {@code Events$3}; a local class

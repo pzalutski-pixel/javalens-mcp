@@ -176,9 +176,9 @@ class CallerAttributionTest {
     @Test
     @DisplayName("get_type_at_position on a local variable of the lambda in later() reports Events, the type the lambda is written in")
     void typeAtPositionInLambda() {
-        // Events declares 10 methods (record, listener, names, sink, later, tally, audit, weigh,
-        // pair, deferred), the 2 fields total and RESET, and the 2 member classes Sink and
-        // Recorder; it extends nothing.
+        // Events declares 13 methods (record, listener, names, sink, later, tally, audit, weigh,
+        // pair, deferred, label, span, blanks), the 2 fields total and RESET, and the 2 member
+        // classes Sink and Recorder; it extends nothing.
         Map<String, Object> data = map(
             "name", "Events",
             "qualifiedName", EVENTS_TYPE,
@@ -188,7 +188,7 @@ class CallerAttributionTest {
             "isLocal", false,
             "filePath", EVENTS,
             "line", 6,
-            "methodCount", 10,
+            "methodCount", 13,
             "fieldCount", 2,
             "nestedTypeCount", 2);
         Map<String, Object> meta = map("suggestedNextTools", List.of(

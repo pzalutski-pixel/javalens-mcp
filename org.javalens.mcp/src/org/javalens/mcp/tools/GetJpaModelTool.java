@@ -101,7 +101,7 @@ public class GetJpaModelTool extends AbstractTool {
 
         try {
             List<IType> entityTypes = findEntityTypes(service);
-            entityTypes.sort(Comparator.comparing(t -> t.getFullyQualifiedName('.')));
+            entityTypes.sort(Comparator.comparing(ElementNames::qualifiedName));
 
             List<Map<String, Object>> entities = new ArrayList<>();
             for (IType type : entityTypes) {
@@ -169,13 +169,14 @@ public class GetJpaModelTool extends AbstractTool {
         parser.setResolveBindings(true);
         CompilationUnit ast = (CompilationUnit) parser.createAST(null);
 
-        String qualifiedName = type.getFullyQualifiedName('.');
+        String qualifiedName = ElementNames.qualifiedName(type);
         TypeDeclaration[] declaration = {null};
         ast.accept(new ASTVisitor() {
             @Override
             public boolean visit(TypeDeclaration node) {
                 ITypeBinding binding = node.resolveBinding();
-                if (binding != null && qualifiedName.equals(binding.getQualifiedName())) {
+                if (binding != null && binding.getJavaElement() instanceof IType declared
+                    && qualifiedName.equals(ElementNames.qualifiedName(declared))) {
                     declaration[0] = node;
                 }
                 return declaration[0] == null;
@@ -241,9 +242,22 @@ public class GetJpaModelTool extends AbstractTool {
             return null;
         }
         if (binding.isParameterizedType() && binding.getTypeArguments().length == 1) {
-            return binding.getTypeArguments()[0].getErasure().getQualifiedName();
+            return erasureName(binding.getTypeArguments()[0]);
         }
-        return binding.getErasure().getQualifiedName();
+        return erasureName(binding);
+    }
+
+    /**
+     * The fully qualified name of {@code type}'s erasure: a class or interface named as every
+     * tool names it, an array by its element type followed by its dimensions, a primitive by its
+     * keyword.
+     */
+    private static String erasureName(ITypeBinding type) {
+        ITypeBinding erasure = type.getErasure();
+        if (erasure.isArray()) {
+            return erasureName(erasure.getElementType()) + "[]".repeat(erasure.getDimensions());
+        }
+        return erasure.isPrimitive() ? erasure.getName() : ElementNames.qualifiedName(erasure);
     }
 
     /** First annotation on the declaration matching the simple name (persistence package or unresolved). */

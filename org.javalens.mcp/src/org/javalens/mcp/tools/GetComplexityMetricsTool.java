@@ -221,14 +221,17 @@ public class GetComplexityMetricsTool extends AbstractTool {
      */
     private void collectMethodMetrics(AbstractTypeDeclaration typeDecl, CompilationUnit ast,
                                        List<Map<String, Object>> metrics) {
-        String typeName = typeDecl.getName().getIdentifier();
-        if (typeName.isEmpty() && ast.getJavaElement() != null) {
+        String typeName;
+        if (typeDecl.getName().getIdentifier().isEmpty() && ast.getJavaElement() != null) {
             // JEP 512 implicit classes have no source-level name; the DOM reports an
             // empty identifier. The JDT model names them after the file, so derive
             // the same name here to keep the type attribution consistent with the
             // other tools (e.g. analyze_file reports the implicit class as CompactMain).
+            // An implicit class is in the unnamed package, so that name is fully qualified.
             String unit = ast.getJavaElement().getElementName();
             typeName = unit.endsWith(".java") ? unit.substring(0, unit.length() - 5) : unit;
+        } else {
+            typeName = ElementNames.qualifiedName(typeDecl.resolveBinding());
         }
 
         // Iterate bodyDeclarations() rather than TypeDeclaration.getMethods() so that
