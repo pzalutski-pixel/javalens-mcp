@@ -37,6 +37,9 @@ package org.javalens.core.project.model;
  *       is analyzed at the highest.</li>
  *   <li>{@code INDEX_INCOMPLETE}: the search index is missing declarations of source files
  *       even after re-indexing them; search-based results do not include those files.</li>
+ *   <li>{@code LIBRARY_INDEX_INCOMPLETE}: the search index of a library on the classpath
+ *       could not be built even after rebuilding it; search-based results do not include the
+ *       library's types.</li>
  *   <li>{@code EARLIER_PROJECT_KEPT}: the load completed and is in use, but an earlier
  *       JavaLens project could not be removed from the workspace; it stays until the next
  *       load removes it.</li>
@@ -160,6 +163,17 @@ public record LoadWarning(String code, String message, String remediation, Strin
      * {@link #EARLIER_PROJECT_KEPT}. {@code module} is null.
      */
     public static final String INDEX_INCOMPLETE = "INDEX_INCOMPLETE";
+
+    /**
+     * The search index of a library on the classpath could not be built: after the load had
+     * JDT rebuild the library's index, JDT still holds no index it can search for it, for
+     * example because the library is not a readable archive. Index-backed results (symbol
+     * search, references, import suggestions) do not include the library's types. The message
+     * names the libraries, a library under the project root relative to it and any other by its
+     * absolute path, sorted. Checked at each load. It comes after {@link #INDEX_INCOMPLETE} and
+     * before {@link #EARLIER_PROJECT_KEPT}. {@code module} is null.
+     */
+    public static final String LIBRARY_INDEX_INCOMPLETE = "LIBRARY_INDEX_INCOMPLETE";
 
     /**
      * The load completed and its project is the one in use, but a project an earlier load

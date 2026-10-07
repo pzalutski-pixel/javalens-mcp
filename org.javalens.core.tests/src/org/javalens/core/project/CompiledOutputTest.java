@@ -314,7 +314,7 @@ class CompiledOutputTest {
     }
 
     @Test
-    @DisplayName("An output that cannot be read stays on the classpath with COMPILED_OUTPUT_INCLUDED saying it could not be read")
+    @DisplayName("An output that cannot be read stays on the classpath with COMPILED_OUTPUT_INCLUDED saying it could not be read, and LIBRARY_INDEX_INCOMPLETE naming it, since JDT cannot index it")
     void unreadableOutputIsKeptAndReportedUnreadable() throws Exception {
         Path root = Files.createDirectories(helper.getTempDirectory().resolve("unreadable-output"));
         Path moduleSrc = root.resolve("m/src");
@@ -329,10 +329,16 @@ class CompiledOutputTest {
 
         assertAll(
             () -> assertEquals(List.of(notAJar), snapshot.libraries(), "library entries"),
-            () -> assertEquals(List.of(new LoadWarning(LoadWarning.COMPILED_OUTPUT_INCLUDED,
-                    "Compiled output m/lib/output.jar could not be read, so it is on the classpath; results for "
-                        + "module 'm' may include compiled duplicates of linked sources and reflect the last build",
-                    REMEDIATION, "m")),
+            () -> assertEquals(List.of(
+                    new LoadWarning(LoadWarning.COMPILED_OUTPUT_INCLUDED,
+                        "Compiled output m/lib/output.jar could not be read, so it is on the classpath; results for "
+                            + "module 'm' may include compiled duplicates of linked sources and reflect the last build",
+                        REMEDIATION, "m"),
+                    new LoadWarning(LoadWarning.LIBRARY_INDEX_INCOMPLETE,
+                        "The search index of 1 library could not be built: m/lib/output.jar; "
+                            + "search-based results do not include its types",
+                        "Make sure each library is a readable archive or class folder, then reload the project; "
+                            + "if the warning persists, restart JavaLens.")),
                 service.getWarnings(), "warnings"));
     }
 

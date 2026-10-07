@@ -99,6 +99,11 @@ public class JdtServiceImpl implements IJdtService {
     private volatile Set<Path> indexGaps = Set.of();
     /** Whether a gap the index verification finds is re-indexed before it is reported. */
     private boolean indexRepairEnabled = true;
+    /**
+     * The libraries whose search index JDT could not build at the last load, even after
+     * rebuilding it, as load warnings show them, sorted.
+     */
+    private List<String> libraryIndexGaps = List.of();
 
     private DiskSyncMode diskSyncMode;
 
@@ -201,6 +206,7 @@ public class JdtServiceImpl implements IJdtService {
         this.pathUtils = new PathUtilsImpl(projectRoot);
         this.earlierProjectWarnings = List.of();
         this.indexGaps = Set.of();
+        this.libraryIndexGaps = List.of();
 
         // Initialize workspace
         workspaceManager.initialize();
@@ -260,6 +266,10 @@ public class JdtServiceImpl implements IJdtService {
         // Without this, callers that issue SearchEngine queries immediately after load can
         // race the background indexer and see zero results for symbols that do exist.
         waitForIndexReady();
+
+        // Have JDT rebuild any library index it cannot search, so no search answers without a
+        // library's types; a library still unsearchable afterwards is reported.
+        this.libraryIndexGaps = repairLibraryIndexes();
 
         // Verify the index against every compilation unit, re-indexing any unit it lacks, so
         // no search answers around a gap left by the indexer.
@@ -494,6 +504,35 @@ public class JdtServiceImpl implements IJdtService {
         }
     }
 
+    /**
+     * Verify that JDT holds a searchable index for every library on the classpath; drop the
+     * index of each library it does not and run the index barrier again, so JDT rebuilds those
+     * indexes and the barrier waits for them, then verify again. See {@link LibraryIndexVerifier}
+     * for how JDT leaves a library with an index no search reads.
+     *
+     * @return the libraries still unsearchable, as load warnings show them, sorted
+     */
+    private List<String> repairLibraryIndexes() throws JavaModelException {
+        LibraryIndexVerifier libraries = new LibraryIndexVerifier(javaProject);
+        List<IPath> unsearchable = libraries.findUnsearchable();
+        if (unsearchable.isEmpty()) {
+            return List.of();
+        }
+        log.warn("JDT holds no searchable index for {} librar{}; rebuilding {}",
+            unsearchable.size(), unsearchable.size() == 1 ? "y" : "ies", unsearchable);
+        libraries.dropIndexes(unsearchable);
+        waitForIndexReady();
+        List<String> shown = libraries.findUnsearchable().stream()
+            .map(library -> pathUtils.formatPath(Path.of(library.toOSString())))
+            .sorted()
+            .toList();
+        if (!shown.isEmpty()) {
+            log.warn("The search index of {} librar{} could not be built: {}",
+                shown.size(), shown.size() == 1 ? "y" : "ies", shown);
+        }
+        return shown;
+    }
+
     @Override
     public IPathUtils getPathUtils() {
         return pathUtils;
@@ -501,7 +540,8 @@ public class JdtServiceImpl implements IJdtService {
 
     /**
      * The model's warnings, then INDEX_INCOMPLETE while the index is verified to miss files'
-     * declarations, then EARLIER_PROJECT_KEPT for each earlier project the load kept.
+     * declarations, then LIBRARY_INDEX_INCOMPLETE when the load could not build a library's
+     * index, then EARLIER_PROJECT_KEPT for each earlier project the load kept.
      */
     @Override
     public List<LoadWarning> getWarnings() {
@@ -509,6 +549,9 @@ public class JdtServiceImpl implements IJdtService {
         List<String> indexIncompleteFiles = getIndexIncompleteFiles();
         if (!indexIncompleteFiles.isEmpty()) {
             warnings.add(indexIncomplete(indexIncompleteFiles));
+        }
+        if (!libraryIndexGaps.isEmpty()) {
+            warnings.add(libraryIndexIncomplete(libraryIndexGaps));
         }
         warnings.addAll(earlierProjectWarnings);
         return List.copyOf(warnings);
@@ -523,6 +566,16 @@ public class JdtServiceImpl implements IJdtService {
                 + (files.size() == 1 ? " file: " : " files: ") + String.join(", ", files)
                 + "; search-based results do not include them",
             RELOAD_OR_RESTART);
+    }
+
+    private static LoadWarning libraryIndexIncomplete(List<String> libraries) {
+        boolean one = libraries.size() == 1;
+        return new LoadWarning(LoadWarning.LIBRARY_INDEX_INCOMPLETE,
+            "The search index of " + libraries.size() + (one ? " library" : " libraries")
+                + " could not be built: " + String.join(", ", libraries)
+                + "; search-based results do not include " + (one ? "its" : "their") + " types",
+            "Make sure each library is a readable archive or class folder, then reload the project; "
+                + "if the warning persists, restart JavaLens.");
     }
 
     private static LoadWarning earlierProjectKept(WorkspaceManager.KeptProject kept) {
