@@ -25,6 +25,7 @@ import org.eclipse.jdt.core.dom.SwitchCase;
 import org.eclipse.jdt.core.dom.ThrowStatement;
 import org.eclipse.jdt.core.dom.TryStatement;
 import org.eclipse.jdt.core.dom.WhileStatement;
+import org.javalens.core.Deadline;
 import org.javalens.core.IJdtService;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
@@ -111,7 +112,7 @@ public class GetComplexityMetricsTool extends AbstractTool {
             ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
             parser.setSource(cu);
             parser.setResolveBindings(true);
-            CompilationUnit ast = (CompilationUnit) parser.createAST(null);
+            CompilationUnit ast = (CompilationUnit) parser.createAST(Deadline.monitor());
 
             // Calculate file-level metrics
             String[] lines = source.split("\n");

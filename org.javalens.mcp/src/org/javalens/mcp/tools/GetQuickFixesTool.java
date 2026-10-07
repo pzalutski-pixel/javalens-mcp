@@ -1,7 +1,6 @@
 package org.javalens.mcp.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IType;
@@ -18,6 +17,7 @@ import org.eclipse.jdt.core.search.SearchEngine;
 import org.eclipse.jdt.core.search.SearchPattern;
 import org.eclipse.jdt.core.search.TypeNameMatch;
 import org.eclipse.jdt.core.search.TypeNameMatchRequestor;
+import org.javalens.core.Deadline;
 import org.javalens.core.IJdtService;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
@@ -122,17 +122,19 @@ public class GetQuickFixesTool extends AbstractTool {
             // every problem (warnings, errors) is silently invisible to this tool. So we
             // put the CU into working-copy mode for the duration of the reconcile.
             boolean wasWorkingCopy = cu.isWorkingCopy();
-            if (!wasWorkingCopy) {
-                cu.becomeWorkingCopy(null);
-            }
-
             CompilationUnit ast;
             try {
+                // Inside the try: JDT registers the working copy before its first cancellation
+                // check (BecomeWorkingCopyOperation :45, Openable :240), so a cancelled call
+                // still leaves one, which the finally discards.
+                if (!wasWorkingCopy) {
+                    cu.becomeWorkingCopy(Deadline.monitor());
+                }
                 ast = cu.reconcile(
                     AST.getJLSLatest(),
                     ICompilationUnit.FORCE_PROBLEM_DETECTION,
                     null,
-                    null
+                    Deadline.monitor()
                 );
             } finally {
                 if (!wasWorkingCopy) {
@@ -394,7 +396,7 @@ public class GetQuickFixesTool extends AbstractTool {
                 scope,
                 requestor,
                 IJavaSearchConstants.WAIT_UNTIL_READY_TO_SEARCH,
-                new NullProgressMonitor()
+                Deadline.monitor()
             );
 
             // Rank every candidate: by relevance (descending), then by import name

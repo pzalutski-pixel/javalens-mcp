@@ -14,6 +14,7 @@ import org.eclipse.jdt.core.ITypeParameter;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.Signature;
 import org.javalens.core.ElementKindResolver;
+import org.javalens.core.Deadline;
 import org.javalens.core.IJdtService;
 import org.javalens.core.ModifierFormatter;
 import org.javalens.mcp.models.ResponseMeta;
@@ -123,7 +124,7 @@ public class GetHoverInfoTool extends AbstractTool {
         // Get Javadoc if available
         if (element instanceof IMember member) {
             try {
-                String javadoc = member.getAttachedJavadoc(null);
+                String javadoc = member.getAttachedJavadoc(Deadline.monitor());
                 if (javadoc != null && !javadoc.isBlank()) {
                     // Clean up HTML from javadoc
                     String cleanDoc = cleanJavadoc(javadoc);

@@ -13,6 +13,7 @@ import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.PackageDeclaration;
 import org.eclipse.jdt.core.dom.Statement;
 import org.eclipse.jdt.core.dom.Type;
+import org.javalens.core.Deadline;
 import org.javalens.core.IJdtService;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
@@ -108,7 +109,7 @@ public class ApplyQuickFixTool extends AbstractTool {
             ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
             parser.setSource(cu);
             parser.setResolveBindings(true);
-            CompilationUnit ast = (CompilationUnit) parser.createAST(null);
+            CompilationUnit ast = (CompilationUnit) parser.createAST(Deadline.monitor());
 
             List<Map<String, Object>> edits = switch (fixType) {
                 case "add_import" -> applyAddImport(cu, ast, fixParam, service);

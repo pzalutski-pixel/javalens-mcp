@@ -18,6 +18,7 @@ import org.eclipse.jdt.core.dom.StringLiteral;
 import org.eclipse.jdt.core.dom.TypeDeclaration;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
 import org.eclipse.jdt.core.search.SearchMatch;
+import org.javalens.core.Deadline;
 import org.javalens.core.IJdtService;
 import org.javalens.core.search.SearchResult;
 import org.javalens.core.search.SearchService;
@@ -189,7 +190,7 @@ public class GetJpaModelTool extends AbstractTool {
         ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
         parser.setSource(cu);
         parser.setResolveBindings(true);
-        CompilationUnit ast = (CompilationUnit) parser.createAST(null);
+        CompilationUnit ast = (CompilationUnit) parser.createAST(Deadline.monitor());
 
         String qualifiedName = ElementNames.qualifiedName(type);
         TypeDeclaration[] declaration = {null};

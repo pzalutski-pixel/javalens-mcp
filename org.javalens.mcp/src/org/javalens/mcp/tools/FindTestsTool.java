@@ -8,6 +8,7 @@ import org.eclipse.jdt.core.dom.ASTVisitor;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.TypeDeclaration;
+import org.javalens.core.Deadline;
 import org.javalens.core.IJdtService;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
@@ -84,7 +85,7 @@ public class FindTestsTool extends AbstractTool {
                     parser.setSource(cu);
                     parser.setResolveBindings(true);
 
-                    CompilationUnit ast = (CompilationUnit) parser.createAST(null);
+                    CompilationUnit ast = (CompilationUnit) parser.createAST(Deadline.monitor());
                     if (ast == null) continue;
 
                     List<Map<String, Object>> testsInFile = findTestsInFile(ast, file, service, includeDisabled);

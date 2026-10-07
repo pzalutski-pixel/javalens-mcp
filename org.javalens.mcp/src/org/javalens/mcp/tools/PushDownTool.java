@@ -9,6 +9,7 @@ import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.refactoring.descriptors.PushDownDescriptor;
 import org.eclipse.jdt.internal.corext.refactoring.RefactoringAvailabilityTesterCore;
 import org.eclipse.ltk.core.refactoring.RefactoringDescriptor;
+import org.javalens.core.Deadline;
 import org.javalens.core.IJdtService;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
@@ -221,7 +222,7 @@ public class PushDownTool extends AbstractTool {
      */
     private static List<String> subclassesJdtLeavesOut(IType declaringType, List<IType> subclasses)
             throws JavaModelException {
-        Set<IType> read = new HashSet<>(Arrays.asList(declaringType.newTypeHierarchy(null).getSubclasses(declaringType)));
+        Set<IType> read = new HashSet<>(Arrays.asList(declaringType.newTypeHierarchy(Deadline.monitor()).getSubclasses(declaringType)));
         List<String> names = new ArrayList<>();
         for (IType subclass : subclasses) {
             if (!read.contains(subclass)) {

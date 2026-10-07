@@ -20,6 +20,7 @@ import org.eclipse.jdt.core.dom.IBinding;
 import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.ElementKindResolver;
+import org.javalens.core.Deadline;
 import org.javalens.core.IJdtService;
 import org.javalens.core.search.SearchResult;
 import org.javalens.core.search.SearchService;
@@ -318,7 +319,7 @@ public class RenameSymbolTool extends AbstractTool {
         parser.setSource(cu);
         parser.setResolveBindings(true);
         parser.setBindingsRecovery(true);
-        CompilationUnit ast = (CompilationUnit) parser.createAST(null);
+        CompilationUnit ast = (CompilationUnit) parser.createAST(Deadline.monitor());
 
         String targetKey = findBindingKey(element, ast, oldName);
         if (targetKey == null) {

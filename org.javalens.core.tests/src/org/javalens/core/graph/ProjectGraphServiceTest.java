@@ -4,6 +4,7 @@ import org.eclipse.jdt.core.Flags;
 import org.eclipse.jdt.core.IField;
 import org.eclipse.jdt.core.IMethod;
 import org.eclipse.jdt.core.IType;
+import org.javalens.core.Deadline;
 import org.javalens.core.JdtServiceImpl;
 import org.javalens.core.fixtures.TestProjectHelper;
 import org.javalens.core.graph.ProjectGraph.EdgeKind;
@@ -356,6 +357,60 @@ class ProjectGraphServiceTest {
         ProjectGraph rebuilt = service.getGraph();
         assertNotSame(first, rebuilt, "invalidate must force a rebuild");
         assertEquals(keys(first.nodes(NodeKind.METHOD)), keys(rebuilt.nodes(NodeKind.METHOD)));
+    }
+
+    // ========== A build cancelled at any check ==========
+
+    @Test
+    @DisplayName("a build cancelled at any of its cancellation checks throws OperationCanceledException and keeps no graph: the next query builds exactly the fresh graph")
+    void cancelledBuild_keepsNoGraph() throws Exception {
+        java.util.List<Object> fresh = canonical(graph);
+        ProjectGraphService graphs = jdtService.getProjectGraphService();
+        graphs.invalidate();
+        Deadline counting = Deadline.atCheck(30, Long.MAX_VALUE);
+        java.util.List<Object> countedBuild = canonical(within(counting, graphs));
+        long checks = counting.checks();
+
+        java.util.List<String> failures = new java.util.ArrayList<>();
+        for (long k = 1; k <= checks; k++) {
+            graphs.invalidate();
+            Deadline deadline = Deadline.atCheck(30, k);
+            try {
+                within(deadline, graphs);
+                failures.add("check " + k + ": the build completed");
+            } catch (org.eclipse.core.runtime.OperationCanceledException expected) {
+                // the build stopped at check k
+            }
+            if (!fresh.equals(canonical(graphs.getGraph()))) {
+                failures.add("check " + k + ": the next query's graph differs from the fresh graph");
+            }
+        }
+        graphs.invalidate();
+        java.util.List<Object> pastLastCheck = canonical(within(Deadline.atCheck(30, checks + 1), graphs));
+
+        assertAll(
+            () -> assertTrue(checks > 0, "the build checks for cancellation; checks = " + checks),
+            () -> assertEquals(fresh, countedBuild, "a build under a deadline that never expires"),
+            () -> assertEquals(java.util.List.of(), failures),
+            () -> assertEquals(fresh, pastLastCheck, "a deadline expiring past the build's last check"));
+    }
+
+    private static ProjectGraph within(Deadline deadline, ProjectGraphService graphs) {
+        return deadline.within(() -> {
+            try {
+                return graphs.getGraph();
+            } catch (org.eclipse.jdt.core.JavaModelException e) {
+                throw new IllegalStateException(e);
+            }
+        });
+    }
+
+    /** The graph's nodes of each kind, edges in order, overrides and main methods. */
+    private static java.util.List<Object> canonical(ProjectGraph graph) {
+        return java.util.List.of(
+            Set.copyOf(graph.nodes(NodeKind.TYPE)), Set.copyOf(graph.nodes(NodeKind.METHOD)),
+            Set.copyOf(graph.nodes(NodeKind.FIELD)), java.util.List.copyOf(graph.edges()),
+            graph.overrides(), Set.copyOf(graph.mainMethodKeys()));
     }
 
     private static Set<String> keys(java.util.Collection<GraphNode> nodes) {

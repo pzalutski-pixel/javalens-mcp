@@ -10,6 +10,7 @@ import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTParser;
 import org.eclipse.jdt.core.dom.ASTRequestor;
 import org.eclipse.jdt.core.dom.CompilationUnit;
+import org.javalens.core.Deadline;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -47,7 +48,7 @@ final class GraphBuilder {
             public void acceptAST(ICompilationUnit source, CompilationUnit ast) {
                 ast.accept(new GraphCollectorVisitor(source, ast, nodes, edges, overrides, mains, typeKeys));
             }
-        }, null);
+        }, Deadline.monitor());
 
         return new ProjectGraph(nodes, new ArrayList<>(edges), overrides, mains);
     }

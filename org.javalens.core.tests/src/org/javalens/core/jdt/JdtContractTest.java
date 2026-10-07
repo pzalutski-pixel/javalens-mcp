@@ -36,6 +36,7 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -510,5 +511,81 @@ class JdtContractTest {
                 "codeSelect at `package` keyword must return IPackageDeclaration or IPackageFragment; "
                     + "got: " + e.getClass().getName() + " for " + e);
         }
+    }
+
+    // ========== Cancellation through the progress monitor ==========
+
+    /** A monitor cancelled before JDT's first check, as a deadline that has expired gives. */
+    private static NullProgressMonitor cancelled() {
+        NullProgressMonitor monitor = new NullProgressMonitor();
+        monitor.setCanceled(true);
+        return monitor;
+    }
+
+    private ICompilationUnit calculatorUnit() {
+        return service.getCompilationUnit(
+            helper.getFixturePath("simple-maven").resolve("src/main/java/com/example/Calculator.java"));
+    }
+
+    @Test
+    @DisplayName("JDT: SearchEngine.search with a cancelled monitor throws OperationCanceledException and reports no match")
+    void search_cancelledMonitor_throws() throws Exception {
+        IType calculator = service.findType("com.example.Calculator");
+        List<SearchMatch> matches = new ArrayList<>();
+        assertThrows(org.eclipse.core.runtime.OperationCanceledException.class, () -> new SearchEngine().search(
+            SearchPattern.createPattern(calculator, IJavaSearchConstants.REFERENCES),
+            new SearchParticipant[] { SearchEngine.getDefaultSearchParticipant() },
+            SearchEngine.createJavaSearchScope(new org.eclipse.jdt.core.IJavaElement[] { service.getJavaProject() }),
+            new SearchRequestor() {
+                @Override
+                public void acceptSearchMatch(SearchMatch match) {
+                    matches.add(match);
+                }
+            }, cancelled()));
+        assertEquals(List.of(), matches);
+    }
+
+    @Test
+    @DisplayName("JDT: ASTParser.createAST with a cancelled monitor throws OperationCanceledException, with bindings and without")
+    void createAst_cancelledMonitor_throws() {
+        ICompilationUnit unit = calculatorUnit();
+        assertAll(
+            () -> assertThrows(org.eclipse.core.runtime.OperationCanceledException.class, () -> {
+                ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
+                parser.setSource(unit);
+                parser.setResolveBindings(true);
+                parser.createAST(cancelled());
+            }),
+            () -> assertThrows(org.eclipse.core.runtime.OperationCanceledException.class, () -> {
+                ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
+                parser.setSource(unit);
+                parser.setResolveBindings(false);
+                parser.createAST(cancelled());
+            }));
+    }
+
+    @Test
+    @DisplayName("JDT: IType.newTypeHierarchy with a cancelled monitor throws OperationCanceledException")
+    void newTypeHierarchy_cancelledMonitor_throws() {
+        IType calculator = service.findType("com.example.Calculator");
+        assertThrows(org.eclipse.core.runtime.OperationCanceledException.class,
+            () -> calculator.newTypeHierarchy(service.getJavaProject(), cancelled()));
+    }
+
+    @Test
+    @DisplayName("JDT: becomeWorkingCopy with a cancelled monitor throws OperationCanceledException with the unit already a working copy, which discardWorkingCopy then removes")
+    void becomeWorkingCopy_cancelledMonitor_leavesWorkingCopy() throws Exception {
+        // BecomeWorkingCopyOperation :45 registers the working copy before Openable :240 checks
+        // for cancellation, so whoever asked must discard it even when the call is cancelled.
+        ICompilationUnit unit = calculatorUnit();
+        boolean before = unit.isWorkingCopy();
+        assertThrows(org.eclipse.core.runtime.OperationCanceledException.class,
+            () -> unit.becomeWorkingCopy(cancelled()));
+        boolean afterCancelled = unit.isWorkingCopy();
+        unit.discardWorkingCopy();
+        assertAll(
+            () -> assertFalse(before, "the unit starts as no working copy"),
+            () -> assertTrue(afterCancelled, "the cancelled call left the unit a working copy"),
+            () -> assertFalse(unit.isWorkingCopy(), "discardWorkingCopy removed it"));
     }
 }

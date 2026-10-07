@@ -14,6 +14,7 @@ import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.SingleMemberAnnotation;
 import org.eclipse.jdt.core.dom.StringLiteral;
 import org.eclipse.jdt.core.dom.TypeDeclaration;
+import org.javalens.core.Deadline;
 import org.javalens.core.IJdtService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -152,7 +153,7 @@ public final class TestMethodDetector {
                 ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
                 parser.setSource(cu);
                 parser.setResolveBindings(true);
-                CompilationUnit ast = (CompilationUnit) parser.createAST(null);
+                CompilationUnit ast = (CompilationUnit) parser.createAST(Deadline.monitor());
                 if (ast == null) {
                     continue;
                 }

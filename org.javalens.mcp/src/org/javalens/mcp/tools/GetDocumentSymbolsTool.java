@@ -18,6 +18,7 @@ import org.eclipse.jdt.core.dom.RecordDeclaration;
 import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
 import org.javalens.core.ElementKindResolver;
+import org.javalens.core.Deadline;
 import org.javalens.core.IJdtService;
 import org.javalens.core.MethodFormatter;
 import org.javalens.core.ModifierFormatter;
@@ -288,7 +289,7 @@ public class GetDocumentSymbolsTool extends AbstractTool {
             ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
             parser.setSource(cu);
             parser.setResolveBindings(false);
-            CompilationUnit ast = (CompilationUnit) parser.createAST(null);
+            CompilationUnit ast = (CompilationUnit) parser.createAST(Deadline.monitor());
             RecordDeclaration record = findRecordDeclaration(ast, type);
             if (record == null) return result;
             for (Object component : record.recordComponents()) {
@@ -316,7 +317,7 @@ public class GetDocumentSymbolsTool extends AbstractTool {
             ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
             parser.setSource(cu);
             parser.setResolveBindings(false);
-            CompilationUnit ast = (CompilationUnit) parser.createAST(null);
+            CompilationUnit ast = (CompilationUnit) parser.createAST(Deadline.monitor());
             RecordDeclaration record = findRecordDeclaration(ast, type);
             return record == null ? 0 : record.recordComponents().size();
         } catch (Exception e) {

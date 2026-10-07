@@ -31,6 +31,7 @@ import org.eclipse.jdt.core.dom.TypeMethodReference;
 import org.eclipse.jdt.core.dom.rewrite.ASTRewrite;
 import org.eclipse.jdt.core.dom.rewrite.ListRewrite;
 import org.eclipse.jdt.core.search.SearchMatch;
+import org.javalens.core.Deadline;
 import org.javalens.core.IJdtService;
 import org.javalens.core.search.SearchService;
 import org.javalens.mcp.models.ResponseMeta;
@@ -262,7 +263,7 @@ public class ChangeMethodSignatureTool extends AbstractTool {
                 ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
                 parser.setSource(declaredCu);
                 parser.setResolveBindings(true);
-                CompilationUnit ast = (CompilationUnit) parser.createAST(null);
+                CompilationUnit ast = (CompilationUnit) parser.createAST(Deadline.monitor());
 
                 MethodDeclaration methodDecl = findMethodDeclaration(ast, declared);
                 if (methodDecl == null) {
@@ -531,7 +532,7 @@ public class ChangeMethodSignatureTool extends AbstractTool {
         ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
         parser.setSource(cu);
         parser.setResolveBindings(true);
-        CompilationUnit ast = (CompilationUnit) parser.createAST(null);
+        CompilationUnit ast = (CompilationUnit) parser.createAST(Deadline.monitor());
 
         final int matchOffset = match.getOffset();
         final ASTNode[] callNode = {null};

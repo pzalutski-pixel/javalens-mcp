@@ -30,6 +30,7 @@ import org.eclipse.jdt.core.dom.SuperMethodReference;
 import org.eclipse.jdt.core.dom.ThisExpression;
 import org.eclipse.jdt.core.dom.rewrite.ASTRewrite;
 import org.eclipse.text.edits.TextEdit;
+import org.javalens.core.Deadline;
 import org.javalens.core.IJdtService;
 import org.javalens.mcp.rewrite.TextEditConverter;
 import org.javalens.mcp.models.ResponseMeta;
@@ -118,7 +119,7 @@ public class InlineMethodTool extends AbstractTool {
             parser.setSource(cu);
             parser.setResolveBindings(true);
             parser.setBindingsRecovery(true);
-            CompilationUnit ast = (CompilationUnit) parser.createAST(null);
+            CompilationUnit ast = (CompilationUnit) parser.createAST(Deadline.monitor());
 
             // Calculate offset
             int offset = ast.getPosition(line + 1, column);
@@ -169,7 +170,7 @@ public class InlineMethodTool extends AbstractTool {
             methodParser.setSource(methodCu);
             methodParser.setResolveBindings(true);
             methodParser.setBindingsRecovery(true);
-            CompilationUnit methodAst = (CompilationUnit) methodParser.createAST(null);
+            CompilationUnit methodAst = (CompilationUnit) methodParser.createAST(Deadline.monitor());
 
             // Find the method declaration
             MethodDeclaration methodDecl = findMethodDeclaration(methodAst, method);

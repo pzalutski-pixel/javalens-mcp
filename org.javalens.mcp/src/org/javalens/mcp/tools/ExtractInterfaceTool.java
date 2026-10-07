@@ -31,6 +31,7 @@ import org.eclipse.jdt.core.dom.TypeDeclaration;
 import org.eclipse.jdt.core.dom.TypeParameter;
 import org.eclipse.jdt.core.dom.rewrite.ASTRewrite;
 import org.eclipse.jdt.core.dom.rewrite.ListRewrite;
+import org.javalens.core.Deadline;
 import org.javalens.core.IJdtService;
 import org.javalens.mcp.rewrite.TextEditConverter;
 import org.javalens.mcp.models.ResponseMeta;
@@ -224,7 +225,7 @@ public class ExtractInterfaceTool extends AbstractTool {
             ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
             parser.setSource(declaringUnit);
             parser.setResolveBindings(true);
-            CompilationUnit ast = (CompilationUnit) parser.createAST(null);
+            CompilationUnit ast = (CompilationUnit) parser.createAST(Deadline.monitor());
             AbstractTypeDeclaration typeDecl = findTypeDeclaration(ast, type);
 
             // The types the interface's text names: the class's type parameter bounds, and each

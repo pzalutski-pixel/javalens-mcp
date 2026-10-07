@@ -20,6 +20,7 @@ import org.eclipse.jdt.core.dom.IPackageBinding;
 import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.IVariableBinding;
 import org.eclipse.jdt.core.dom.ImportDeclaration;
+import org.javalens.core.Deadline;
 import org.javalens.core.IJdtService;
 import org.javalens.core.TypeKindResolver;
 import org.javalens.mcp.models.ResponseMeta;
@@ -395,7 +396,7 @@ public class GetDependencyGraphTool extends AbstractTool {
         ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
         parser.setSource(unit);
         parser.setResolveBindings(true);
-        CompilationUnit ast = (CompilationUnit) parser.createAST(null);
+        CompilationUnit ast = (CompilationUnit) parser.createAST(Deadline.monitor());
         Map<Integer, IBinding> bindings = new HashMap<>();
         for (Object declaration : ast.imports()) {
             ImportDeclaration imp = (ImportDeclaration) declaration;

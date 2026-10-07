@@ -22,6 +22,7 @@ import org.eclipse.jdt.core.dom.NormalAnnotation;
 import org.eclipse.jdt.core.dom.SingleMemberAnnotation;
 import org.eclipse.jdt.core.dom.StringLiteral;
 import org.eclipse.jdt.core.search.SearchMatch;
+import org.javalens.core.Deadline;
 import org.javalens.core.IJdtService;
 import org.javalens.core.search.SearchResult;
 import org.javalens.core.search.SearchService;
@@ -366,7 +367,7 @@ public class GetHttpEndpointsTool extends AbstractTool {
             ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
             parser.setSource(cu);
             parser.setResolveBindings(true);
-            return (CompilationUnit) parser.createAST(null);
+            return (CompilationUnit) parser.createAST(Deadline.monitor());
         } catch (Exception e) {
             return null;
         }

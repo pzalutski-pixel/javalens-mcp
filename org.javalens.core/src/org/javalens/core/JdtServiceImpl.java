@@ -786,11 +786,11 @@ public class JdtServiceImpl implements IJdtService {
         try {
             // Ensure the compilation unit is open and reconciled for codeSelect to work
             if (!cu.isOpen()) {
-                cu.open(null);
+                cu.open(Deadline.monitor());
             }
 
             // Reconcile to ensure the AST is up to date
-            cu.reconcile(ICompilationUnit.NO_AST, false, null, null);
+            cu.reconcile(ICompilationUnit.NO_AST, false, null, Deadline.monitor());
 
             int offset = getOffset(cu, line, column);
             log.debug("Looking for element at {}:{}:{} (offset {})", filePath, line, column, offset);
@@ -846,8 +846,8 @@ public class JdtServiceImpl implements IJdtService {
                 org.eclipse.jdt.core.dom.ASTParser.newParser(org.eclipse.jdt.core.dom.AST.getJLSLatest());
             parser.setSource(cu);
             parser.setResolveBindings(false);
-            org.eclipse.jdt.core.dom.ASTNode covering =
-                new org.eclipse.jdt.core.dom.NodeFinder(parser.createAST(null), offset, 0).getCoveringNode();
+            org.eclipse.jdt.core.dom.ASTNode covering = new org.eclipse.jdt.core.dom.NodeFinder(
+                parser.createAST(Deadline.monitor()), offset, 0).getCoveringNode();
             return covering instanceof org.eclipse.jdt.core.dom.SimpleName name && !name.isDeclaration();
         } catch (RuntimeException e) {
             log.debug("Could not read the name at offset {}: {}", offset, e.getMessage());
@@ -871,7 +871,7 @@ public class JdtServiceImpl implements IJdtService {
             parser.setSource(cu);
             parser.setResolveBindings(false);
             org.eclipse.jdt.core.dom.CompilationUnit ast =
-                (org.eclipse.jdt.core.dom.CompilationUnit) parser.createAST(null);
+                (org.eclipse.jdt.core.dom.CompilationUnit) parser.createAST(Deadline.monitor());
             // Comments: scan ast.getCommentList() and check ranges.
             @SuppressWarnings("unchecked")
             java.util.List<org.eclipse.jdt.core.dom.Comment> comments = ast.getCommentList();

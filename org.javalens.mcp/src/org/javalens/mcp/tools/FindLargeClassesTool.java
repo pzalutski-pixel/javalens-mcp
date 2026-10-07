@@ -10,6 +10,7 @@ import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.FieldDeclaration;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.RecordDeclaration;
+import org.javalens.core.Deadline;
 import org.javalens.core.IJdtService;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
@@ -84,7 +85,7 @@ public class FindLargeClassesTool extends AbstractTool {
                 ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
                 parser.setSource(cu);
                 parser.setResolveBindings(true);
-                CompilationUnit ast = (CompilationUnit) parser.createAST(null);
+                CompilationUnit ast = (CompilationUnit) parser.createAST(Deadline.monitor());
 
                 for (Object type : ast.types()) {
                     if (type instanceof AbstractTypeDeclaration typeDecl) {

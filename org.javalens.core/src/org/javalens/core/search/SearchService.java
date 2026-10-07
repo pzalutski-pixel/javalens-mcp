@@ -1,7 +1,6 @@
 package org.javalens.core.search;
 
 import org.eclipse.core.runtime.CoreException;
-import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IJavaProject;
@@ -28,6 +27,7 @@ import org.eclipse.jdt.core.search.SearchEngine;
 import org.eclipse.jdt.core.search.SearchMatch;
 import org.eclipse.jdt.core.search.SearchParticipant;
 import org.eclipse.jdt.core.search.SearchPattern;
+import org.javalens.core.Deadline;
 import org.eclipse.jdt.core.search.SearchRequestor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -185,7 +185,7 @@ public class SearchService {
                     passing[0]++;
                 }
             },
-            new NullProgressMonitor()
+            Deadline.monitor()
         );
 
         log.debug("Symbol search '{}' kept {} declarations, returning {} from offset {}",
@@ -227,7 +227,7 @@ public class SearchService {
             new SearchParticipant[] { SearchEngine.getDefaultSearchParticipant() },
             ofClassFile ? sourceScope : scope,
             requestor,
-            new NullProgressMonitor()
+            Deadline.monitor()
         );
 
         SearchResult result = requestor.toResult();
@@ -352,7 +352,7 @@ public class SearchService {
                         }
                     });
                 }
-            }, new NullProgressMonitor());
+            }, Deadline.monitor());
 
             if (added.isEmpty()) {
                 return base;
@@ -442,7 +442,7 @@ public class SearchService {
             new SearchParticipant[] { SearchEngine.getDefaultSearchParticipant() },
             sourceScope,
             requestor,
-            new NullProgressMonitor()
+            Deadline.monitor()
         );
         SearchResult result = requestor.toResult();
         log.debug("Source-scoped reference search for {} found {} (.java total={}, potential={})",
@@ -491,7 +491,7 @@ public class SearchService {
             new SearchParticipant[] { SearchEngine.getDefaultSearchParticipant() },
             scope,
             requestor,
-            new NullProgressMonitor()
+            Deadline.monitor()
         );
 
         return requestor.toResult();
@@ -534,7 +534,7 @@ public class SearchService {
                         found.add(model);
                     }
                 }
-            }, new NullProgressMonitor());
+            }, Deadline.monitor());
         found.sort(ModelHierarchy.TYPE_ORDER);
         return List.copyOf(found);
     }
@@ -655,7 +655,7 @@ public class SearchService {
             new SearchParticipant[] { SearchEngine.getDefaultSearchParticipant() },
             sourceScope,
             requestor,
-            new NullProgressMonitor()
+            Deadline.monitor()
         );
 
         SearchResult result = requestor.toResult();

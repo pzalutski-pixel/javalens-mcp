@@ -7,6 +7,7 @@ import org.eclipse.jdt.core.IMember;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.refactoring.descriptors.PullUpDescriptor;
 import org.eclipse.ltk.core.refactoring.RefactoringDescriptor;
+import org.javalens.core.Deadline;
 import org.javalens.core.IJdtService;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
@@ -127,7 +128,7 @@ public class PullUpTool extends AbstractTool {
             // leaves out a class declared in a lambda body and reads a local class by the handle of
             // another class of the same name (HierarchyResolver.rememberAllTypes :511-541,
             // reportHierarchy :558-616): where it differs, JDT's pull up would act on another class.
-            if (!superclass.equals(declaringType.newSupertypeHierarchy(null).getSuperclass(declaringType))) {
+            if (!superclass.equals(declaringType.newSupertypeHierarchy(Deadline.monitor()).getSuperclass(declaringType))) {
                 return ToolResponse.invalidParameter("position", "Member at position, " + member.getElementName()
                     + " in " + ElementNames.qualifiedName(declaringType) + ", cannot be pulled up: JDT's pull up reads"
                     + " the superclass of " + ElementNames.qualifiedName(declaringType) + " from its own type hierarchy,"
@@ -231,7 +232,7 @@ public class PullUpTool extends AbstractTool {
             }
         }
         Set<IType> jdt = new HashSet<>();
-        for (IType subtype : superclass.newTypeHierarchy(null).getAllSubtypes(superclass)) {
+        for (IType subtype : superclass.newTypeHierarchy(Deadline.monitor()).getAllSubtypes(superclass)) {
             if (!subtype.isBinary() && !subtype.isLambda()) {
                 jdt.add(subtype);
             }

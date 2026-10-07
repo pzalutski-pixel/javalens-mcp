@@ -18,6 +18,7 @@ import org.eclipse.jdt.core.dom.IBinding;
 import org.eclipse.jdt.core.dom.IMethodBinding;
 import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
+import org.javalens.core.Deadline;
 
 import java.util.Collection;
 import java.util.function.BiConsumer;
@@ -133,7 +134,7 @@ final class ModelElements {
             public void acceptBinding(String bindingKey, IBinding binding) {
                 eachBinding.accept(bindingKey, binding);
             }
-        }, null);
+        }, Deadline.monitor());
     }
 
     /** Whether {@code element} is declared in a method, field or initializer: in a local or anonymous class. */

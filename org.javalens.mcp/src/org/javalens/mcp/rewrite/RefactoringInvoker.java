@@ -13,6 +13,7 @@ import org.eclipse.ltk.core.refactoring.Refactoring;
 import org.eclipse.ltk.core.refactoring.RefactoringStatus;
 import org.eclipse.ltk.core.refactoring.RefactoringStatusEntry;
 import org.eclipse.ltk.core.refactoring.TextEditBasedChange;
+import org.javalens.core.Deadline;
 import org.javalens.core.IJdtService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -65,14 +66,14 @@ public final class RefactoringInvoker {
             return Outcome.refusal(messagesOf(createStatus, RefactoringStatus.FATAL));
         }
 
-        RefactoringStatus conditions = refactoring.checkAllConditions(new NullProgressMonitor());
+        RefactoringStatus conditions = refactoring.checkAllConditions(Deadline.monitor());
         if (conditions.hasFatalError()) {
             return Outcome.refusal(messagesOf(conditions, RefactoringStatus.FATAL));
         }
         List<String> warnings = new ArrayList<>(messagesOf(createStatus, RefactoringStatus.INFO));
         warnings.addAll(messagesOf(conditions, RefactoringStatus.INFO));
 
-        Change change = refactoring.createChange(new NullProgressMonitor());
+        Change change = refactoring.createChange(Deadline.monitor());
 
         Map<String, List<Map<String, Object>>> editsByFile = new LinkedHashMap<>();
         List<Map<String, String>> createdFiles = new ArrayList<>();
@@ -128,6 +129,11 @@ public final class RefactoringInvoker {
             ICompilationUnit cu = resolveCompilationUnit(change.getModifiedElement());
             if (cu != null) {
                 String source = cu.getSource();
+                // Never cancelled: a compilation unit change becomes a working copy before its
+                // monitor's next cancellation check and releases it only once the document is
+                // acquired (CompilationUnitChange.acquireDocument :81-85), so a preview cancelled
+                // there would leave the unit a working copy. Applying the edits to one unit is
+                // bounded.
                 String preview = textChange.getPreviewContent(new NullProgressMonitor());
                 if (preview.equals(source)) {
                     return;
@@ -136,7 +142,7 @@ public final class RefactoringInvoker {
                 ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
                 parser.setSource(cu);
                 parser.setResolveBindings(false);
-                CompilationUnit ast = (CompilationUnit) parser.createAST(null);
+                CompilationUnit ast = (CompilationUnit) parser.createAST(Deadline.monitor());
 
                 String filePath = formatCuPath(cu, service);
                 editsByFile.computeIfAbsent(filePath, k -> new ArrayList<>())

@@ -1,7 +1,6 @@
 package org.javalens.mcp.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTNode;
@@ -33,6 +32,7 @@ import org.eclipse.jdt.core.dom.rewrite.ASTRewrite;
 import org.eclipse.jdt.core.dom.rewrite.ImportRewrite;
 import org.eclipse.jdt.core.dom.rewrite.ListRewrite;
 import org.eclipse.text.edits.TextEdit;
+import org.javalens.core.Deadline;
 import org.javalens.core.IJdtService;
 import org.javalens.mcp.rewrite.TextEditConverter;
 import org.javalens.mcp.models.ResponseMeta;
@@ -140,7 +140,7 @@ public class ExtractConstantTool extends AbstractTool {
             parser.setSource(cu);
             parser.setResolveBindings(true);
             parser.setBindingsRecovery(true);
-            CompilationUnit ast = (CompilationUnit) parser.createAST(null);
+            CompilationUnit ast = (CompilationUnit) parser.createAST(Deadline.monitor());
 
             // Calculate offsets
             int startOffset = ast.getPosition(startLine + 1, startColumn);
@@ -229,7 +229,7 @@ public class ExtractConstantTool extends AbstractTool {
 
             TextEdit rewriteEdit = rewrite.rewriteAST();
             List<Map<String, Object>> edits = TextEditConverter.toEditMaps(rewriteEdit, source, ast);
-            TextEdit importsEdit = importRewrite.rewriteImports(new NullProgressMonitor());
+            TextEdit importsEdit = importRewrite.rewriteImports(Deadline.monitor());
             if (importsEdit != null) {
                 // An empty container converts to zero edit maps.
                 edits.addAll(TextEditConverter.toEditMaps(importsEdit, source, ast));

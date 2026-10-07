@@ -17,6 +17,7 @@ import org.eclipse.jdt.internal.corext.fix.PatternMatchingForInstanceofFixCore;
 import org.eclipse.jdt.internal.corext.fix.StringConcatToTextBlockFixCore;
 import org.eclipse.jdt.internal.corext.fix.SwitchExpressionsFixCore;
 import org.eclipse.jdt.ui.cleanup.ICleanUpFix;
+import org.javalens.core.Deadline;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -108,7 +109,7 @@ public final class CleanUpInvoker {
         ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
         parser.setSource(cu);
         parser.setResolveBindings(true);
-        CompilationUnit ast = (CompilationUnit) parser.createAST(null);
+        CompilationUnit ast = (CompilationUnit) parser.createAST(Deadline.monitor());
 
         String original = cu.getSource();
 
@@ -120,7 +121,11 @@ public final class CleanUpInvoker {
         // getPreviewContent applies the change's edits to the unit's current
         // content and returns the rewritten source as a String — so we never
         // touch the file or the UI-only jface text document types.
-        CompilationUnitChange change = fix.createChange(new NullProgressMonitor());
+        CompilationUnitChange change = fix.createChange(Deadline.monitor());
+        // Never cancelled: a compilation unit change becomes a working copy before its monitor's
+        // next cancellation check and releases it only once the document is acquired
+        // (CompilationUnitChange.acquireDocument :81-85), so a preview cancelled there would
+        // leave the unit a working copy. Applying the edits to one unit is bounded.
         String preview = change.getPreviewContent(new NullProgressMonitor());
         boolean changed = !preview.equals(original);
         return new CleanUpResult(changed, changed ? preview : original, changed ? change.getName() : null);

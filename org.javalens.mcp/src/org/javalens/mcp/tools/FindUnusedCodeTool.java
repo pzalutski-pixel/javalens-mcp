@@ -17,6 +17,7 @@ import org.eclipse.jdt.core.dom.Modifier;
 import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
+import org.javalens.core.Deadline;
 import org.javalens.core.IJdtService;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
@@ -107,7 +108,7 @@ public class FindUnusedCodeTool extends AbstractTool {
                     parser.setResolveBindings(true);
                     parser.setBindingsRecovery(true);
 
-                    CompilationUnit ast = (CompilationUnit) parser.createAST(null);
+                    CompilationUnit ast = (CompilationUnit) parser.createAST(Deadline.monitor());
                     if (ast == null) continue;
 
                     findUnusedInFile(ast, file, service, unusedItems, includeFields, includeMethods);

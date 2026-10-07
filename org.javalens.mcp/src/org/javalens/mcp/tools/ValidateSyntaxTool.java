@@ -7,6 +7,7 @@ import org.eclipse.jdt.core.compiler.IProblem;
 import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTParser;
 import org.eclipse.jdt.core.dom.CompilationUnit;
+import org.javalens.core.Deadline;
 import org.javalens.core.IJdtService;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
@@ -99,7 +100,7 @@ public class ValidateSyntaxTool extends AbstractTool {
             parser.setResolveBindings(false); // Syntax only - much faster!
             parser.setUnitName(unitName);
 
-            CompilationUnit ast = (CompilationUnit) parser.createAST(null);
+            CompilationUnit ast = (CompilationUnit) parser.createAST(Deadline.monitor());
             IProblem[] problems = ast.getProblems();
 
             // Collect syntax errors only

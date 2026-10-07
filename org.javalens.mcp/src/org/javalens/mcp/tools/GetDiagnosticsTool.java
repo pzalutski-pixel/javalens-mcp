@@ -10,6 +10,7 @@ import org.eclipse.jdt.core.compiler.CategorizedProblem;
 import org.eclipse.jdt.core.compiler.IProblem;
 import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.CompilationUnit;
+import org.javalens.core.Deadline;
 import org.javalens.core.IJdtService;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
@@ -190,17 +191,19 @@ public class GetDiagnosticsTool extends AbstractTool {
             // CU is in working-copy mode; otherwise it returns null and every IProblem
             // (errors and warnings) is silently invisible to this tool.
             boolean wasWorkingCopy = cu.isWorkingCopy();
-            if (!wasWorkingCopy) {
-                cu.becomeWorkingCopy(null);
-            }
-
             CompilationUnit ast;
             try {
+                // Inside the try: JDT registers the working copy before its first cancellation
+                // check (BecomeWorkingCopyOperation :45, Openable :240), so a cancelled call
+                // still leaves one, which the finally discards.
+                if (!wasWorkingCopy) {
+                    cu.becomeWorkingCopy(Deadline.monitor());
+                }
                 ast = cu.reconcile(
                     AST.getJLSLatest(),
                     ICompilationUnit.FORCE_PROBLEM_DETECTION,
                     null,
-                    null
+                    Deadline.monitor()
                 );
             } finally {
                 if (!wasWorkingCopy) {

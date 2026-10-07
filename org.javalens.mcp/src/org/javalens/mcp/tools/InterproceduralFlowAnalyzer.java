@@ -23,6 +23,7 @@ import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.javalens.core.Deadline;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -338,7 +339,7 @@ final class InterproceduralFlowAnalyzer {
             ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
             parser.setSource(cu);
             parser.setResolveBindings(true);
-            return (CompilationUnit) parser.createAST(null);
+            return (CompilationUnit) parser.createAST(Deadline.monitor());
         } catch (Exception e) {
             return null;
         }

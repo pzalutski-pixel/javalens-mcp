@@ -31,6 +31,7 @@ import org.eclipse.jdt.core.dom.SuperMethodReference;
 import org.eclipse.jdt.core.dom.TypeDeclarationStatement;
 import org.eclipse.jdt.core.dom.TypeMethodReference;
 import org.eclipse.jdt.core.search.SearchMatch;
+import org.javalens.core.Deadline;
 import org.javalens.core.IJdtService;
 import org.javalens.core.MethodFormatter;
 import org.javalens.core.ModifierFormatter;
@@ -349,7 +350,7 @@ public class AnalyzeMethodTool extends AbstractTool {
             parser.setResolveBindings(true);
             parser.setBindingsRecovery(true);
 
-            CompilationUnit ast = (CompilationUnit) parser.createAST(null);
+            CompilationUnit ast = (CompilationUnit) parser.createAST(Deadline.monitor());
             if (ast == null) {
                 return null;
             }

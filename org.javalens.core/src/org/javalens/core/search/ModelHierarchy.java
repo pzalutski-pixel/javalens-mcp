@@ -2,7 +2,6 @@ package org.javalens.core.search;
 
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IPath;
-import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.jdt.core.Flags;
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IField;
@@ -27,6 +26,7 @@ import org.eclipse.jdt.core.search.SearchParticipant;
 import org.eclipse.jdt.core.search.SearchPattern;
 import org.eclipse.jdt.core.search.SearchRequestor;
 import org.eclipse.jdt.internal.corext.dom.Bindings;
+import org.javalens.core.Deadline;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -764,7 +764,7 @@ public final class ModelHierarchy {
                         found.add(subtype);
                     }
                 }
-            }, new NullProgressMonitor());
+            }, Deadline.monitor());
         return found;
     }
 
@@ -866,7 +866,7 @@ public final class ModelHierarchy {
      * so its subtypes are read from the index as they are.
      */
     private RootSubtypes rootSubtypes(IType root) throws CoreException {
-        ITypeHierarchy hierarchy = root.newTypeHierarchy(project, new NullProgressMonitor());
+        ITypeHierarchy hierarchy = root.newTypeHierarchy(project, Deadline.monitor());
         Set<IType> direct = new LinkedHashSet<>(classFileTypes(hierarchy.getSubtypes(root)));
         Set<IType> all = new LinkedHashSet<>(classFileTypes(hierarchy.getAllSubtypes(root)));
 

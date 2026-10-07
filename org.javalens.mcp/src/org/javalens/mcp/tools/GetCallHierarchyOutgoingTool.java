@@ -27,6 +27,7 @@ import org.eclipse.jdt.core.dom.SuperMethodInvocation;
 import org.eclipse.jdt.core.dom.SuperMethodReference;
 import org.eclipse.jdt.core.dom.TypeDeclarationStatement;
 import org.eclipse.jdt.core.dom.TypeMethodReference;
+import org.javalens.core.Deadline;
 import org.javalens.core.IJdtService;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
@@ -146,7 +147,7 @@ public class GetCallHierarchyOutgoingTool extends AbstractTool {
             parser.setBindingsRecovery(true);
             parser.setStatementsRecovery(true);
 
-            CompilationUnit ast = (CompilationUnit) parser.createAST(null);
+            CompilationUnit ast = (CompilationUnit) parser.createAST(Deadline.monitor());
             if (ast == null) {
                 return ToolResponse.internalError("Failed to get AST for file");
             }

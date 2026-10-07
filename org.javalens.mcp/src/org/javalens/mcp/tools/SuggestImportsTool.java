@@ -1,7 +1,6 @@
 package org.javalens.mcp.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.search.IJavaSearchConstants;
@@ -10,6 +9,7 @@ import org.eclipse.jdt.core.search.SearchEngine;
 import org.eclipse.jdt.core.search.SearchPattern;
 import org.eclipse.jdt.core.search.TypeNameMatch;
 import org.eclipse.jdt.core.search.TypeNameMatchRequestor;
+import org.javalens.core.Deadline;
 import org.javalens.core.IJdtService;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
@@ -149,7 +149,7 @@ public class SuggestImportsTool extends AbstractTool {
                 scope,
                 requestor,
                 IJavaSearchConstants.WAIT_UNTIL_READY_TO_SEARCH,
-                new NullProgressMonitor()
+                Deadline.monitor()
             );
 
             // Rank every candidate: by relevance (descending), then by fully qualified name

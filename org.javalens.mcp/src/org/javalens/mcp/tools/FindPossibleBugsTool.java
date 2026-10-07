@@ -24,6 +24,7 @@ import org.eclipse.jdt.core.dom.ThisExpression;
 import org.eclipse.jdt.core.dom.TryStatement;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
 import org.eclipse.jdt.core.dom.VariableDeclarationStatement;
+import org.javalens.core.Deadline;
 import org.javalens.core.IJdtService;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
@@ -126,7 +127,7 @@ public class FindPossibleBugsTool extends AbstractTool {
                     parser.setResolveBindings(true);
                     parser.setBindingsRecovery(true);
 
-                    CompilationUnit ast = (CompilationUnit) parser.createAST(null);
+                    CompilationUnit ast = (CompilationUnit) parser.createAST(Deadline.monitor());
                     if (ast == null) continue;
 
                     findIssuesInFile(ast, file, service, issues, severity);

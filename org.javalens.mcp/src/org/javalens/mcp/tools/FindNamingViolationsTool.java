@@ -15,6 +15,7 @@ import org.eclipse.jdt.core.dom.RecordDeclaration;
 import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
 import org.eclipse.jdt.core.dom.TypeDeclaration;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
+import org.javalens.core.Deadline;
 import org.javalens.core.IJdtService;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
@@ -100,7 +101,7 @@ public class FindNamingViolationsTool extends AbstractTool {
                 ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
                 parser.setSource(cu);
                 parser.setResolveBindings(true);
-                CompilationUnit ast = (CompilationUnit) parser.createAST(null);
+                CompilationUnit ast = (CompilationUnit) parser.createAST(Deadline.monitor());
 
                 String formattedPath = service.getPathUtils().formatPath(file);
 
