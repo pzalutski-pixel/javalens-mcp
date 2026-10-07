@@ -240,7 +240,7 @@ public class FindUnusedCodeTool extends AbstractTool {
 
                     IVariableBinding vb = vdf.resolveBinding();
                     if (vb != null && vb.getType() != null) {
-                        item.put("type", vb.getType().getName());
+                        item.put("type", ElementNames.typeExpression(vb.getType()));
                     }
                 } else if (node instanceof MethodDeclaration md) {
                     int line = ast.getLineNumber(md.getName().getStartPosition()) - 1;

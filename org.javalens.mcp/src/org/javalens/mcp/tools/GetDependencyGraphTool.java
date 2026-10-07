@@ -11,6 +11,15 @@ import org.eclipse.jdt.core.IPackageFragment;
 import org.eclipse.jdt.core.IPackageFragmentRoot;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.Signature;
+import org.eclipse.jdt.core.dom.AST;
+import org.eclipse.jdt.core.dom.ASTParser;
+import org.eclipse.jdt.core.dom.CompilationUnit;
+import org.eclipse.jdt.core.dom.IBinding;
+import org.eclipse.jdt.core.dom.IMethodBinding;
+import org.eclipse.jdt.core.dom.IPackageBinding;
+import org.eclipse.jdt.core.dom.ITypeBinding;
+import org.eclipse.jdt.core.dom.IVariableBinding;
+import org.eclipse.jdt.core.dom.ImportDeclaration;
 import org.javalens.core.IJdtService;
 import org.javalens.core.TypeKindResolver;
 import org.javalens.mcp.models.ResponseMeta;
@@ -58,6 +67,13 @@ public class GetDependencyGraphTool extends AbstractTool {
             USAGE: get_dependency_graph(scope="package", name="com.example.service")
             OUTPUT: Dependency graph with nodes and edges
 
+            Each node has a name and a kind. A node that denotes a type, or a
+            member of one (a static import), also has the package of that type
+            as JDT resolves it ("(default package)" for the default package).
+            A node that denotes a package (every node at package scope, and an
+            on-demand package import) has no package; neither has a name that
+            does not resolve.
+
             Dependency types tracked:
             - import: Direct imports
             - extends: Superclass inheritance
@@ -95,33 +111,30 @@ public class GetDependencyGraphTool extends AbstractTool {
         }
 
         try {
-            Set<String> nodes = new HashSet<>();
-            Map<String, Map<String, Integer>> edges = new HashMap<>(); // from -> {to -> count}
-            Map<String, String> nodeKinds = new HashMap<>(); // node -> kind
+            Graph graph = new Graph();
 
             if ("type".equals(scope)) {
                 IType type = service.findType(name);
                 if (type == null) {
                     return ToolResponse.symbolNotFound(name);
                 }
-                collectTypeDependencies(type, service, nodes, edges, nodeKinds,
-                    includeExternal, depth, new HashSet<>());
+                collectTypeDependencies(type, service, graph, includeExternal, depth, new HashSet<>());
             } else if ("package".equals(scope)) {
-                collectPackageDependencies(name, service, nodes, edges, nodeKinds, includeExternal);
+                collectPackageDependencies(name, service, graph, includeExternal);
             } else {
                 return ToolResponse.invalidParameter("scope", "Must be 'type' or 'package'");
             }
 
             // Convert to output format
             List<Map<String, Object>> nodeList = new ArrayList<>();
-            for (String node : nodes) {
+            for (String node : graph.nodes) {
                 Map<String, Object> nodeInfo = new LinkedHashMap<>();
-                String kind = nodeKinds.getOrDefault(node, "unknown");
                 nodeInfo.put("name", node);
-                nodeInfo.put("kind", kind);
-                // A type node's package; a type in the default package is in "(default package)".
-                nodeInfo.put("package", "package".equals(kind)
-                    ? extractPackage(node) : ElementNames.packageName(extractPackage(node)));
+                nodeInfo.put("kind", graph.kinds.getOrDefault(node, "unknown"));
+                Target target = graph.targets.get(node);
+                if (target != null && target.packageName() != null) {
+                    nodeInfo.put("package", ElementNames.packageName(target.packageName()));
+                }
                 nodeList.add(nodeInfo);
             }
 
@@ -129,7 +142,7 @@ public class GetDependencyGraphTool extends AbstractTool {
             int internalCount = 0;
             int externalCount = 0;
 
-            for (Map.Entry<String, Map<String, Integer>> fromEntry : edges.entrySet()) {
+            for (Map.Entry<String, Map<String, Integer>> fromEntry : graph.edges.entrySet()) {
                 String from = fromEntry.getKey();
                 for (Map.Entry<String, Integer> toEntry : fromEntry.getValue().entrySet()) {
                     String to = toEntry.getKey();
@@ -141,7 +154,8 @@ public class GetDependencyGraphTool extends AbstractTool {
                     edgeInfo.put("count", count);
                     edgeList.add(edgeInfo);
 
-                    if (isExternalPackage(extractPackage(to))) {
+                    Target target = graph.targets.get(to);
+                    if (isExternalPackage(target != null ? target.home() : extractPackage(to))) {
                         externalCount++;
                     } else {
                         internalCount++;
@@ -178,23 +192,69 @@ public class GetDependencyGraphTool extends AbstractTool {
     }
 
     /**
+     * What a node denotes: a package, whose name is the node's own; or a type, or a member of
+     * one, in the package {@code packageName} as JDT resolves it, null when the name does not
+     * resolve.
+     */
+    private record Target(String name, String packageName, boolean isPackage) {
+
+        static Target ofPackage(String name) {
+            return new Target(name, null, true);
+        }
+
+        /**
+         * The package a dependency on this target is a dependency on, which tells a JDK
+         * dependency from a project one: the package itself, the type's package, or for a name
+         * that does not resolve the name without its last segment.
+         */
+        String home() {
+            if (isPackage) {
+                return name;
+            }
+            return packageName != null ? packageName : extractPackage(name);
+        }
+    }
+
+    /** The nodes, edges, node kinds and node targets of the graph being built. */
+    private static final class Graph {
+        final Set<String> nodes = new HashSet<>();
+        final Map<String, Map<String, Integer>> edges = new HashMap<>(); // from -> {to -> count}
+        final Map<String, String> kinds = new HashMap<>();
+        final Map<String, Target> targets = new HashMap<>();
+
+        /**
+         * An edge from {@code from} to {@code target}, kept when {@code includeExternal} or when
+         * the target is not in a JDK package; the target's first kind and target are kept.
+         */
+        void depend(String from, Target target, String kind, boolean includeExternal) {
+            if (target == null || (!includeExternal && isExternalPackage(target.home()))) {
+                return;
+            }
+            edges.computeIfAbsent(from, k -> new HashMap<>()).merge(target.name(), 1, Integer::sum);
+            nodes.add(target.name());
+            kinds.putIfAbsent(target.name(), kind);
+            targets.putIfAbsent(target.name(), target);
+        }
+    }
+
+    /**
      * Collect dependencies for a type.
      */
-    private void collectTypeDependencies(IType type, IJdtService service,
-                                          Set<String> nodes, Map<String, Map<String, Integer>> edges,
-                                          Map<String, String> nodeKinds, boolean includeExternal,
-                                          int depth, Set<String> visited) throws Exception {
+    private void collectTypeDependencies(IType type, IJdtService service, Graph graph,
+                                          boolean includeExternal, int depth, Set<String> visited) throws Exception {
         String typeName = type.getFullyQualifiedName();
         if (visited.contains(typeName) || depth < 0) return;
         visited.add(typeName);
 
-        nodes.add(typeName);
-        nodeKinds.put(typeName, TypeKindResolver.kindOf(type));
+        graph.nodes.add(typeName);
+        graph.kinds.put(typeName, TypeKindResolver.kindOf(type));
+        graph.targets.put(typeName, new Target(typeName, type.getPackageFragment().getElementName(), false));
 
         ICompilationUnit cu = type.getCompilationUnit();
         if (cu == null) return;
 
         // 1. Import dependencies
+        Map<Integer, IBinding> importBindings = importBindings(cu);
         for (IImportDeclaration imp : cu.getImports()) {
             if (Flags.isModule(imp.getFlags())) {
                 // import module M; (JEP 511) names a module, not a package or
@@ -208,49 +268,26 @@ public class GetDependencyGraphTool extends AbstractTool {
             if (imp.isOnDemand()) {
                 importName = importName.replace(".*", "");
             }
-
-            if (!includeExternal && isExternalPackage(extractPackage(importName))) {
-                continue;
-            }
-
-            addEdge(edges, typeName, importName);
-            nodes.add(importName);
-            nodeKinds.putIfAbsent(importName, "import");
+            graph.depend(typeName, importTarget(importName, importBindings.get(imp.getSourceRange().getOffset())),
+                "import", includeExternal);
         }
 
         // 2. Superclass
         String superName = type.getSuperclassName();
         if (superName != null && !superName.equals("Object")) {
-            String resolvedSuper = resolveTypeName(type, superName);
-            if (resolvedSuper != null && (includeExternal || !isExternalPackage(extractPackage(resolvedSuper)))) {
-                addEdge(edges, typeName, resolvedSuper);
-                nodes.add(resolvedSuper);
-                nodeKinds.putIfAbsent(resolvedSuper, "class");
-            }
+            graph.depend(typeName, resolveTypeName(type, superName), "class", includeExternal);
         }
 
         // 3. Interfaces
         for (String ifaceName : type.getSuperInterfaceNames()) {
-            String resolved = resolveTypeName(type, ifaceName);
-            if (resolved != null && (includeExternal || !isExternalPackage(extractPackage(resolved)))) {
-                addEdge(edges, typeName, resolved);
-                nodes.add(resolved);
-                nodeKinds.putIfAbsent(resolved, "interface");
-            }
+            graph.depend(typeName, resolveTypeName(type, ifaceName), "interface", includeExternal);
         }
 
         // 4. Field types
         for (IField field : type.getFields()) {
             try {
-                String fieldTypeSig = field.getTypeSignature();
-                String fieldType = Signature.toString(fieldTypeSig);
-                String resolved = resolveTypeName(type, fieldType);
-
-                if (resolved != null && (includeExternal || !isExternalPackage(extractPackage(resolved)))) {
-                    addEdge(edges, typeName, resolved);
-                    nodes.add(resolved);
-                    nodeKinds.putIfAbsent(resolved, "type");
-                }
+                String fieldType = Signature.toString(field.getTypeSignature());
+                graph.depend(typeName, resolveTypeName(type, fieldType), "type", includeExternal);
             } catch (Exception e) {
                 // Skip unresolvable types
             }
@@ -260,26 +297,15 @@ public class GetDependencyGraphTool extends AbstractTool {
         for (IMethod method : type.getMethods()) {
             try {
                 // Return type
-                String returnSig = method.getReturnType();
-                String returnType = Signature.toString(returnSig);
+                String returnType = Signature.toString(method.getReturnType());
                 if (!returnType.equals("void")) {
-                    String resolved = resolveTypeName(type, returnType);
-                    if (resolved != null && (includeExternal || !isExternalPackage(extractPackage(resolved)))) {
-                        addEdge(edges, typeName, resolved);
-                        nodes.add(resolved);
-                        nodeKinds.putIfAbsent(resolved, "type");
-                    }
+                    graph.depend(typeName, resolveTypeName(type, returnType), "type", includeExternal);
                 }
 
                 // Parameters
                 for (String paramSig : method.getParameterTypes()) {
-                    String paramType = Signature.toString(paramSig);
-                    String resolved = resolveTypeName(type, paramType);
-                    if (resolved != null && (includeExternal || !isExternalPackage(extractPackage(resolved)))) {
-                        addEdge(edges, typeName, resolved);
-                        nodes.add(resolved);
-                        nodeKinds.putIfAbsent(resolved, "type");
-                    }
+                    graph.depend(typeName, resolveTypeName(type, Signature.toString(paramSig)), "type",
+                        includeExternal);
                 }
             } catch (Exception e) {
                 // Skip unresolvable types
@@ -288,13 +314,12 @@ public class GetDependencyGraphTool extends AbstractTool {
 
         // Recurse for deeper analysis
         if (depth > 1) {
-            for (String node : new HashSet<>(nodes)) {
+            for (String node : new HashSet<>(graph.nodes)) {
                 if (!visited.contains(node)) {
                     try {
                         IType depType = service.findType(node);
                         if (depType != null && depType.getCompilationUnit() != null) {
-                            collectTypeDependencies(depType, service, nodes, edges, nodeKinds,
-                                includeExternal, depth - 1, visited);
+                            collectTypeDependencies(depType, service, graph, includeExternal, depth - 1, visited);
                         }
                     } catch (Exception e) {
                         // Skip unresolvable types
@@ -307,13 +332,12 @@ public class GetDependencyGraphTool extends AbstractTool {
     /**
      * Collect dependencies at package level.
      */
-    private void collectPackageDependencies(String packageName, IJdtService service,
-                                             Set<String> nodes, Map<String, Map<String, Integer>> edges,
-                                             Map<String, String> nodeKinds, boolean includeExternal)
-            throws Exception {
+    private void collectPackageDependencies(String packageName, IJdtService service, Graph graph,
+                                             boolean includeExternal) throws Exception {
 
-        nodes.add(packageName);
-        nodeKinds.put(packageName, "package");
+        graph.nodes.add(packageName);
+        graph.kinds.put(packageName, "package");
+        graph.targets.put(packageName, Target.ofPackage(packageName));
 
         for (IPackageFragmentRoot root : service.getJavaProject().getPackageFragmentRoots()) {
             if (root.getKind() != IPackageFragmentRoot.K_SOURCE) continue;
@@ -327,46 +351,90 @@ public class GetDependencyGraphTool extends AbstractTool {
                 }
 
                 for (ICompilationUnit cu : pkg.getCompilationUnits()) {
+                    Map<Integer, IBinding> importBindings = importBindings(cu);
                     for (IImportDeclaration imp : cu.getImports()) {
-                        String importPkg = getImportedPackage(imp);
+                        String importPkg = getImportedPackage(imp, importBindings.get(imp.getSourceRange().getOffset()));
                         if (importPkg.isEmpty()) continue;
 
                         if (importPkg.equals(pkgName)) continue;
-                        if (!includeExternal && isExternalPackage(importPkg)) continue;
-
-                        addEdge(edges, pkgName, importPkg);
-                        nodes.add(importPkg);
-                        nodeKinds.putIfAbsent(importPkg, "package");
+                        graph.depend(pkgName, Target.ofPackage(importPkg), "package", includeExternal);
                     }
                 }
             }
         }
     }
 
-    private void addEdge(Map<String, Map<String, Integer>> edges, String from, String to) {
-        edges.computeIfAbsent(from, k -> new HashMap<>())
-             .merge(to, 1, Integer::sum);
-    }
-
-    private String extractPackage(String typeName) {
+    private static String extractPackage(String typeName) {
         int lastDot = typeName.lastIndexOf('.');
         return lastDot > 0 ? typeName.substring(0, lastDot) : "";
     }
 
     /**
-     * Returns the imported PACKAGE name for any import form. Standard
-     * {@link #extractPackage(String)} only strips one trailing component,
-     * which is wrong for static imports (the element name carries both the
-     * declaring class and the imported member). Uses {@code isStatic()}
-     * and {@code isOnDemand()} to strip the correct number of components.
+     * The binding of each import declaration in {@code unit}, keyed by the declaration's start
+     * offset; null for a declaration that does not resolve.
      */
-    private String getImportedPackage(IImportDeclaration imp) {
+    private static Map<Integer, IBinding> importBindings(ICompilationUnit unit) {
+        ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
+        parser.setSource(unit);
+        parser.setResolveBindings(true);
+        CompilationUnit ast = (CompilationUnit) parser.createAST(null);
+        Map<Integer, IBinding> bindings = new HashMap<>();
+        for (Object declaration : ast.imports()) {
+            ImportDeclaration imp = (ImportDeclaration) declaration;
+            bindings.put(imp.getStartPosition(), imp.resolveBinding());
+        }
+        return bindings;
+    }
+
+    /**
+     * What the import node {@code name} denotes, from the import's {@code binding}: the package
+     * an on-demand package import names; the type a type import or a type-import-on-demand names,
+     * in its package; the static member a static import names, in its declaring type's package.
+     * A name that does not resolve keeps no package.
+     */
+    private static Target importTarget(String name, IBinding binding) {
+        if (binding instanceof IPackageBinding) {
+            return Target.ofPackage(name);
+        }
+        return new Target(name, packageOf(binding), false);
+    }
+
+    /**
+     * The package of the type {@code binding} denotes, or of the type declaring the method or
+     * field it denotes; null for any other binding, or none.
+     */
+    private static String packageOf(IBinding binding) {
+        ITypeBinding type = switch (binding) {
+            case ITypeBinding typeBinding -> typeBinding;
+            case IMethodBinding method -> method.getDeclaringClass();
+            case IVariableBinding variable -> variable.getDeclaringClass();
+            case null, default -> null;
+        };
+        IPackageBinding pkg = type == null ? null : type.getPackage();
+        return pkg == null ? null : pkg.getName();
+    }
+
+    /**
+     * Returns the imported PACKAGE name for any import form: the package an on-demand package
+     * import names, or the package of the type, or of the static member's declaring type, the
+     * import names, as its binding resolves it. An import that does not resolve is read from its
+     * text: {@code isStatic()} and {@code isOnDemand()} say how many trailing components to
+     * strip.
+     */
+    private String getImportedPackage(IImportDeclaration imp, IBinding binding) {
         try {
             if (Flags.isModule(imp.getFlags())) {
                 // import module M; (JEP 511) names a module, not a package. Its
                 // element name is "M.*", which the on-demand strip would read as
                 // a package named after the module. It contributes no package.
                 return "";
+            }
+            if (binding instanceof IPackageBinding pkg) {
+                return pkg.getName();
+            }
+            String resolved = packageOf(binding);
+            if (resolved != null) {
+                return resolved;
             }
             String name = imp.getElementName();
             boolean onDemand = imp.isOnDemand();
@@ -392,7 +460,7 @@ public class GetDependencyGraphTool extends AbstractTool {
         }
     }
 
-    private boolean isExternalPackage(String packageName) {
+    private static boolean isExternalPackage(String packageName) {
         return packageName.startsWith("java.") ||
                packageName.startsWith("javax.") ||
                packageName.startsWith("sun.") ||
@@ -403,38 +471,35 @@ public class GetDependencyGraphTool extends AbstractTool {
     }
 
     /**
-     * Resolve a possibly-unqualified type name to its fully qualified name, or
-     * {@code null} when it is not a project/library type dependency. Primitives
-     * and {@code void} carry no dependency; an unqualified name is resolved
-     * through {@link IType#resolveType} (which honours imports, the enclosing
-     * package, and implicit {@code java.lang}), so e.g. {@code String} resolves
-     * to {@code java.lang.String} and is then filtered as external rather than
-     * fabricated as a bogus same-package type.
+     * What a type name written in a signature of {@code context} denotes: the type it resolves
+     * to through {@link IType#resolveType} (which honours imports, the enclosing package,
+     * implicit {@code java.lang} and a qualified name's segments), named fully qualified with
+     * dots between nested types and carrying its package; or null when it is not a project or
+     * library type dependency. Primitives and {@code void} carry no dependency; a simple name
+     * that does not resolve contributes none rather than a fabricated same-package type, and a
+     * qualified name that does not resolve is kept as written, its package unknown.
      */
-    private String resolveTypeName(IType context, String simpleName) {
+    private Target resolveTypeName(IType context, String typeName) {
         // Remove array brackets and generics
-        String baseName = simpleName.replaceAll("\\[\\]", "").replaceAll("<.*>", "");
+        String baseName = typeName.replaceAll("\\[\\]", "").replaceAll("<.*>", "");
 
         if (PRIMITIVE_TYPES.contains(baseName)) {
             return null;
         }
 
-        // If already qualified, return as-is
-        if (baseName.contains(".")) return baseName;
-
         try {
             String[][] resolved = context.resolveType(baseName);
             if (resolved != null && resolved.length > 0) {
-                String pkg = resolved[0][0];
+                String pkg = resolved[0][0] == null ? "" : resolved[0][0];
                 String simple = resolved[0][1];
-                return (pkg == null || pkg.isEmpty()) ? simple : pkg + "." + simple;
+                return new Target(pkg.isEmpty() ? simple : pkg + "." + simple, pkg, false);
             }
         } catch (Exception e) {
             // Fall through: unresolved names contribute no dependency.
         }
 
         // Unresolved — do not invent a context-package dependency.
-        return null;
+        return baseName.contains(".") ? new Target(baseName, null, false) : null;
     }
 
 }

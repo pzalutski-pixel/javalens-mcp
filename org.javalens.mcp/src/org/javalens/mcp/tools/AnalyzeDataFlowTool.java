@@ -248,7 +248,7 @@ public class AnalyzeDataFlowTool extends AbstractTool {
                     VariableInfo info = getOrCreate(name);
                     info.kind = "field";
                     if (varBinding.getType() != null) {
-                        info.type = varBinding.getType().getName();
+                        info.type = ElementNames.typeExpression(varBinding.getType());
                     }
                 } else {
                     return true; // Not a variable we're tracking

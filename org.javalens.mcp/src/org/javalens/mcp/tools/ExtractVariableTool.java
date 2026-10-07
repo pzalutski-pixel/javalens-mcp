@@ -150,13 +150,15 @@ public class ExtractVariableTool extends AbstractTool {
                 return ToolResponse.invalidParameter("selection", "No extractable expression at selection");
             }
 
-            // Get the type of the expression
-            ITypeBinding typeBinding = expression.resolveTypeBinding();
-            String typeName = typeBinding != null ? typeBinding.getName() : "var";
+            // The variable's declared type: the expression's type as a declaration can name it,
+            // an anonymous class's direct supertype, a captured wildcard's bound.
+            ITypeBinding expressionType = expression.resolveTypeBinding();
+            ITypeBinding typeBinding = ElementNames.declarableType(expressionType, ast.getAST());
+            String typeName = typeBinding != null ? ElementNames.typeExpression(typeBinding) : "var";
 
             // Generate variable name if not provided
             if (variableName == null || variableName.isBlank()) {
-                variableName = suggestVariableName(expression, typeBinding);
+                variableName = suggestVariableName(expression, expressionType);
             }
 
             if (!isValidJavaIdentifier(variableName)) {

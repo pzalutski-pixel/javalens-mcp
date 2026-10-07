@@ -136,8 +136,8 @@ public class PullUpTool extends AbstractTool {
 
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("memberName", member.getElementName());
-            data.put("fromType", declaringType.getFullyQualifiedName());
-            data.put("toType", superclass.getFullyQualifiedName());
+            data.put("fromType", ElementNames.qualifiedName(declaringType));
+            data.put("toType", ElementNames.qualifiedName(superclass));
             data.put("totalEdits", totalEdits);
             data.put("filesAffected", outcome.editsByFile().size());
             data.put("editsByFile", outcome.editsByFile());

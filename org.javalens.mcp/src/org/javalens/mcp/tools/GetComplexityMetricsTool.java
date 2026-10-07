@@ -2,6 +2,8 @@ package org.javalens.mcp.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import org.eclipse.jdt.core.ICompilationUnit;
+import org.eclipse.jdt.core.IType;
+import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.dom.AbstractTypeDeclaration;
 import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTParser;
@@ -13,6 +15,7 @@ import org.eclipse.jdt.core.dom.ConditionalExpression;
 import org.eclipse.jdt.core.dom.DoStatement;
 import org.eclipse.jdt.core.dom.EnhancedForStatement;
 import org.eclipse.jdt.core.dom.ForStatement;
+import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.IfStatement;
 import org.eclipse.jdt.core.dom.InfixExpression;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
@@ -231,7 +234,7 @@ public class GetComplexityMetricsTool extends AbstractTool {
             String unit = ast.getJavaElement().getElementName();
             typeName = unit.endsWith(".java") ? unit.substring(0, unit.length() - 5) : unit;
         } else {
-            typeName = ElementNames.qualifiedName(typeDecl.resolveBinding());
+            typeName = qualifiedName(typeDecl, ast);
         }
 
         // Iterate bodyDeclarations() rather than TypeDeclaration.getMethods() so that
@@ -273,6 +276,28 @@ public class GetComplexityMetricsTool extends AbstractTool {
 
             metrics.add(methodInfo);
         }
+    }
+
+    /**
+     * The fully qualified name of the type {@code typeDecl} declares, through its binding, or
+     * through its element in the Java model when the compiler built it no binding (a member type
+     * duplicating a sibling's name, a top-level type duplicating another in its package): the
+     * element at the declaration's name in {@code ast}'s compilation unit.
+     */
+    private static String qualifiedName(AbstractTypeDeclaration typeDecl, CompilationUnit ast) {
+        ITypeBinding binding = typeDecl.resolveBinding();
+        if (binding != null) {
+            return ElementNames.qualifiedName(binding);
+        }
+        try {
+            if (ast.getJavaElement() instanceof ICompilationUnit unit
+                    && unit.getElementAt(typeDecl.getName().getStartPosition()) instanceof IType type) {
+                return ElementNames.qualifiedName(type);
+            }
+        } catch (JavaModelException e) {
+            throw new IllegalStateException("No model element for " + typeDecl.getName().getIdentifier(), e);
+        }
+        throw new IllegalStateException("No model element for " + typeDecl.getName().getIdentifier());
     }
 
     /**

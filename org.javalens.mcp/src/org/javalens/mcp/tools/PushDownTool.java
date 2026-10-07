@@ -1,11 +1,14 @@
 package org.javalens.mcp.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.eclipse.jdt.core.Flags;
 import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IMember;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.ITypeHierarchy;
+import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.refactoring.descriptors.PushDownDescriptor;
+import org.eclipse.jdt.internal.corext.refactoring.RefactoringAvailabilityTesterCore;
 import org.eclipse.ltk.core.refactoring.RefactoringDescriptor;
 import org.javalens.core.IJdtService;
 import org.javalens.mcp.models.ResponseMeta;
@@ -98,6 +101,10 @@ public class PushDownTool extends AbstractTool {
                 return ToolResponse.invalidParameter("position", "Member at position is declared in the anonymous class "
                     + ElementNames.qualifiedName(declaringType) + ", which no class can extend");
             }
+            // JDT's availability rule for push down decides; the refusal names its reason.
+            if (!RefactoringAvailabilityTesterCore.isPushDownAvailable(member)) {
+                return ToolResponse.invalidParameter("position", pushDownUnavailable(member, declaringType));
+            }
             ITypeHierarchy hierarchy = declaringType.newTypeHierarchy(null);
             IType[] subclasses = hierarchy.getSubclasses(declaringType);
             if (subclasses == null || subclasses.length == 0) {
@@ -126,12 +133,12 @@ public class PushDownTool extends AbstractTool {
 
             List<String> targetTypes = new ArrayList<>();
             for (IType subclass : subclasses) {
-                targetTypes.add(subclass.getFullyQualifiedName());
+                targetTypes.add(ElementNames.qualifiedName(subclass));
             }
 
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("memberName", member.getElementName());
-            data.put("fromType", declaringType.getFullyQualifiedName());
+            data.put("fromType", ElementNames.qualifiedName(declaringType));
             data.put("toTypes", targetTypes);
             data.put("totalEdits", totalEdits);
             data.put("filesAffected", outcome.editsByFile().size());
@@ -153,5 +160,19 @@ public class PushDownTool extends AbstractTool {
             log.error("Error pushing down member: {}", e.getMessage(), e);
             return ToolResponse.internalError(e);
         }
+    }
+
+    /**
+     * Why JDT's push down is not available for {@code member}: JDT pushes down only an instance
+     * member (RefactoringAvailabilityTesterCore.isPushDownAvailable), so a static member says it
+     * is static; any other reason (a constructor, a native method, an enum constant, a member of
+     * an annotation type) names the member.
+     */
+    private static String pushDownUnavailable(IMember member, IType declaringType) throws JavaModelException {
+        String named = "Member at position, " + member.getElementName() + " in " + ElementNames.qualifiedName(declaringType);
+        if (Flags.isStatic(member.getFlags())) {
+            return named + ", is static; only an instance member can be pushed down";
+        }
+        return named + ", cannot be pushed down";
     }
 }

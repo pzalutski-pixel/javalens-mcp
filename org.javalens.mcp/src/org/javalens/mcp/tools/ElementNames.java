@@ -5,8 +5,10 @@ import org.eclipse.jdt.core.IMethod;
 import org.eclipse.jdt.core.IParent;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.JavaModelException;
+import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.IMethodBinding;
 import org.eclipse.jdt.core.dom.ITypeBinding;
+import org.eclipse.jdt.internal.corext.dom.Bindings;
 
 import java.util.Arrays;
 import java.util.stream.Collectors;
@@ -28,6 +30,8 @@ import java.util.stream.Collectors;
  *       same type reached through the model is.</li>
  *   <li>A method's key is {@code Type#name(params)}, its declaring type named fully qualified
  *       ({@code pkg.Outer$Inner#run(String)}), as the project graph keys its methods.</li>
+ *   <li>A generated declaration names the type JDT's own refactorings declare a value with: an
+ *       anonymous class's supertype, a captured wildcard's bound.</li>
  * </ul>
  */
 final class ElementNames {
@@ -158,6 +162,20 @@ final class ElementNames {
                 .collect(Collectors.joining(",", "<", ">"));
         }
         return binding.getName();
+    }
+
+    /**
+     * The type a declaration of a value of type {@code binding} names, chosen as JDT's own
+     * refactorings choose it ({@code Bindings.normalizeForDeclarationUse}, which extract local
+     * variable, extract method and extract constant apply): an anonymous class becomes its direct
+     * supertype, its superclass or its single interface; a captured wildcard becomes its bound
+     * ({@code ? extends Foo} gives Foo; {@code ? super Foo} and {@code ?} give the first bound of
+     * the type variable they stand for, else its erasure); the null type becomes Object; an array
+     * becomes the array of its element type so normalized. Any other type is itself. No binding,
+     * and void, which no declaration names, give null.
+     */
+    static ITypeBinding declarableType(ITypeBinding binding, AST ast) {
+        return binding == null ? null : Bindings.normalizeForDeclarationUse(binding, ast);
     }
 
     /**

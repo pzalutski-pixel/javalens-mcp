@@ -129,7 +129,9 @@ public class SuggestImportsTool extends AbstractTool {
                         candidate.put("isInterface", type.isInterface());
                         candidate.put("isClass", type.isClass());
                         candidate.put("isEnum", type.isEnum());
-                        candidate.put("fixId", "add_import:" + fqn);
+                        // An import names a member type by its canonical name, dots between
+                        // the enclosing type and the member type (JLS 6.7, 7.5.1).
+                        candidate.put("fixId", "add_import:" + type.getFullyQualifiedName('.'));
 
                         candidates.add(candidate);
                     } catch (Exception e) {

@@ -177,10 +177,10 @@ public class ExtractConstantTool extends AbstractTool {
                     "Expression cannot be extracted to a static final constant: " + unsafeReason);
             }
 
-            // The constant's declared type: the expression's type, or for an anonymous class,
-            // which no declaration can name, its direct supertype.
-            ITypeBinding typeBinding = declarableType(expression.resolveTypeBinding());
-            String typeName = typeBinding != null ? typeBinding.getName() : "Object";
+            // The constant's declared type: the expression's type as a declaration can name it,
+            // an anonymous class's direct supertype, a captured wildcard's bound.
+            ITypeBinding typeBinding = ElementNames.declarableType(expression.resolveTypeBinding(), ast.getAST());
+            String typeName = typeBinding != null ? ElementNames.typeExpression(typeBinding) : "Object";
 
             // Find the containing type declaration
             AbstractTypeDeclaration containingType = findContainingType(expression);
@@ -258,19 +258,6 @@ public class ExtractConstantTool extends AbstractTool {
             log.error("Error extracting constant: {}", e.getMessage(), e);
             return ToolResponse.internalError(e);
         }
-    }
-
-    /**
-     * The type a declaration of a value of type {@code type} names: {@code type} itself, or for
-     * an anonymous class its direct supertype, which is its superclass, or its single interface
-     * when the superclass is Object. Null stays null.
-     */
-    private static ITypeBinding declarableType(ITypeBinding type) {
-        if (type == null || !type.isAnonymous()) {
-            return type;
-        }
-        ITypeBinding[] interfaces = type.getInterfaces();
-        return interfaces.length == 1 ? interfaces[0] : type.getSuperclass();
     }
 
     private AbstractTypeDeclaration findContainingType(ASTNode node) {

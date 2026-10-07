@@ -9,6 +9,7 @@ import org.eclipse.jdt.core.dom.ASTVisitor;
 import org.eclipse.jdt.core.dom.Assignment;
 import org.eclipse.jdt.core.dom.Block;
 import org.eclipse.jdt.core.dom.CompilationUnit;
+import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.IVariableBinding;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.Modifier;
@@ -366,15 +367,17 @@ public class ExtractMethodTool extends AbstractTool {
         Set<String> usedAfterSelection = new HashSet<>();
         Map<String, String> varTypes = new HashMap<>();
 
-        // First pass: collect variable declarations
+        // First pass: collect variable declarations. Each variable may be declared again, as a
+        // parameter or a redeclared result: with the explicit type a parameter or loop variable
+        // is written with, and otherwise with the variable's type as a declaration can name it,
+        // as JDT's extract method types a var or an implicit lambda parameter
+        // (ASTNodeFactory.newNonVarType).
         method.accept(new ASTVisitor() {
             @Override
             public boolean visit(VariableDeclarationFragment node) {
                 int pos = node.getStartPosition();
                 String name = node.getName().getIdentifier();
-                IVariableBinding binding = node.resolveBinding();
-                String type = binding != null ? binding.getType().getName() : "Object";
-                varTypes.put(name, type);
+                varTypes.put(name, declaredType(node.resolveBinding(), node.getAST()));
 
                 if (pos < selectionStart) {
                     declaredBefore.add(name);
@@ -388,7 +391,9 @@ public class ExtractMethodTool extends AbstractTool {
             public boolean visit(SingleVariableDeclaration node) {
                 int pos = node.getStartPosition();
                 String name = node.getName().getIdentifier();
-                String type = node.getType().toString();
+                String type = node.getType().isVar()
+                    ? declaredType(node.resolveBinding(), node.getAST())
+                    : node.getType().toString();
                 varTypes.put(name, type);
 
                 if (pos < selectionStart) {
@@ -454,6 +459,16 @@ public class ExtractMethodTool extends AbstractTool {
 
         analysis.declaredInSelection.addAll(declaredInSelection);
         return analysis;
+    }
+
+    /**
+     * The type a declaration of {@code variable} names, written as a signature writes it: its
+     * type as a declaration can name it (an anonymous class's supertype, a captured wildcard's
+     * bound); Object when the variable does not resolve.
+     */
+    private static String declaredType(IVariableBinding variable, AST ast) {
+        ITypeBinding type = variable == null ? null : ElementNames.declarableType(variable.getType(), ast);
+        return type != null ? ElementNames.typeExpression(type) : "Object";
     }
 
     private boolean isAssignmentTarget(SimpleName node) {

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.eclipse.jdt.core.Flags;
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IMethod;
+import org.eclipse.jdt.core.ISourceRange;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.ITypeParameter;
 import org.eclipse.jdt.core.JavaModelException;
@@ -11,11 +12,14 @@ import org.eclipse.jdt.core.Signature;
 import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTParser;
+import org.eclipse.jdt.core.dom.AbstractTypeDeclaration;
 import org.eclipse.jdt.core.dom.CompilationUnit;
+import org.eclipse.jdt.core.dom.NodeFinder;
+import org.eclipse.jdt.core.dom.RecordDeclaration;
+import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.TypeDeclaration;
 import org.eclipse.jdt.core.dom.rewrite.ASTRewrite;
 import org.eclipse.jdt.core.dom.rewrite.ListRewrite;
-import org.eclipse.text.edits.TextEdit;
 import org.javalens.core.IJdtService;
 import org.javalens.mcp.rewrite.TextEditConverter;
 import org.javalens.mcp.models.ResponseMeta;
@@ -145,6 +149,21 @@ public class ExtractInterfaceTool extends AbstractTool {
             if (type.isEnum()) {
                 return ToolResponse.invalidParameter("type", "Cannot extract interface from an enum");
             }
+            // JDT's extract interface is not available for a binary class
+            // (RefactoringAvailabilityTesterCore.isExtractInterfaceAvailable), which has no
+            // source to take the implements clause.
+            if (type.isBinary()) {
+                return ToolResponse.invalidParameter("position", "Class at position is the library class "
+                    + ElementNames.qualifiedName(type) + ", which has no source to add an implements clause to");
+            }
+            // An implicitly declared class has no declaration to take one (JLS 7.3).
+            if (type.isImplicitlyDeclared()) {
+                return ToolResponse.invalidParameter("position", "Class at position is the implicitly declared class "
+                    + ElementNames.qualifiedName(type) + ", which cannot declare an implements clause");
+            }
+            // The class's own source, which a position on a reference to it lies outside of.
+            ICompilationUnit declaringUnit = type.getCompilationUnit();
+            Path sourcePath = Path.of(declaringUnit.getResource().getLocation().toOSString());
 
             // Collect public non-static methods
             List<IMethod> methodsToExtract = new ArrayList<>();
@@ -212,43 +231,28 @@ public class ExtractInterfaceTool extends AbstractTool {
 
             interfaceContent.append("}\n");
 
-            // Parse AST to find position for 'implements' clause
+            // Parse the class's own source to find its declaration for the 'implements' clause
             ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
-            parser.setSource(cu);
+            parser.setSource(declaringUnit);
             parser.setResolveBindings(true);
             CompilationUnit ast = (CompilationUnit) parser.createAST(null);
-
-            // Find the type declaration in AST
-            TypeDeclaration typeDecl = findTypeDeclaration(ast, type.getElementName());
+            AbstractTypeDeclaration typeDecl = findTypeDeclaration(ast, type);
 
             // Build the implements-clause edit with ASTRewrite: appending to the
             // type's super-interface list renders either a new ` implements X`
             // clause or a `, X` continuation by construction — no brace scan or
             // clause-position math.
-            List<Map<String, Object>> edits = new ArrayList<>();
+            String implementsRef = interfaceName + classTypeArguments;
+            ASTRewrite rewrite = ASTRewrite.create(ast.getAST());
+            ListRewrite implementsList = rewrite.getListRewrite(typeDecl, typeDecl instanceof RecordDeclaration
+                ? RecordDeclaration.SUPER_INTERFACE_TYPES_PROPERTY
+                : TypeDeclaration.SUPER_INTERFACE_TYPES_PROPERTY);
+            implementsList.insertLast(rewrite.createStringPlaceholder(implementsRef, ASTNode.SIMPLE_TYPE), null);
+            List<Map<String, Object>> edits =
+                TextEditConverter.toEditMaps(rewrite.rewriteAST(), declaringUnit.getSource(), ast);
 
-            if (typeDecl != null) {
-                String source = cu.getSource();
-                if (source != null) {
-                    String implementsRef = interfaceName + classTypeArguments;
-                    ASTRewrite rewrite = ASTRewrite.create(ast.getAST());
-                    ListRewrite implementsList = rewrite.getListRewrite(typeDecl,
-                        TypeDeclaration.SUPER_INTERFACE_TYPES_PROPERTY);
-                    implementsList.insertLast(
-                        rewrite.createStringPlaceholder(implementsRef, ASTNode.SIMPLE_TYPE), null);
-                    TextEdit rewriteEdit = rewrite.rewriteAST();
-                    edits.addAll(TextEditConverter.toEditMaps(rewriteEdit, source, ast));
-                }
-            }
-
-            // Determine interface file path
-            String interfaceFileName = interfaceName + ".java";
-            Path interfacePath;
-            if (path.getParent() != null) {
-                interfacePath = path.getParent().resolve(interfaceFileName);
-            } else {
-                interfacePath = Path.of(interfaceFileName);
-            }
+            // The interface goes beside the class's source, in the class's package
+            Path interfacePath = sourcePath.resolveSibling(interfaceName + ".java");
 
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("className", ElementNames.typeName(type));
@@ -258,7 +262,7 @@ public class ExtractInterfaceTool extends AbstractTool {
             data.put("interfaceContent", interfaceContent.toString());
             data.put("extractedMethods", extractedMethods);
             data.put("classEdits", edits);
-            data.put("sourceFilePath", service.getPathUtils().formatPath(path));
+            data.put("sourceFilePath", service.getPathUtils().formatPath(sourcePath));
 
             return ToolResponse.success(data, ResponseMeta.builder()
                 .totalCount(extractedMethods.size())
@@ -332,17 +336,20 @@ public class ExtractInterfaceTool extends AbstractTool {
         return sig.toString();
     }
 
-    private TypeDeclaration findTypeDeclaration(CompilationUnit ast, String typeName) {
-        @SuppressWarnings("unchecked")
-        List<?> types = ast.types();
-        for (Object t : types) {
-            if (t instanceof TypeDeclaration td) {
-                if (typeName.equals(td.getName().getIdentifier())) {
-                    return td;
-                }
-            }
+    /**
+     * The declaration of {@code type} in {@code ast}, the compilation unit that declares it: the
+     * class or record declaration whose name lies at the type's name range, at top level, as a
+     * member, or local to a method body.
+     */
+    private AbstractTypeDeclaration findTypeDeclaration(CompilationUnit ast, IType type) throws JavaModelException {
+        ISourceRange name = type.getNameRange();
+        if (NodeFinder.perform(ast, name.getOffset(), name.getLength()) instanceof SimpleName simpleName
+                && simpleName.getParent() instanceof AbstractTypeDeclaration declaration
+                && declaration.getName() == simpleName) {
+            return declaration;
         }
-        return null;
+        throw new IllegalStateException("No declaration of " + ElementNames.qualifiedName(type)
+            + " at its name in " + type.getCompilationUnit().getElementName());
     }
 
     /**

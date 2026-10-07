@@ -1,10 +1,13 @@
 package org.javalens.mcp.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.eclipse.jdt.core.Flags;
 import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IMember;
 import org.eclipse.jdt.core.IType;
+import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.refactoring.descriptors.ExtractSuperclassDescriptor;
+import org.eclipse.jdt.internal.corext.refactoring.RefactoringAvailabilityTesterCore;
 import org.eclipse.ltk.core.refactoring.RefactoringDescriptor;
 import org.javalens.core.IJdtService;
 import org.javalens.mcp.models.ResponseMeta;
@@ -115,6 +118,10 @@ public class ExtractSuperclassTool extends AbstractTool {
                 return ToolResponse.invalidParameter("position", "Member at position is declared in the anonymous class "
                     + ElementNames.qualifiedName(declaringType) + ", which cannot declare a superclass");
             }
+            // JDT's availability rule for extract superclass decides; the refusal names its reason.
+            if (!RefactoringAvailabilityTesterCore.isExtractSupertypeAvailable(new IMember[] { member })) {
+                return ToolResponse.invalidParameter("position", extractUnavailable(member, declaringType));
+            }
 
             Map<String, String> descriptorArguments = new HashMap<>();
             descriptorArguments.put("input", declaringType.getHandleIdentifier());
@@ -148,7 +155,7 @@ public class ExtractSuperclassTool extends AbstractTool {
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("superclassName", superclassName);
             data.put("memberName", member.getElementName());
-            data.put("fromType", declaringType.getFullyQualifiedName());
+            data.put("fromType", ElementNames.qualifiedName(declaringType));
             data.put("createdFiles", outcome.createdFiles());
             data.put("totalEdits", totalEdits);
             data.put("filesAffected", outcome.editsByFile().size());
@@ -171,6 +178,26 @@ public class ExtractSuperclassTool extends AbstractTool {
             log.error("Error extracting superclass: {}", e.getMessage(), e);
             return ToolResponse.internalError(e);
         }
+    }
+
+    /**
+     * Why JDT's extract superclass is not available for {@code member}: JDT extracts a superclass
+     * only from a top-level class or a static member class
+     * (RefactoringAvailabilityTesterCore.isExtractSupertypeAvailable), so a member of a local
+     * class or of an inner class is named with its class; any other reason (a constructor, a
+     * native method, an enum constant, a member of an enum or an annotation type) names the
+     * member.
+     */
+    private static String extractUnavailable(IMember member, IType declaringType) throws JavaModelException {
+        String reason = "; a superclass can be extracted only from a top-level class or a static member class";
+        if (declaringType.isLocal()) {
+            return "Member at position is declared in the local class " + ElementNames.qualifiedName(declaringType) + reason;
+        }
+        if (declaringType.isMember() && declaringType.isClass() && !Flags.isStatic(declaringType.getFlags())) {
+            return "Member at position is declared in the inner class " + ElementNames.qualifiedName(declaringType) + reason;
+        }
+        return "Member at position, " + member.getElementName() + " in " + ElementNames.qualifiedName(declaringType)
+            + ", cannot be moved into a new superclass";
     }
 
     private boolean isValidJavaIdentifier(String name) {
