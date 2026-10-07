@@ -1,9 +1,12 @@
 package org.javalens.mcp.tools.project;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.javalens.core.IJdtService;
 import org.javalens.core.project.model.LoadWarning;
+import org.javalens.mcp.fixtures.EnvelopeHarness;
 import org.javalens.mcp.fixtures.TestProjectHelper;
 import org.javalens.mcp.models.ToolResponse;
 import org.javalens.mcp.tools.LoadProjectTool;
@@ -13,6 +16,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import java.nio.file.Path;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
@@ -20,6 +26,30 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.jupiter.api.Assertions.*;
 
 class LoadProjectToolTest {
+
+    /**
+     * simple-maven's packages, sorted: the directories under src/main/java and src/test/java
+     * that hold Java files (com.example is in both).
+     */
+    private static final List<String> SIMPLE_MAVEN_PACKAGES = List.of(
+        "com.example",
+        "com.example.cycledemo.a",
+        "com.example.cycledemo.b",
+        "com.example.genericunused",
+        "com.example.service",
+        "com.example.staticcycle.x",
+        "com.example.staticcycle.y");
+
+    /**
+     * simple-maven's build model: the pom declares maven.compiler.source 21 and no modules,
+     * so the root is the one module. Maven modules and levels are read from the poms.
+     */
+    private static final Map<String, Object> SIMPLE_MAVEN_BUILD_MODEL = Map.of(
+        "buildSystem", "maven",
+        "source", "static-read",
+        "analysisLevel", "21",
+        "moduleCount", 1,
+        "modules", List.of(Map.of("id", ".", "dir", ".")));
 
     @RegisterExtension
     TestProjectHelper helper = new TestProjectHelper();
@@ -44,35 +74,15 @@ class LoadProjectToolTest {
         return data.get("buildModel") instanceof Map<?, ?> buildModel ? buildModel.get("buildSystem") : null;
     }
 
-    @Test @DisplayName("loads project with complete response")
+    @Test @DisplayName("simple-maven loads with the exact response at both seams; projectPath is the absolute normalized root the load used")
     void loadsProjectComprehensively() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("projectPath", projectPath.toString());
 
-        ToolResponse r = tool.execute(args);
-
-        assertTrue(r.isSuccess());
-        Map<String, Object> data = getData(r);
-
-        // Verify project info: recognized build system
-        assertTrue((Boolean) data.get("loaded"));
-        assertNotNull(data.get("projectPath"), "projectPath key must be present");
-        // simple-maven is a Maven project; buildModel.buildSystem must reflect that.
-        assertEquals("maven", buildSystemOf(data),
-            "simple-maven fixture is Maven; got: " + data);
-        // simple-maven fixture inventory: 71 source files across 7 packages.
-        assertEquals(71, ((Number) data.get("sourceFileCount")).intValue());
-        assertEquals(7, ((Number) data.get("packageCount")).intValue());
-
-        // Verify packages list contains com.example
-        @SuppressWarnings("unchecked")
-        List<String> packages = (List<String>) data.get("packages");
-        assertFalse(packages.isEmpty());
-        assertTrue(packages.contains("com.example"),
-            "simple-maven fixture has com.example package; got: " + packages);
-
-        // Verify service was set
-        assertNotNull(serviceRef.get(), "service reference must be populated on successful load");
+        assertLoadPayload(args, simpleMavenData());
+        // execute() installed the service it loaded, for the root it was asked to load.
+        assertEquals(projectPath.toAbsolutePath().normalize(), serviceRef.get().getProjectRoot(),
+            "root of the installed service");
     }
 
     @Test @DisplayName("missing projectPath -> exact INVALID_PARAMETER")
@@ -182,13 +192,7 @@ class LoadProjectToolTest {
             () -> assertEquals(List.of("loaded", "projectPath", "sourceFileCount", "packageCount",
                     "packages", "classpathEntryCount", "loadedAt", "buildModel"),
                 List.copyOf(data.keySet()), "response fields in order"),
-            () -> assertEquals(Map.of(
-                    "buildSystem", "maven",
-                    "source", "static-read",
-                    "analysisLevel", "21",
-                    "moduleCount", 1,
-                    "modules", List.of(Map.of("id", ".", "dir", "."))),
-                data.get("buildModel"), "buildModel"),
+            () -> assertEquals(SIMPLE_MAVEN_BUILD_MODEL, data.get("buildModel"), "buildModel"),
             () -> assertEquals(List.of("buildSystem", "source", "analysisLevel", "moduleCount", "modules"),
                 data.get("buildModel") instanceof Map<?, ?> buildModel ? List.copyOf(buildModel.keySet()) : null,
                 "buildModel fields in order"));
@@ -277,35 +281,19 @@ class LoadProjectToolTest {
     }
 
     @Test
-    @DisplayName("relative projectPath is normalized to absolute before resolution")
+    @DisplayName("a relative projectPath, taken against the working directory, loads simple-maven and echoes its absolute normalized root at both seams")
     void relativePath_normalizedToAbsolute() {
-        // Build a relative path that resolves to the same simple-maven directory.
-        Path absolute = projectPath.toAbsolutePath().normalize();
-        Path cwd = Path.of("").toAbsolutePath();
-        Path relative = cwd.relativize(absolute);
-
-        // Skip if the relative form would require traversing many `..` segments —
-        // that's not the contract we want to test (just normalization, not arbitrary
-        // path arithmetic). The fixture and the cwd should share a common ancestor.
-        if (relative.toString().startsWith("..") &&
-            relative.getNameCount() > 5) {
-            return;
-        }
-
+        // The same simple-maven directory, named relative to the working directory, through
+        // whatever '..' segments that takes.
+        Path relative = Path.of("").toAbsolutePath().relativize(projectPath.toAbsolutePath().normalize());
         ObjectNode args = objectMapper.createObjectNode();
         args.put("projectPath", relative.toString());
 
-        ToolResponse r = tool.execute(args);
-        assertTrue(r.isSuccess(),
-            "Relative path must be resolved via toAbsolutePath().normalize(); got error: " +
-                (r.getError() != null ? r.getError().getMessage() : "n/a"));
-
-        Map<String, Object> data = getData(r);
-        assertEquals(true, data.get("loaded"));
+        assertLoadPayload(args, simpleMavenData());
     }
 
     @Test
-    @DisplayName("loading a second project replaces the service registered by the first")
+    @DisplayName("loading a second project replaces the service registered by the first, and each response echoes its own root")
     void reload_replacesServiceWithNewProject() {
         // Load simple-maven first.
         ObjectNode firstArgs = objectMapper.createObjectNode();
@@ -329,6 +317,11 @@ class LoadProjectToolTest {
         assertNotSame(firstService, secondService,
             "Each load_project invocation must produce a fresh JdtService — otherwise " +
                 "subsequent tool calls would route through the previously-loaded project's index.");
+        assertAll(
+            () -> assertEquals(projectPath.toAbsolutePath().normalize().toString(), getData(r1).get("projectPath"),
+                "first response's projectPath"),
+            () -> assertEquals(multiModule.toAbsolutePath().normalize().toString(), getData(r2).get("projectPath"),
+                "second response's projectPath"));
     }
 
     @Test
@@ -382,5 +375,64 @@ class LoadProjectToolTest {
         assertEquals(20, packages.size(),
             "packages list must be capped at 20 entries even when packageCount > 20; got: "
                 + packages.size() + " entries: " + packages);
+    }
+
+    // ========== Helpers ==========
+
+    /**
+     * load_project's data for simple-maven, without loadedAt: 71 source files (58 in
+     * com.example under src/main/java, 3 in com.example under src/test/java, 5 in
+     * genericunused and one in each of the other five packages) in 7 packages; a raw
+     * classpath of the JRE container and the two source folders (the pom declares no
+     * dependencies and target/ holds no compiled output); a clean load, so no warnings.
+     */
+    private Map<String, Object> simpleMavenData() {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("loaded", true);
+        data.put("projectPath", projectPath.toAbsolutePath().normalize().toString());
+        data.put("sourceFileCount", 71);
+        data.put("packageCount", 7);
+        data.put("packages", SIMPLE_MAVEN_PACKAGES);
+        data.put("classpathEntryCount", 3);
+        data.put("buildModel", SIMPLE_MAVEN_BUILD_MODEL);
+        return data;
+    }
+
+    /**
+     * The load_project payload for {@code args} through execute() and through the JSON-RPC
+     * envelope both equal a success carrying {@code expectedData}.
+     */
+    private void assertLoadPayload(ObjectNode args, Map<String, Object> expectedData) {
+        JsonNode expected = objectMapper.valueToTree(Map.of("success", true, "data", expectedData));
+        Instant before = Instant.now();
+        JsonNode direct = objectMapper.valueToTree(tool.execute(args.deepCopy()));
+        JsonNode wire = new EnvelopeHarness(null).assertEnvelopeFidelity("load_project", args);
+        Instant after = Instant.now();
+        assertAll(
+            () -> assertEquals(expected, comparable(direct, before, after), "execute() payload for " + args),
+            () -> assertEquals(expected, comparable(wire, before, after), "envelope payload for " + args));
+    }
+
+    /**
+     * {@code payload} with loadedAt removed and packages sorted. loadedAt is when the load
+     * finished, so it can only be checked to fall within the call. packages come in the
+     * order the file system lists the source directories, which differs between file
+     * systems, so they are compared as a sorted list.
+     */
+    private static JsonNode comparable(JsonNode payload, Instant before, Instant after) {
+        ObjectNode copy = payload.deepCopy();
+        if (!(copy.get("data") instanceof ObjectNode data)) {
+            return copy; // a failed load: compared whole, so the assertion shows its error
+        }
+        Instant loadedAt = Instant.parse(data.path("loadedAt").asText());
+        assertTrue(!loadedAt.isBefore(before) && !loadedAt.isAfter(after),
+            () -> "loadedAt " + loadedAt + " must fall within the call, " + before + " to " + after);
+        data.remove("loadedAt");
+        List<String> packages = new ArrayList<>();
+        data.path("packages").forEach(name -> packages.add(name.asText()));
+        packages.sort(null);
+        ArrayNode sorted = data.putArray("packages");
+        packages.forEach(sorted::add);
+        return copy;
     }
 }

@@ -166,7 +166,9 @@ public class LoadProjectTool implements Tool {
             // Build response
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("loaded", true);
-            result.put("projectPath", service.getPathUtils().formatPath(path));
+            // The absolute normalized root the load used, rendered as get_project_structure
+            // and get_classpath_info render it in their projectRoot.
+            result.put("projectPath", service.getProjectRoot().toString());
             result.put("sourceFileCount", service.getSourceFileCount());
             result.put("packageCount", service.getPackageCount());
 
