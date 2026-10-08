@@ -5,6 +5,7 @@ import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IJavaProject;
 import org.eclipse.jdt.core.IType;
+import org.javalens.core.Deadline;
 import org.javalens.core.IJdtService;
 import org.javalens.core.IPathUtils;
 import org.javalens.core.PathUtilsImpl;
@@ -28,7 +29,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.Callable;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -192,19 +192,43 @@ class HealthCheckToolTest {
     }
 
     @Test
-    @DisplayName("configuration map carries timeoutSeconds (default 30) and absolutePaths boolean")
+    @DisplayName("with no service, configuration reports the limit the environment sets: unset in the build, so timeoutSeconds null, and absolutePaths false")
     @SuppressWarnings("unchecked")
-    void configuration_carriesTimeoutAndAbsolutePathsFlag() {
+    void configuration_noService_reportsEnvironmentLimit() {
         ToolResponse r = toolWithProject.execute(objectMapper.createObjectNode());
         assertTrue(r.isSuccess());
-        Map<String, Object> configuration =
-            (Map<String, Object>) getData(r).get("configuration");
-        assertNotNull(configuration);
+        Map<String, Object> expected = new java.util.LinkedHashMap<>();
+        expected.put("timeoutSeconds", null);
+        expected.put("absolutePaths", false);
+        Map<String, Object> configuration = (Map<String, Object>) getData(r).get("configuration");
+        assertAll(
+            () -> assertEquals(expected, configuration),
+            () -> assertEquals(List.of("timeoutSeconds", "absolutePaths"), List.copyOf(configuration.keySet())));
+    }
 
-        // Default config when JAVALENS_TIMEOUT_SECONDS / JAVALENS_ABSOLUTE_PATHS are unset
-        // (the build environment): timeout 30, absolutePaths false.
-        assertEquals(30, ((Number) configuration.get("timeoutSeconds")).intValue());
-        assertEquals(Boolean.FALSE, configuration.get("absolutePaths"));
+    @Test
+    @DisplayName("with a service, configuration reports the service's limit: 30 when it sets 30, null when it sets none")
+    @SuppressWarnings("unchecked")
+    void configuration_withService_reportsServiceLimit() {
+        Path root = Path.of("limit-root").toAbsolutePath().normalize();
+        BuildModel model = new BuildModel(BuildSystem.MAVEN, Provenance.STATIC_READ, List.of(module(".", root)),
+            List.of(), List.of(), "21", new BuildInputs(List.of(), List.of()), List.of());
+        Map<String, Object> limited = new java.util.LinkedHashMap<>();
+        limited.put("timeoutSeconds", 30);
+        limited.put("absolutePaths", false);
+        Map<String, Object> unlimited = new java.util.LinkedHashMap<>();
+        unlimited.put("timeoutSeconds", null);
+        unlimited.put("absolutePaths", false);
+
+        ToolResponse thirty = new HealthCheckTool(
+            () -> new LoadedModelService(model, "21", new PathUtilsImpl(root), List.of(), 30))
+            .execute(objectMapper.createObjectNode());
+        ToolResponse none = new HealthCheckTool(
+            () -> new LoadedModelService(model, "21", new PathUtilsImpl(root), List.of(), null))
+            .execute(objectMapper.createObjectNode());
+        assertAll(
+            () -> assertEquals(limited, getData(thirty).get("configuration")),
+            () -> assertEquals(unlimited, getData(none).get("configuration")));
     }
 
     @Test
@@ -347,12 +371,19 @@ class HealthCheckToolTest {
         private final String analysisLevel;
         private final IPathUtils pathUtils;
         private final List<LoadWarning> warnings;
+        private final Integer timeoutSeconds;
 
         LoadedModelService(BuildModel model, String analysisLevel, IPathUtils pathUtils, List<LoadWarning> warnings) {
+            this(model, analysisLevel, pathUtils, warnings, null);
+        }
+
+        LoadedModelService(BuildModel model, String analysisLevel, IPathUtils pathUtils, List<LoadWarning> warnings,
+                           Integer timeoutSeconds) {
             this.model = model;
             this.analysisLevel = analysisLevel;
             this.pathUtils = pathUtils;
             this.warnings = warnings;
+            this.timeoutSeconds = timeoutSeconds;
         }
 
         @Override public BuildModel getBuildModel() { return model; }
@@ -362,8 +393,8 @@ class HealthCheckToolTest {
         @Override public DiskSyncMode getDiskSyncMode() { return DiskSyncMode.STRICT; }
 
         @Override public Path getProjectRoot() { throw unexpected(); }
-        @Override public int getTimeoutSeconds() { throw unexpected(); }
-        @Override public <T> T executeWithTimeout(Callable<T> op, String name) { throw unexpected(); }
+        @Override public Integer getTimeoutSeconds() { return timeoutSeconds; }
+        @Override public Deadline newDeadline() { throw unexpected(); }
         @Override public IJavaProject getJavaProject() { throw unexpected(); }
         @Override public SearchService getSearchService() { throw unexpected(); }
         @Override public ProjectGraphService getProjectGraphService() { throw unexpected(); }

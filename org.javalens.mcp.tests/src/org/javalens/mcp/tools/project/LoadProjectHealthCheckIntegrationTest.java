@@ -334,6 +334,137 @@ class LoadProjectHealthCheckIntegrationTest {
         return mvnCmd;
     }
 
+    // ========== The time limit: load_project and health_check are never limited ==========
+
+    static java.util.stream.Stream<org.junit.jupiter.params.provider.Arguments> timeoutValues() {
+        return java.util.stream.Stream.of(
+            org.junit.jupiter.params.provider.Arguments.of(null, null, null),
+            org.junit.jupiter.params.provider.Arguments.of("30", 30, null),
+            org.junit.jupiter.params.provider.Arguments.of("2", 5,
+                "JAVALENS_TIMEOUT_SECONDS is \"2\", below 5: each tool call is limited to 5 seconds"),
+            org.junit.jupiter.params.provider.Arguments.of("1000", 300,
+                "JAVALENS_TIMEOUT_SECONDS is \"1000\", above 300: each tool call is limited to 300 seconds"),
+            org.junit.jupiter.params.provider.Arguments.of("abc", null,
+                "JAVALENS_TIMEOUT_SECONDS is \"abc\", which is not a whole number of seconds: tool calls have no time limit"));
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest(name = "JAVALENS_TIMEOUT_SECONDS={0}")
+    @org.junit.jupiter.params.provider.MethodSource("timeoutValues")
+    @DisplayName("load_project and health_check answer in full under deadlines that have expired, report the limit each value sets and the warning it raises at both seams, and a tool call is then limited exactly as reported")
+    void timeLimit_reportedInFullByLoadProjectAndHealthCheck(String value, Integer seconds, String warningMessage)
+            throws Exception {
+        List<org.javalens.core.Deadline> started = new ArrayList<>();
+        EnvelopeHarness envelope = new EnvelopeHarness(null, () -> {
+            JdtServiceImpl service = new JdtServiceImpl();
+            service.setTimeoutSetting(org.javalens.core.TimeoutSetting.of(value));
+            service.setDeadlines(limit -> {
+                org.javalens.core.Deadline deadline = org.javalens.core.Deadline.atCheck(limit, 0);
+                started.add(deadline);
+                return deadline;
+            });
+            return service;
+        });
+        Path root = helper.getFixturePath("deadline-calls");
+        ObjectNode loadArgs = envelope.args();
+        loadArgs.put("projectPath", root.toString());
+
+        JsonNode load = envelope.assertEnvelopeFidelity("load_project", loadArgs);
+        JsonNode health = envelope.assertEnvelopeFidelity("health_check", envelope.args());
+        List<org.javalens.core.Deadline> startedByLoadAndHealth = List.copyOf(started);
+        ObjectNode metricsArgs = envelope.args();
+        metricsArgs.put("filePath", root.resolve("src/main/java/com/deadline/Draft.java").toString());
+        JsonNode limited = envelope.assertEnvelopeFidelity("get_complexity_metrics", metricsArgs);
+
+        ObjectNode buildModel = objectMapper.createObjectNode();
+        buildModel.put("buildSystem", "unknown");
+        buildModel.put("source", "convention");
+        buildModel.put("analysisLevel", String.valueOf(Runtime.version().feature()));
+        buildModel.put("moduleCount", 1);
+        buildModel.putArray("modules").addObject().put("id", ".").put("dir", ".");
+        com.fasterxml.jackson.databind.node.ArrayNode warnings = objectMapper.createArrayNode();
+        if (warningMessage != null) {
+            warnings.addObject()
+                .put("code", LoadWarning.TIMEOUT_SECONDS_INVALID)
+                .put("message", warningMessage)
+                .put("remediation", "Set JAVALENS_TIMEOUT_SECONDS to a whole number of seconds from 5 to 300, "
+                    + "or unset it for no limit, then restart JavaLens.");
+        }
+
+        ObjectNode loadData = objectMapper.createObjectNode();
+        loadData.put("loaded", true);
+        loadData.put("projectPath", root.toAbsolutePath().normalize().toString());
+        loadData.put("sourceFileCount", 8);
+        loadData.put("packageCount", 1);
+        loadData.putArray("packages").add("com.deadline");
+        loadData.put("classpathEntryCount", 2);
+        loadData.put("loadedAt", java.time.Instant.parse(load.at("/data/loadedAt").asText()).toString());
+        loadData.set("buildModel", buildModel);
+        if (warningMessage != null) {
+            loadData.set("warnings", warnings);
+        }
+        ObjectNode expectedLoad = objectMapper.createObjectNode().put("success", true);
+        expectedLoad.set("data", loadData);
+
+        ObjectNode project = objectMapper.createObjectNode();
+        project.put("status", "loaded");
+        project.put("loaded", true);
+        project.put("message", "Project loaded successfully");
+        project.set("buildModel", buildModel);
+        if (warningMessage != null) {
+            project.set("warnings", warnings);
+        }
+        ObjectNode configuration = objectMapper.createObjectNode();
+        if (seconds == null) {
+            configuration.putNull("timeoutSeconds");
+        } else {
+            configuration.put("timeoutSeconds", seconds);
+        }
+        configuration.put("absolutePaths", false);
+        ObjectNode healthData = objectMapper.createObjectNode();
+        healthData.put("status", "Ready");
+        healthData.put("message", "JavaLens MCP Server is operational");
+        healthData.put("version", org.javalens.mcp.protocol.McpProtocolHandler.serverVersion());
+        healthData.put("startedAt", java.time.Instant.parse(health.at("/data/startedAt").asText()).toString());
+        String uptime = health.at("/data/uptime").asText();
+        healthData.put("uptime", uptime.matches("\\d+ (seconds|minutes|hours)") ? uptime : "<not an uptime>");
+        healthData.put("diskSync", "strict");
+        healthData.set("project", project);
+        healthData.putObject("java")
+            .put("version", System.getProperty("java.version"))
+            .put("vendor", System.getProperty("java.vendor"));
+        healthData.putObject("os")
+            .put("name", System.getProperty("os.name"))
+            .put("arch", System.getProperty("os.arch"));
+        healthData.putObject("capabilities")
+            .put("findReferences", true).put("findImplementations", true).put("typeHierarchy", true)
+            .put("refactoring", true).put("diagnostics", true);
+        healthData.set("configuration", configuration);
+        healthData.put("toolCount", 75);
+        ObjectNode expectedHealth = objectMapper.createObjectNode().put("success", true);
+        expectedHealth.set("data", healthData);
+
+        ObjectNode timeout = objectMapper.createObjectNode().put("success", false);
+        timeout.putObject("error")
+            .put("code", "TIMEOUT")
+            .put("message", "Operation 'get_complexity_metrics' timed out after " + seconds + " seconds")
+            .put("hint", "Narrow the request, or raise JAVALENS_TIMEOUT_SECONDS (5 to 300 seconds; "
+                + "unset means no limit) and restart JavaLens");
+
+        assertAll(
+            () -> assertEquals(expectedLoad, load, "load_project"),
+            () -> assertEquals(expectedHealth, health, "health_check"),
+            () -> assertEquals(List.of(), startedByLoadAndHealth, "load_project and health_check start no deadline"),
+            () -> assertEquals(seconds == null ? 0 : 2, started.size(),
+                "a tool call starts a deadline at each seam exactly when a limit is set"),
+            () -> {
+                if (seconds == null) {
+                    assertEquals(true, limited.at("/success").asBoolean(), () -> "unlimited: " + limited);
+                } else {
+                    assertEquals(timeout, limited, "limited");
+                }
+            });
+    }
+
     private static List<String> warningCodes(JsonNode warnings) {
         List<String> codes = new ArrayList<>();
         warnings.forEach(warning -> codes.add(warning.path("code").asText()));

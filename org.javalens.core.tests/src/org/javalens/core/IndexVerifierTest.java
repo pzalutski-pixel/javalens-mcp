@@ -347,6 +347,35 @@ class IndexVerifierTest {
     }
 
     @Test
+    @DisplayName("TIMEOUT_SECONDS_INVALID comes after the model's warnings and before INDEX_INCOMPLETE and EARLIER_PROJECT_KEPT")
+    void timeoutSecondsInvalid_afterModelWarningsBeforeIndexIncomplete() throws Exception {
+        Path root = helper.getFixturePath(FIXTURE);
+        JdtServiceImpl earlier = new JdtServiceImpl();
+        earlier.loadProject(root);
+        String earlierName = earlier.getJavaProject().getElementName();
+        JdtServiceImpl reload = new JdtServiceImpl(
+            new GapInducingImporter(Map.of("Posting.java", GapShape.REMOVED), MODEL_WARNING),
+            refusingToRemove(earlierName));
+        reload.setIndexRepairEnabled(false);
+        reload.setTimeoutSetting(TimeoutSetting.of("1000"));
+
+        reload.loadProject(root);
+
+        assertEquals(List.of(
+                MODEL_WARNING,
+                new LoadWarning(LoadWarning.TIMEOUT_SECONDS_INVALID,
+                    "JAVALENS_TIMEOUT_SECONDS is \"1000\", above 300: each tool call is limited to 300 seconds",
+                    "Set JAVALENS_TIMEOUT_SECONDS to a whole number of seconds from 5 to 300, or unset it for no "
+                        + "limit, then restart JavaLens."),
+                indexIncompleteForPosting(),
+                new LoadWarning(LoadWarning.EARLIER_PROJECT_KEPT,
+                    "The earlier JavaLens project " + earlierName + " could not be removed: " + REMOVAL_FAILURE
+                        + "; it stays in the workspace until the next load removes it",
+                    RELOAD_OR_RESTART)),
+            reload.getWarnings());
+    }
+
+    @Test
     @DisplayName("a disk-sync repair of another file keeps a surviving gap; once the gap's file is re-read and found complete, INDEX_INCOMPLETE and the listed file are gone")
     void survivingGap_followsTheLatestVerification() throws Exception {
         Path root = helper.copyFixture(FIXTURE);

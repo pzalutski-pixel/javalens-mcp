@@ -62,6 +62,7 @@ class LoadWarningTest {
         assertEquals("COMPILED_OUTPUT_INCLUDED", LoadWarning.COMPILED_OUTPUT_INCLUDED);
         assertEquals("INCLUDED_OUTSIDE_BUILD", LoadWarning.INCLUDED_OUTSIDE_BUILD);
         assertEquals("COMPLIANCE_LEVEL_MIXED", LoadWarning.COMPLIANCE_LEVEL_MIXED);
+        assertEquals("TIMEOUT_SECONDS_INVALID", LoadWarning.TIMEOUT_SECONDS_INVALID);
     }
 
     @Test
@@ -88,7 +89,7 @@ class LoadWarningTest {
                 "BAZEL_NOT_BUILT", "COMPLIANCE_LEVEL_UNKNOWN", "COMPLIANCE_LEVEL_UNSUPPORTED",
                 "APT_PROCESSOR_JARS_MISSING", "JRE_REGISTRATION_FAILED",
                 "MODULE_NOT_LOADED", "MODULE_LAYOUT_ASSUMED", "COMPILED_OUTPUT_INCLUDED",
-                "INCLUDED_OUTSIDE_BUILD", "COMPLIANCE_LEVEL_MIXED", "INDEX_INCOMPLETE", "LIBRARY_INDEX_INCOMPLETE",
+                "INCLUDED_OUTSIDE_BUILD", "COMPLIANCE_LEVEL_MIXED", "TIMEOUT_SECONDS_INVALID", "INDEX_INCOMPLETE", "LIBRARY_INDEX_INCOMPLETE",
                 "EARLIER_PROJECT_KEPT")) {
             expected.put(code, code);
         }
@@ -111,7 +112,8 @@ class LoadWarningTest {
             LoadWarning.MODULE_LAYOUT_ASSUMED,
             LoadWarning.COMPILED_OUTPUT_INCLUDED,
             LoadWarning.INCLUDED_OUTSIDE_BUILD,
-            LoadWarning.COMPLIANCE_LEVEL_MIXED
+            LoadWarning.COMPLIANCE_LEVEL_MIXED,
+            LoadWarning.TIMEOUT_SECONDS_INVALID
         };
         for (int i = 0; i < codes.length; i++) {
             for (int j = i + 1; j < codes.length; j++) {

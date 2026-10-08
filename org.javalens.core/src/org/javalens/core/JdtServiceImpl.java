@@ -46,15 +46,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.function.BooleanSupplier;
 import java.util.function.Function;
+import java.util.function.IntFunction;
 import java.util.stream.Stream;
 
 /**
@@ -67,7 +61,10 @@ public class JdtServiceImpl implements IJdtService {
 
     private final WorkspaceManager workspaceManager;
     private final ProjectImporter projectImporter;
-    private final int timeoutSeconds;
+    /** The time limit on each tool call, from JAVALENS_TIMEOUT_SECONDS. */
+    private TimeoutSetting timeoutSetting;
+    /** Starts the deadline of a tool call from the limit in seconds. */
+    private IntFunction<Deadline> deadlines = Deadline::of;
 
     private Path projectRoot;
     private IPathUtils pathUtils;
@@ -125,7 +122,7 @@ public class JdtServiceImpl implements IJdtService {
     public JdtServiceImpl(ProjectImporter projectImporter, WorkspaceManager workspaceManager) {
         this.workspaceManager = workspaceManager;
         this.projectImporter = projectImporter;
-        this.timeoutSeconds = parseTimeout();
+        this.timeoutSetting = TimeoutSetting.fromEnvironment();
         this.diskSyncMode = DiskSyncMode.fromEnvironment(System.getenv("JAVALENS_DISK_SYNC"));
     }
 
@@ -155,15 +152,20 @@ public class JdtServiceImpl implements IJdtService {
         this.indexVerifiers = indexVerifiers;
     }
 
-    private static int parseTimeout() {
-        String timeout = System.getenv("JAVALENS_TIMEOUT_SECONDS");
-        if (timeout == null) return 30;
-        try {
-            int seconds = Integer.parseInt(timeout);
-            return Math.max(5, Math.min(seconds, 300));
-        } catch (NumberFormatException e) {
-            return 30;
-        }
+    /**
+     * Test/config seam; production reads JAVALENS_TIMEOUT_SECONDS at construction. The setting's
+     * warning is among {@link #getWarnings()} from then on.
+     */
+    public void setTimeoutSetting(TimeoutSetting setting) {
+        this.timeoutSetting = setting;
+    }
+
+    /**
+     * Test seam: each tool call's deadline is {@code deadlines} applied to the configured limit,
+     * so a test can expire a call at a chosen cancellation check. Unused while no limit is set.
+     */
+    public void setDeadlines(IntFunction<Deadline> deadlines) {
+        this.deadlines = deadlines;
     }
 
     /** Loads run one at a time across every instance, so no two loads change the workspace at once. */
@@ -609,13 +611,17 @@ public class JdtServiceImpl implements IJdtService {
     }
 
     /**
-     * The model's warnings, then INDEX_INCOMPLETE while the index is verified to miss files'
+     * The model's warnings, then TIMEOUT_SECONDS_INVALID when JAVALENS_TIMEOUT_SECONDS holds a
+     * value not used as given, then INDEX_INCOMPLETE while the index is verified to miss files'
      * declarations, then LIBRARY_INDEX_INCOMPLETE when the load could not build a library's
      * index, then EARLIER_PROJECT_KEPT for each earlier project the load kept.
      */
     @Override
     public List<LoadWarning> getWarnings() {
         List<LoadWarning> warnings = new ArrayList<>(modelWarnings);
+        if (timeoutSetting.warning() != null) {
+            warnings.add(timeoutSetting.warning());
+        }
         List<String> indexIncompleteFiles = getIndexIncompleteFiles();
         if (!indexIncompleteFiles.isEmpty()) {
             warnings.add(indexIncomplete(indexIncompleteFiles));
@@ -671,44 +677,14 @@ public class JdtServiceImpl implements IJdtService {
     }
 
     @Override
-    public int getTimeoutSeconds() {
-        return timeoutSeconds;
+    public Integer getTimeoutSeconds() {
+        return timeoutSetting.seconds();
     }
 
     @Override
-    public <T> T executeWithTimeout(Callable<T> operation, String operationName) {
-        return executeWithTimeout(operation, operationName, timeoutSeconds);
-    }
-
-    /**
-     * Test-friendly overload: lets unit tests pass a short timeout so the
-     * TimeoutException branch can be exercised without sleeping for 30+
-     * seconds. Production calls go through the {@link #executeWithTimeout(Callable, String)}
-     * variant which uses the configured timeout.
-     */
-    <T> T executeWithTimeout(Callable<T> operation, String operationName, int timeoutSec) {
-        ExecutorService executor = Executors.newSingleThreadExecutor();
-        Future<T> future = executor.submit(operation);
-
-        try {
-            return future.get(timeoutSec, TimeUnit.SECONDS);
-        } catch (TimeoutException e) {
-            future.cancel(true);
-            throw new RuntimeException(
-                operationName + " timed out after " + timeoutSec + " seconds"
-            );
-        } catch (ExecutionException e) {
-            Throwable cause = e.getCause();
-            if (cause instanceof RuntimeException re) {
-                throw re;
-            }
-            throw new RuntimeException(operationName + " failed: " + cause.getMessage(), cause);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new RuntimeException(operationName + " was interrupted");
-        } finally {
-            executor.shutdownNow();
-        }
+    public Deadline newDeadline() {
+        Integer seconds = timeoutSetting.seconds();
+        return seconds == null ? null : deadlines.apply(seconds);
     }
 
     // Getters for project info (used by LoadProjectTool response)

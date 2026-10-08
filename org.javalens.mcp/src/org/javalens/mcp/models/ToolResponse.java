@@ -174,6 +174,14 @@ public class ToolResponse {
     }
 
     /**
+     * The tool call named {@code operation} passed its time limit of {@code seconds}; whatever
+     * it had computed is discarded.
+     */
+    public static ToolResponse timeout(String operation, int seconds) {
+        return error(ErrorInfo.timeout(operation, seconds));
+    }
+
+    /**
      * Create an internal error response.
      */
     public static ToolResponse internalError(String message) {

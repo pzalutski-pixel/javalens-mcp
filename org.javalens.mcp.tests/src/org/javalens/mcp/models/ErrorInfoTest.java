@@ -91,13 +91,14 @@ class ErrorInfoTest {
     }
 
     @Test
-    @DisplayName("timeout should include operation and duration")
+    @DisplayName("timeout names the operation and its limit, and its hint names JAVALENS_TIMEOUT_SECONDS and its range")
     void timeout_includesOperationAndDuration() {
-        ErrorInfo error = ErrorInfo.timeout("search", 30);
+        ErrorInfo error = ErrorInfo.timeout("find_references", 30);
 
         assertEquals(ErrorInfo.TIMEOUT, error.getCode());
-        assertTrue(error.getMessage().contains("search"));
-        assertTrue(error.getMessage().contains("30"));
+        assertEquals("Operation 'find_references' timed out after 30 seconds", error.getMessage());
+        assertEquals("Narrow the request, or raise JAVALENS_TIMEOUT_SECONDS (5 to 300 seconds; unset means no limit) "
+            + "and restart JavaLens", error.getHint());
     }
 
     @Test

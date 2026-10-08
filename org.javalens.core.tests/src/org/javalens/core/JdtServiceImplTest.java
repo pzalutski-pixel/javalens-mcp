@@ -6,6 +6,7 @@ import org.eclipse.jdt.core.IJavaProject;
 import org.eclipse.jdt.core.IMethod;
 import org.eclipse.jdt.core.IType;
 import org.javalens.core.fixtures.TestProjectHelper;
+import org.javalens.core.project.model.LoadWarning;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -388,68 +389,61 @@ class JdtServiceImplTest {
             "Context line must already be trimmed");
     }
 
-    // ========== executeWithTimeout ==========
+    // ========== Time limit ==========
 
     @Test
-    @DisplayName("executeWithTimeout returns operation result on the happy path")
-    void executeWithTimeout_happyPath() {
-        Integer result = service.executeWithTimeout(() -> 42, "fast op");
-        assertEquals(42, result,
-            "executeWithTimeout must return the Callable's value when it completes in time");
+    @DisplayName("with JAVALENS_TIMEOUT_SECONDS unset, as the build leaves it, no call is limited: no limit, no deadline, no warning")
+    void timeLimit_unset_noLimit() {
+        service.setDeadlines(seconds -> Deadline.atCheck(seconds, 0));
+        assertAll(
+            () -> assertNull(service.getTimeoutSeconds()),
+            () -> assertNull(service.newDeadline(), "no deadline, whatever deadlines would be made"),
+            () -> assertEquals(List.of(), service.getWarnings()));
     }
 
     @Test
-    @DisplayName("executeWithTimeout propagates RuntimeException thrown by the Callable")
-    void executeWithTimeout_propagatesRuntimeException() {
-        // Source's ExecutionException branch: if the cause is RuntimeException, rethrow it
-        // (not wrap it). Pin this so the API contract doesn't silently change to wrap-all.
-        RuntimeException expected = new IllegalStateException("boom");
-        RuntimeException thrown = assertThrows(IllegalStateException.class,
-            () -> service.executeWithTimeout(() -> { throw expected; }, "throwing op"));
-        assertSame(expected, thrown,
-            "executeWithTimeout must re-throw the original RuntimeException, not wrap it");
+    @DisplayName("a limit of 30 starts each call's deadline at 30 seconds, through the deadlines seam when one is set")
+    void timeLimit_set_startsDeadlines() {
+        service.setTimeoutSetting(TimeoutSetting.of("30"));
+        Deadline clockDeadline = service.newDeadline();
+        service.setDeadlines(seconds -> Deadline.atCheck(seconds, 0));
+        Deadline seamDeadline = service.newDeadline();
+        assertAll(
+            () -> assertEquals(30, service.getTimeoutSeconds()),
+            () -> assertEquals(30, clockDeadline.seconds()),
+            () -> assertNotSame(clockDeadline, service.newDeadline(), "each call starts its own deadline"),
+            () -> assertEquals(30, seamDeadline.seconds()),
+            () -> assertTrue(seamDeadline.expired(), "the seam's deadline"),
+            () -> assertEquals(List.of(), service.getWarnings()));
     }
 
     @Test
-    @DisplayName("executeWithTimeout wraps a checked exception in RuntimeException with op name")
-    void executeWithTimeout_wrapsCheckedException() {
-        // Source's ExecutionException branch: non-RuntimeException causes get wrapped in
-        // a RuntimeException whose message includes the operationName.
-        RuntimeException thrown = assertThrows(RuntimeException.class,
-            () -> service.executeWithTimeout(
-                () -> { throw new java.io.IOException("disk error"); },
-                "io-op"));
-        assertTrue(thrown.getMessage().contains("io-op"),
-            "Wrapped exception message must include the operationName; got: "
-                + thrown.getMessage());
-        assertNotNull(thrown.getCause(),
-            "Wrapped exception must preserve the original cause");
+    @DisplayName("a value that is not a whole number sets no limit and raises exactly TIMEOUT_SECONDS_INVALID; a clamped one limits calls and raises it")
+    void timeLimit_invalidValues_warn() {
+        service.setDeadlines(seconds -> Deadline.atCheck(seconds, 0));
+        service.setTimeoutSetting(TimeoutSetting.of("abc"));
+        Integer notANumberLimit = service.getTimeoutSeconds();
+        Deadline notANumberDeadline = service.newDeadline();
+        List<LoadWarning> notANumberWarnings = service.getWarnings();
+        service.setTimeoutSetting(TimeoutSetting.of("2"));
+        assertAll(
+            () -> assertNull(notANumberLimit),
+            () -> assertNull(notANumberDeadline),
+            () -> assertEquals(List.of(new LoadWarning(LoadWarning.TIMEOUT_SECONDS_INVALID,
+                    "JAVALENS_TIMEOUT_SECONDS is \"abc\", which is not a whole number of seconds: tool calls have no time limit",
+                    TIMEOUT_REMEDIATION)),
+                notANumberWarnings),
+            () -> assertEquals(5, service.getTimeoutSeconds()),
+            () -> assertEquals(5, service.newDeadline().seconds()),
+            () -> assertEquals(List.of(new LoadWarning(LoadWarning.TIMEOUT_SECONDS_INVALID,
+                    "JAVALENS_TIMEOUT_SECONDS is \"2\", below 5: each tool call is limited to 5 seconds",
+                    TIMEOUT_REMEDIATION)),
+                service.getWarnings()));
     }
 
-    @Test
-    @DisplayName("getTimeoutSeconds returns the configured timeout (positive)")
-    void getTimeoutSeconds_returnsPositive() {
-        int timeout = service.getTimeoutSeconds();
-        assertTrue(timeout > 0,
-            "Timeout must be a positive number of seconds; got: " + timeout);
-    }
-
-    @Test
-    @DisplayName("executeWithTimeout raises a 'timed out' RuntimeException when the Callable exceeds the cap")
-    void executeWithTimeout_timeoutPath() {
-        // Use the package-private overload to pass a 1-second timeout against a Callable
-        // that sleeps 5 seconds. This exercises the TimeoutException branch which is not
-        // reachable through the public single-overload because the constructor-time
-        // timeoutSeconds is clamped to >= 5.
-        RuntimeException thrown = assertThrows(RuntimeException.class,
-            () -> service.executeWithTimeout(
-                () -> { Thread.sleep(5000); return "never"; },
-                "sleep-op", 1));
-        assertTrue(thrown.getMessage().contains("sleep-op"),
-            "Timeout exception must mention the operationName; got: " + thrown.getMessage());
-        assertTrue(thrown.getMessage().contains("timed out"),
-            "Timeout exception message must say 'timed out'; got: " + thrown.getMessage());
-    }
+    private static final String TIMEOUT_REMEDIATION =
+        "Set JAVALENS_TIMEOUT_SECONDS to a whole number of seconds from 5 to 300, or unset it for no limit, "
+            + "then restart JavaLens.";
 
     // ========== Defensive null-javaProject guards (pre-loadProject state) ==========
 

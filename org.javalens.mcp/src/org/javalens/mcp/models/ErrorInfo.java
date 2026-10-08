@@ -113,7 +113,8 @@ public class ErrorInfo {
         return new ErrorInfo(
             TIMEOUT,
             String.format("Operation '%s' timed out after %d seconds", operation, seconds),
-            "Try reducing the scope of the operation or increase timeout"
+            "Narrow the request, or raise JAVALENS_TIMEOUT_SECONDS (5 to 300 seconds; unset means no limit) "
+                + "and restart JavaLens"
         );
     }
 

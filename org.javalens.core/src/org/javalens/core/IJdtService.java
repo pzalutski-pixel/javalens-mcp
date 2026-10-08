@@ -13,7 +13,6 @@ import org.javalens.core.sync.DiskSyncMode;
 
 import java.nio.file.Path;
 import java.util.List;
-import java.util.concurrent.Callable;
 
 /**
  * Service interface for JDT operations.
@@ -39,23 +38,19 @@ public interface IJdtService {
     Path getProjectRoot();
 
     /**
-     * Get the configured timeout in seconds.
+     * Get the time limit on each tool call, as {@link TimeoutSetting} reads it from
+     * {@code JAVALENS_TIMEOUT_SECONDS}.
      *
-     * @return Timeout value (default 30, range 5-300)
+     * @return the limit in seconds, from 5 to 300; null when no limit is set
      */
-    int getTimeoutSeconds();
+    Integer getTimeoutSeconds();
 
     /**
-     * Execute an operation with timeout protection.
-     * Prevents long-running operations from blocking the server.
+     * Start the deadline of one tool call: the configured limit from now.
      *
-     * @param operation The operation to execute
-     * @param operationName Name for error messages
-     * @param <T> Return type
-     * @return The operation result
-     * @throws RuntimeException if timeout, interrupted, or operation fails
+     * @return the deadline, or null when no limit is set
      */
-    <T> T executeWithTimeout(Callable<T> operation, String operationName);
+    Deadline newDeadline();
 
     /**
      * Get the search service for indexed queries.

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.eclipse.core.runtime.IPath;
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.search.SearchMatch;
+import org.javalens.core.Deadline;
 import org.javalens.core.IJdtService;
 import org.javalens.core.exceptions.ProjectNotLoadedException;
 import org.javalens.mcp.JavaLensApplication;
@@ -82,6 +83,9 @@ public abstract class AbstractTool implements Tool {
      *   <li>No project loaded - returns standard "project not loaded" error</li>
      * </ul>
      *
+     * <p>When {@code JAVALENS_TIMEOUT_SECONDS} sets a time limit, a call that passes it answers
+     * exactly TIMEOUT ({@link #executeWithinDeadline}); unset, no call is limited.
+     *
      * <p>With a project loaded, every response carries {@code meta.indexIncomplete} naming the
      * files whose declarations the search index is verified to be missing, for as long as it
      * misses them, and {@code meta.libraryIndexIncomplete} naming the libraries whose index the
@@ -128,7 +132,32 @@ public abstract class AbstractTool implements Tool {
             return ToolResponse.verificationFailed(e.getMessage());
         }
 
-        return executeWithService(service, arguments);
+        return executeWithinDeadline(service, arguments);
+    }
+
+    /**
+     * Run executeWithService within the call's deadline when a time limit is set. The deadline
+     * starts after the disk sync, so only the tool's own work counts against it, and JDT stops
+     * that work at its first cancellation check past the limit. A deadline that has expired
+     * discards whatever the call answered, partial or failed, and the call answers TIMEOUT.
+     * A tool called from within another tool's call runs within the outer call's deadline,
+     * which the outer call enforces.
+     */
+    private ToolResponse executeWithinDeadline(IJdtService service, JsonNode arguments) {
+        Deadline deadline = Deadline.current() == null ? service.newDeadline() : null;
+        if (deadline == null) {
+            return executeWithService(service, arguments);
+        }
+        ToolResponse response;
+        try {
+            response = deadline.within(() -> executeWithService(service, arguments));
+        } catch (RuntimeException e) {
+            if (!deadline.expired()) {
+                throw e;
+            }
+            response = null;
+        }
+        return deadline.expired() ? ToolResponse.timeout(getName(), deadline.seconds()) : response;
     }
 
     /**

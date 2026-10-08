@@ -35,6 +35,9 @@ package org.javalens.core.project.model;
  *       build does not report it as a source root.</li>
  *   <li>{@code COMPLIANCE_LEVEL_MIXED}: modules declare different Java levels; the project
  *       is analyzed at the highest.</li>
+ *   <li>{@code TIMEOUT_SECONDS_INVALID}: {@code JAVALENS_TIMEOUT_SECONDS} is not a whole number
+ *       of seconds from 5 to 300; a whole number outside the range is clamped into it, and any
+ *       other value sets no time limit.</li>
  *   <li>{@code INDEX_INCOMPLETE}: the search index is missing declarations of source files
  *       even after re-indexing them; search-based results do not include those files.</li>
  *   <li>{@code LIBRARY_INDEX_INCOMPLETE}: the search index of a library on the classpath
@@ -151,6 +154,17 @@ public record LoadWarning(String code, String message, String remediation, Strin
      * {@code module} is null.
      */
     public static final String COMPLIANCE_LEVEL_MIXED = "COMPLIANCE_LEVEL_MIXED";
+
+    /**
+     * The {@code JAVALENS_TIMEOUT_SECONDS} environment variable is set to a value that is not a
+     * whole number of seconds from 5 to 300. A whole number below 5 limits each tool call to 5
+     * seconds and one above 300 to 300 seconds; any other value sets no time limit, as an unset
+     * variable does. The message quotes the value given and states its effect. The variable is
+     * read when the server creates the service a project loads into, so a change takes effect on
+     * restart. It comes after the model's warnings and before {@link #INDEX_INCOMPLETE};
+     * {@code module} is null.
+     */
+    public static final String TIMEOUT_SECONDS_INVALID = "TIMEOUT_SECONDS_INVALID";
 
     /**
      * The search index is missing declarations of loaded source files: a file's document in

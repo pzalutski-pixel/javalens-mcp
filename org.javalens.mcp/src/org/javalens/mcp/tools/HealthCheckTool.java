@@ -59,6 +59,7 @@ public class HealthCheckTool implements Tool {
 
             USAGE: Call on startup to verify server is operational.
             OUTPUT: Server status, project info if loaded (a loaded project reports its buildModel summary and any load warnings, as load_project does), capabilities.
+            configuration.timeoutSeconds is the time limit on each tool call that JAVALENS_TIMEOUT_SECONDS sets (5 to 300), or null when no limit is set; a call past the limit answers TIMEOUT. load_project and health_check are never limited.
 
             WORKFLOW:
             1. Call health_check to verify server is running
@@ -146,11 +147,14 @@ public class HealthCheckTool implements Tool {
             "diagnostics", true
         ));
 
-        // Configuration
-        status.put("configuration", Map.of(
-            "timeoutSeconds", getTimeoutSeconds(),
-            "absolutePaths", useAbsolutePaths()
-        ));
+        // Configuration: the loaded service's time limit, else the one the environment sets; null
+        // when no limit is set.
+        Map<String, Object> configuration = new LinkedHashMap<>();
+        configuration.put("timeoutSeconds", service != null
+            ? service.getTimeoutSeconds()
+            : org.javalens.core.TimeoutSetting.fromEnvironment().seconds());
+        configuration.put("absolutePaths", useAbsolutePaths());
+        status.put("configuration", configuration);
 
         // Tool count
         status.put("toolCount", toolCountSupplier.get());
@@ -166,19 +170,6 @@ public class HealthCheckTool implements Tool {
             return (seconds / 60) + " minutes";
         } else {
             return (seconds / 3600) + " hours";
-        }
-    }
-
-    private int getTimeoutSeconds() {
-        String timeout = System.getenv("JAVALENS_TIMEOUT_SECONDS");
-        if (timeout == null) {
-            return 30;
-        }
-        try {
-            int value = Integer.parseInt(timeout);
-            return Math.min(Math.max(value, 5), 300);  // Clamp 5-300
-        } catch (NumberFormatException e) {
-            return 30;
         }
     }
 

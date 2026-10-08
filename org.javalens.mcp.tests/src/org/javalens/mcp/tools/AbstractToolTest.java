@@ -404,13 +404,188 @@ class AbstractToolTest {
             () -> barebones.execute(objectMapper.createObjectNode()));
     }
 
+    // ========== Time limit ==========
+
+    /** A tool named {@code name} whose work is {@code work}. */
+    private static AbstractTool workTool(String name, Supplier<IJdtService> service,
+                                         java.util.function.Function<IJdtService, ToolResponse> work) {
+        return new AbstractTool(service) {
+            @Override public String getName() { return name; }
+            @Override public String getDescription() { return ""; }
+            @Override public Map<String, Object> getInputSchema() { return Map.of(); }
+            @Override
+            protected ToolResponse executeWithService(IJdtService s, JsonNode arguments) {
+                return work.apply(s);
+            }
+        };
+    }
+
+    private static ToolResponse timeoutOf(String tool, int seconds) {
+        return ToolResponse.error(ErrorInfo.TIMEOUT, "Operation '" + tool + "' timed out after " + seconds + " seconds",
+            "Narrow the request, or raise JAVALENS_TIMEOUT_SECONDS (5 to 300 seconds; unset means no limit) "
+                + "and restart JavaLens");
+    }
+
+    private JsonNode tree(ToolResponse response) {
+        return objectMapper.valueToTree(response);
+    }
+
+    @Test
+    @DisplayName("a call whose deadline has expired answers exactly TIMEOUT naming the tool and the limit, discarding the answer its work returned")
+    void deadlineExpired_successDiscarded_exactlyTimeout() {
+        DeadlineService service = new DeadlineService(() -> org.javalens.core.Deadline.atCheck(30, 0));
+        AbstractTool tool = workTool("probe", () -> service, s -> ToolResponse.success(Map.of("partial", true)));
+
+        assertEquals(tree(timeoutOf("probe", 30)), tree(tool.execute(objectMapper.createObjectNode())));
+    }
+
+    @Test
+    @DisplayName("work cancelled through the monitor at its first check answers exactly TIMEOUT, whether it throws the cancellation or turns it into an error")
+    void deadlineExpiredAtCheck_cancelledWork_exactlyTimeout() {
+        DeadlineService service = new DeadlineService(() -> org.javalens.core.Deadline.atCheck(7, 1));
+        AbstractTool throwing = workTool("thrower", () -> service, s -> {
+            if (org.javalens.core.Deadline.monitor().isCanceled()) {
+                throw new org.eclipse.core.runtime.OperationCanceledException();
+            }
+            return ToolResponse.success(Map.of());
+        });
+        AbstractTool swallowing = workTool("swallower", () -> service, s ->
+            org.javalens.core.Deadline.monitor().isCanceled()
+                ? ToolResponse.internalError("cancelled") : ToolResponse.success(Map.of()));
+
+        assertAll(
+            () -> assertEquals(tree(timeoutOf("thrower", 7)), tree(throwing.execute(objectMapper.createObjectNode()))),
+            () -> assertEquals(tree(timeoutOf("swallower", 7)), tree(swallowing.execute(objectMapper.createObjectNode()))));
+    }
+
+    @Test
+    @DisplayName("an exception the work throws before its deadline expires propagates as it is")
+    void deadlineNotExpired_exceptionPropagates() {
+        DeadlineService service = new DeadlineService(() -> org.javalens.core.Deadline.atCheck(30, Long.MAX_VALUE));
+        IllegalStateException failure = new IllegalStateException("work failed");
+        AbstractTool tool = workTool("failing", () -> service, s -> {
+            org.javalens.core.Deadline.monitor().isCanceled();
+            throw failure;
+        });
+
+        IllegalStateException thrown = assertThrows(IllegalStateException.class,
+            () -> tool.execute(objectMapper.createObjectNode()));
+        assertEquals(failure, thrown);
+    }
+
+    @Test
+    @DisplayName("a deadline that does not expire leaves the work's answer, is current during the work only, and not during the disk sync before it")
+    void deadlineNotExpired_answerKept_currentDuringWorkOnly() {
+        org.javalens.core.Deadline deadline = org.javalens.core.Deadline.atCheck(30, Long.MAX_VALUE);
+        DeadlineService service = new DeadlineService(() -> deadline);
+        List<org.javalens.core.Deadline> duringWork = new java.util.ArrayList<>();
+        AbstractTool tool = workTool("kept", () -> service, s -> {
+            duringWork.add(org.javalens.core.Deadline.current());
+            return ToolResponse.success(Map.of("whole", true));
+        });
+
+        ToolResponse response = tool.execute(objectMapper.createObjectNode());
+
+        assertAll(
+            () -> assertEquals(tree(ToolResponse.success(Map.of("whole", true))), tree(response)),
+            () -> assertEquals(1, duringWork.size()),
+            () -> assertEquals(deadline, duringWork.get(0)),
+            () -> assertEquals(java.util.Collections.singletonList(null), service.currentDuringEnsureFresh,
+                "the disk sync runs within no deadline"),
+            () -> assertNull(org.javalens.core.Deadline.current(), "no deadline after the call"));
+    }
+
+    @Test
+    @DisplayName("with no limit set the work runs within no deadline and its answer is kept")
+    void noLimit_workRunsWithinNoDeadline() {
+        DeadlineService service = new DeadlineService(() -> null);
+        List<org.javalens.core.Deadline> duringWork = new java.util.ArrayList<>();
+        AbstractTool tool = workTool("unlimited", () -> service, s -> {
+            duringWork.add(org.javalens.core.Deadline.current());
+            return ToolResponse.success(Map.of("whole", true));
+        });
+
+        ToolResponse response = tool.execute(objectMapper.createObjectNode());
+
+        assertAll(
+            () -> assertEquals(tree(ToolResponse.success(Map.of("whole", true))), tree(response)),
+            () -> assertEquals(java.util.Collections.singletonList(null), duringWork));
+    }
+
+    @Test
+    @DisplayName("a tool called within another tool's call runs within the outer deadline and starts none of its own; the outer call answers TIMEOUT naming itself")
+    void nestedCall_runsWithinOuterDeadline() {
+        List<org.javalens.core.Deadline> startedDeadlines = new java.util.ArrayList<>();
+        DeadlineService service = new DeadlineService(() -> {
+            org.javalens.core.Deadline deadline = org.javalens.core.Deadline.atCheck(30, 1);
+            startedDeadlines.add(deadline);
+            return deadline;
+        });
+        List<org.javalens.core.Deadline> innerSaw = new java.util.ArrayList<>();
+        AbstractTool inner = workTool("inner", () -> service, s -> {
+            innerSaw.add(org.javalens.core.Deadline.current());
+            return org.javalens.core.Deadline.monitor().isCanceled()
+                ? ToolResponse.internalError("cancelled") : ToolResponse.success(Map.of());
+        });
+        AbstractTool outer = workTool("outer", () -> service, s -> inner.execute(objectMapper.createObjectNode()));
+
+        ToolResponse response = outer.execute(objectMapper.createObjectNode());
+
+        assertAll(
+            () -> assertEquals(tree(timeoutOf("outer", 30)), tree(response)),
+            () -> assertEquals(1, startedDeadlines.size(), "only the outer call starts a deadline"),
+            () -> assertEquals(startedDeadlines, innerSaw));
+    }
+
+    @Test
+    @DisplayName("a TIMEOUT answer carries meta.indexIncomplete as every answer of a loaded project does")
+    void timeout_carriesIndexIncomplete() {
+        DeadlineService service = new DeadlineService(() -> org.javalens.core.Deadline.atCheck(30, 0));
+        service.indexIncompleteFiles = List.of("src/A.java");
+        AbstractTool tool = workTool("probe", () -> service, s -> ToolResponse.success(Map.of()));
+
+        ToolResponse response = tool.execute(objectMapper.createObjectNode());
+
+        assertEquals(tree(timeoutOf("probe", 30).withIndexIncomplete(List.of("src/A.java"))), tree(response));
+    }
+
+    /**
+     * A service whose calls get their deadlines from {@code deadlines} and that records the
+     * deadline current while it verifies disk.
+     */
+    private static final class DeadlineService extends MinimalFakeService {
+        private final Supplier<org.javalens.core.Deadline> deadlines;
+        final List<org.javalens.core.Deadline> currentDuringEnsureFresh = new java.util.ArrayList<>();
+        List<String> indexIncompleteFiles = List.of();
+
+        DeadlineService(Supplier<org.javalens.core.Deadline> deadlines) {
+            this.deadlines = deadlines;
+        }
+
+        @Override
+        public org.javalens.core.Deadline newDeadline() {
+            return deadlines.get();
+        }
+
+        @Override
+        public List<java.nio.file.Path> ensureFresh() {
+            currentDuringEnsureFresh.add(org.javalens.core.Deadline.current());
+            return List.of();
+        }
+
+        @Override
+        public List<String> getIndexIncompleteFiles() {
+            return indexIncompleteFiles;
+        }
+    }
+
     /** Bare minimal IJdtService — no logic, just non-null for tests that care only about that. */
     private static class MinimalFakeService implements IJdtService {
         @Override public org.javalens.core.IPathUtils getPathUtils() { return null; }
         @Override public List<org.javalens.core.project.model.LoadWarning> getWarnings() { return List.of(); }
         @Override public java.nio.file.Path getProjectRoot() { return null; }
-        @Override public int getTimeoutSeconds() { return 30; }
-        @Override public <T> T executeWithTimeout(java.util.concurrent.Callable<T> op, String name) { return null; }
+        @Override public Integer getTimeoutSeconds() { return null; }
+        @Override public org.javalens.core.Deadline newDeadline() { return null; }
         @Override public org.eclipse.jdt.core.IJavaProject getJavaProject() { return null; }
         @Override public org.javalens.core.search.SearchService getSearchService() { return null; }
         @Override public org.javalens.core.graph.ProjectGraphService getProjectGraphService() { return null; }
