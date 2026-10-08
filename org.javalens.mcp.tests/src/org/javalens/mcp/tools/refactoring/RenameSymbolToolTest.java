@@ -181,8 +181,8 @@ class RenameSymbolToolTest {
     }
 
     @Test
-    @DisplayName("Rename type sets symbolKind from the type's kind and emits the file-rename note")
-    void renameClass_emitsFileRenameNote() {
+    @DisplayName("Renaming a type whose file is named after it sets symbolKind from the type's kind and renames the file in renamedFiles")
+    void renameClass_renamesItsFile() {
         // Marker (declared on line 11, `public @interface Marker`) is applied as @Marker in seven
         // positions of AnnotationUsages and referenced nowhere else.
         String marker = "src/main/java/com/example/Marker.java";
@@ -192,7 +192,7 @@ class RenameSymbolToolTest {
                 marker, List.of(edit(11, 18)),
                 usages, List.of(edit(35, 17), edit(31, 9), edit(30, 33), edit(16, 5), edit(12, 5), edit(9, 5),
                     edit(6, 1))),
-            "Renaming a type may require renaming the file as well"));
+            List.of(Map.of("filePath", marker, "newFilePath", "src/main/java/com/example/Tagged.java"))));
     }
 
     @Test
@@ -224,8 +224,8 @@ class RenameSymbolToolTest {
     }
 
     @Test
-    @DisplayName("Non-type rename (method) does NOT include the file-rename note")
-    void renameMethod_noFileRenameNote() {
+    @DisplayName("A method rename renames no file: renamedFiles is absent")
+    void renameMethod_renamesNoFile() {
         assertPayload(addToSum(), ADD_TO_SUM);
     }
 
@@ -293,9 +293,13 @@ class RenameSymbolToolTest {
         return edit;
     }
 
-    /** The success payload renaming {@code oldName} to {@code newName} with {@code edits} by file. */
+    /**
+     * The success payload renaming {@code oldName} to {@code newName} with {@code edits} by file, and
+     * {@code renamedFiles} when the rename renames a file.
+     */
     private static Map<String, Object> rename(String oldName, String newName, String symbolKind,
-                                              Map<String, List<Map<String, Object>>> edits, String note) {
+                                              Map<String, List<Map<String, Object>>> edits,
+                                              List<Map<String, Object>> renamedFiles) {
         Map<String, List<Map<String, Object>>> editsByFile = new LinkedHashMap<>();
         int total = 0;
         for (Map.Entry<String, List<Map<String, Object>>> file : edits.entrySet()) {
@@ -318,8 +322,8 @@ class RenameSymbolToolTest {
         data.put("totalEdits", total);
         data.put("filesAffected", editsByFile.size());
         data.put("editsByFile", editsByFile);
-        if (note != null) {
-            data.put("note", note);
+        if (renamedFiles != null) {
+            data.put("renamedFiles", renamedFiles);
         }
         Map<String, Object> meta = new LinkedHashMap<>();
         meta.put("totalCount", total);

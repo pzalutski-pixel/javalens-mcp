@@ -12,6 +12,7 @@ import org.eclipse.jdt.core.dom.ASTParser;
 import org.eclipse.jdt.core.dom.ASTRequestor;
 import org.eclipse.jdt.core.dom.ASTVisitor;
 import org.eclipse.jdt.core.dom.AbstractTypeDeclaration;
+import org.eclipse.jdt.core.dom.AnnotationTypeMemberDeclaration;
 import org.eclipse.jdt.core.dom.AnonymousClassDeclaration;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.IBinding;
@@ -186,6 +187,22 @@ final class ModelElements {
                     }
                 }
                 return found[0] == null;
+            }
+
+            // An element of an annotation type, a method the model holds as any other.
+            @Override
+            public boolean visit(AnnotationTypeMemberDeclaration node) {
+                if (found[0] == null && failure[0] == null) {
+                    try {
+                        if (unit.getElementAt(node.getName().getStartPosition()) instanceof IMethod element
+                                && method.equals(element)) {
+                            found[0] = node.resolveBinding();
+                        }
+                    } catch (JavaModelException e) {
+                        failure[0] = e;
+                    }
+                }
+                return false;
             }
         });
         if (failure[0] != null) {

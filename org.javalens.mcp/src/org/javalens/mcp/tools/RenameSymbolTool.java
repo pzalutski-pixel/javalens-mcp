@@ -3,14 +3,15 @@ package org.javalens.mcp.tools;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.eclipse.core.runtime.IPath;
 import org.eclipse.jdt.core.ICompilationUnit;
-import org.eclipse.jdt.core.IField;
 import org.eclipse.jdt.core.IJavaElement;
+import org.eclipse.jdt.core.IJavaProject;
 import org.eclipse.jdt.core.ILocalVariable;
 import org.eclipse.jdt.core.IMember;
 import org.eclipse.jdt.core.IMethod;
 import org.eclipse.jdt.core.ISourceRange;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.ITypeParameter;
+import org.eclipse.jdt.core.JavaCore;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTParser;
@@ -18,6 +19,7 @@ import org.eclipse.jdt.core.dom.ASTVisitor;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.IBinding;
 import org.eclipse.jdt.core.dom.SimpleName;
+import org.eclipse.jdt.core.formatter.DefaultCodeFormatterConstants;
 import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.ElementKindResolver;
 import org.javalens.core.Deadline;
@@ -76,7 +78,20 @@ public class RenameSymbolTool extends AbstractTool {
             The caller should apply these edits to perform the rename.
 
             USAGE: Position on symbol, provide new name
-            OUTPUT: List of text edits to apply
+            OUTPUT: List of text edits to apply, and the files to rename
+
+            Each edit replaces exactly the symbol's simple name, also where a
+            reference is qualified (an import, a static import, a qualified name in
+            code or in a Javadoc link). An annotation element written as the single
+            value of its annotation, @Tag("x"), is named before that value:
+            @Tag(label = "x").
+
+            A type is renamed with its explicit constructors. A top-level type whose
+            file is named after it renames that file: renamedFiles lists it, as
+            {filePath, newFilePath}; apply the edits (editsByFile is keyed by the
+            current paths), then rename the file. renamedFiles is present only when
+            a file is renamed. A top-level type renamed to the name of a file that
+            already exists in its folder is refused: INVALID_PARAMETER.
 
             A method is renamed together with every method it overrides, every
             method that overrides it and every method a subtype inherits together
@@ -173,6 +188,19 @@ public class RenameSymbolTool extends AbstractTool {
                 return renameViaSearch(method, ripple, oldName, newName, symbolKind, service);
             }
 
+            // A top-level type cannot take the name of a file its folder already holds
+            // (JDT Checks.checkCompilationUnitNewName :236-243, checked for every top-level
+            // type by RenameTypeProcessor.doCheckFinalConditions :503-508).
+            if (element instanceof IType type && type.getDeclaringType() == null) {
+                ICompilationUnit unit = type.getCompilationUnit();
+                String renamedUnit = renamedUnitName(unit, newName);
+                if (!renamedUnit.equals(unit.getElementName())
+                        && unit.getResource().getParent().findMember(renamedUnit) != null) {
+                    return ToolResponse.invalidParameter("newName",
+                        "Compilation unit '" + renamedUnit + "' already exists");
+                }
+            }
+
             // Dispatch: IMember (IType, IField, IMethod) uses SearchEngine, which is
             // index-driven and resilient to per-call binding-resolution failures that
             // emerged at scale. ILocalVariable and ITypeParameter are not indexed by
@@ -206,22 +234,31 @@ public class RenameSymbolTool extends AbstractTool {
         Set<String> potentialKeys = new HashSet<>();
 
         for (IMember member : members) {
-            // Declaration site (SearchEngine REFERENCES omits the declaration itself).
-            ISourceRange nameRange = member.getNameRange();
-            if (nameRange != null && nameRange.getOffset() >= 0) {
+            // Declaration sites (SearchEngine REFERENCES omits the declarations themselves): the
+            // member's name, and a type's explicit constructors, renamed with it as JDT's
+            // RenameTypeProcessor.addConstructorRenames does (:1186-1201).
+            List<IMember> declared = new ArrayList<>(List.of(member));
+            if (member instanceof IType type) {
+                for (IMethod method : type.getMethods()) {
+                    if (method.isConstructor()) {
+                        declared.add(method);
+                    }
+                }
+            }
+            for (IMember declaration : declared) {
+                ISourceRange nameRange = declaration.getNameRange();
+                if (nameRange == null || nameRange.getOffset() < 0) {
+                    continue;
+                }
                 ICompilationUnit memberCu =
-                    (ICompilationUnit) member.getAncestor(IJavaElement.COMPILATION_UNIT);
+                    (ICompilationUnit) declaration.getAncestor(IJavaElement.COMPILATION_UNIT);
                 if (memberCu != null) {
                     String filePath = formatPathFor(memberCu, service);
                     String dedupKey = filePath + "@" + nameRange.getOffset();
                     if (filePath != null && emittedKeys.add(dedupKey)) {
-                        Map<String, Object> declEdit = buildEdit(
-                            memberCu, nameRange.getOffset(), nameRange.getLength(),
-                            oldName, newName, service);
-                        if (declEdit != null) {
-                            editsByFile.computeIfAbsent(filePath, k -> new ArrayList<>()).add(declEdit);
-                            totalEdits++;
-                        }
+                        editsByFile.computeIfAbsent(filePath, k -> new ArrayList<>()).add(buildEdit(
+                            memberCu, nameRange.getOffset(), nameRange.getLength(), oldName, newName, service));
+                        totalEdits++;
                     }
                 }
             }
@@ -252,13 +289,9 @@ public class RenameSymbolTool extends AbstractTool {
                 // offset in JDT's index when the call resolves through dynamic dispatch.
                 // Dedup so each occurrence emits exactly one edit.
                 if (!emittedKeys.add(dedupKey)) continue;
-                Map<String, Object> refEdit = buildEdit(
-                    matchCu, match.getOffset(), oldName.length(),
-                    oldName, newName, service);
-                if (refEdit != null) {
-                    editsByFile.computeIfAbsent(filePath, k -> new ArrayList<>()).add(refEdit);
-                    totalEdits++;
-                }
+                editsByFile.computeIfAbsent(filePath, k -> new ArrayList<>())
+                    .add(referenceEdit(member, match, matchCu, oldName, newName, service));
+                totalEdits++;
             }
         }
 
@@ -282,13 +315,23 @@ public class RenameSymbolTool extends AbstractTool {
         data.put("totalEdits", totalEdits);
         data.put("filesAffected", editsByFile.size());
         data.put("editsByFile", editsByFile);
+        // A top-level type whose file is named after it renames that file (JDT
+        // RenameTypeProcessor.isPrimaryType :255-259, createChangeForRenamedCUStandardResource
+        // :1100-1105); a file already named after the new name was refused before.
+        if (target instanceof IType type && type.getDeclaringType() == null) {
+            ICompilationUnit unit = type.getCompilationUnit();
+            if (JavaCore.removeJavaLikeExtension(unit.getElementName()).equals(oldName)) {
+                Path file = Path.of(unit.getResource().getLocation().toOSString());
+                Map<String, Object> renamed = new LinkedHashMap<>();
+                renamed.put("filePath", service.getPathUtils().formatPath(file));
+                renamed.put("newFilePath", service.getPathUtils().formatPath(
+                    file.resolveSibling(renamedUnitName(unit, newName))));
+                data.put("renamedFiles", List.of(renamed));
+            }
+        }
         Map<String, Object> potentialMatches = potentialMatches(potential, potential.size(), service);
         if (potentialMatches != null) {
             data.put("potentialMatches", potentialMatches);
-        }
-
-        if (target instanceof IType) {
-            data.put("note", "Renaming a type may require renaming the file as well");
         }
 
         return ToolResponse.success(data, ResponseMeta.builder()
@@ -358,24 +401,96 @@ public class RenameSymbolTool extends AbstractTool {
             .build());
     }
 
+    /** The edit replacing the {@code length} characters at {@code offset}, {@code oldText}, with {@code newText}. */
     private Map<String, Object> buildEdit(ICompilationUnit cu, int offset, int length,
-                                           String oldName, String newName, IJdtService service) {
-        try {
-            int lineNum = service.getLineNumber(cu, offset);
-            int columnNum = service.getColumnNumber(cu, offset);
-            Map<String, Object> edit = new LinkedHashMap<>();
-            edit.put("line", lineNum);
-            edit.put("column", columnNum);
-            edit.put("endColumn", columnNum + oldName.length());
-            edit.put("oldText", oldName);
-            edit.put("newText", newName);
-            edit.put("startOffset", offset);
-            edit.put("endOffset", offset + length);
-            return edit;
-        } catch (Exception e) {
-            log.debug("Failed to build edit at offset {}: {}", offset, e.getMessage());
-            return null;
+                                           String oldText, String newText, IJdtService service) {
+        int lineNum = service.getLineNumber(cu, offset);
+        int columnNum = service.getColumnNumber(cu, offset);
+        Map<String, Object> edit = new LinkedHashMap<>();
+        edit.put("line", lineNum);
+        edit.put("column", columnNum);
+        edit.put("endColumn", columnNum + length);
+        edit.put("oldText", oldText);
+        edit.put("newText", newText);
+        edit.put("startOffset", offset);
+        edit.put("endOffset", offset + length);
+        return edit;
+    }
+
+    /**
+     * The edit renaming the reference {@code match} to {@code member}, on the reference's simple
+     * name as JDT's rename refactorings find it: the match itself when it is the name, else the
+     * last identifier in it that is the name, before the arguments of a method reference. A type
+     * reference is reported from its first qualifier ({@code a.b.Foo}, TypeReferenceLocator
+     * :289-300), its simple name the last segment (TypeOccurrenceCollector.acceptSearchMatch2
+     * :48-89); a method reference over its arguments, and a static import from its first
+     * qualifier, its name the last identifier before '(' (MethodOccurenceCollector.acceptSearchMatch
+     * :67-102). An annotation element written as the single value of its annotation is named
+     * before that value (MethodOccurenceCollector :58-61, RenameMethodProcessor.createReplaceEdit
+     * :867-878).
+     */
+    private Map<String, Object> referenceEdit(IMember member, SearchMatch match, ICompilationUnit cu,
+                                              String oldName, String newName, IJdtService service)
+            throws JavaModelException {
+        int start = match.getOffset();
+        IJavaProject project = cu.getJavaProject();
+        if (member instanceof IMethod && match.isImplicit()) {
+            String assignment = newName
+                + (JavaCore.INSERT.equals(project.getOption(
+                    DefaultCodeFormatterConstants.FORMATTER_INSERT_SPACE_BEFORE_ASSIGNMENT_OPERATOR, true)) ? " " : "")
+                + "="
+                + (JavaCore.INSERT.equals(project.getOption(
+                    DefaultCodeFormatterConstants.FORMATTER_INSERT_SPACE_AFTER_ASSIGNMENT_OPERATOR, true)) ? " " : "");
+            return buildEdit(cu, start, 0, "", assignment, service);
         }
+        String matched = cu.getSource().substring(start, start + match.getLength());
+        if (matched.equals(oldName)) {
+            return buildEdit(cu, start, oldName.length(), oldName, newName, service);
+        }
+        int nameStart = lastIdentifier(matched, oldName, member instanceof IMethod);
+        if (nameStart < 0) {
+            throw new IllegalStateException("The reference '" + matched + "' does not name " + oldName);
+        }
+        return buildEdit(cu, start + nameStart, oldName.length(), oldName, newName, service);
+    }
+
+    /**
+     * The start in {@code text} of its last identifier that is {@code name}, read as JDT's scanner
+     * reads tokens, comments and whitespace between them; when {@code beforeParenthesis}, only
+     * before the first '(' (the arguments of a method reference). -1 when there is none.
+     */
+    private static int lastIdentifier(String text, String name, boolean beforeParenthesis) {
+        int found = -1;
+        int i = 0;
+        while (i < text.length()) {
+            char c = text.charAt(i);
+            if (text.startsWith("/*", i)) {
+                int end = text.indexOf("*/", i + 2);
+                i = end < 0 ? text.length() : end + 2;
+            } else if (text.startsWith("//", i)) {
+                int end = text.indexOf('\n', i + 2);
+                i = end < 0 ? text.length() : end + 1;
+            } else if (c == '(' && beforeParenthesis) {
+                break;
+            } else if (Character.isJavaIdentifierStart(c)) {
+                int start = i;
+                while (i < text.length() && Character.isJavaIdentifierPart(text.charAt(i))) {
+                    i++;
+                }
+                if (text.substring(start, i).equals(name)) {
+                    found = start;
+                }
+            } else {
+                i++;
+            }
+        }
+        return found;
+    }
+
+    /** The name of {@code unit} after its type is renamed {@code newName}, its extension kept. */
+    private static String renamedUnitName(ICompilationUnit unit, String newName) {
+        String name = unit.getElementName();
+        return newName + name.substring(JavaCore.removeJavaLikeExtension(name).length());
     }
 
     private String formatPathFor(ICompilationUnit cu, IJdtService service) {
