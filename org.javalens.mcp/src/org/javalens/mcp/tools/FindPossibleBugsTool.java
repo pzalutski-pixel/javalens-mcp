@@ -81,6 +81,8 @@ public class FindPossibleBugsTool extends AbstractTool {
             keeps the issues of that severity; all (the default) keeps every issue.
             Any other value is rejected with INVALID_PARAMETER.
 
+            A filePath naming no source file of the project is FILE_NOT_FOUND.
+
             Requires load_project to be called first.
             """;
     }
@@ -108,32 +110,39 @@ public class FindPossibleBugsTool extends AbstractTool {
         try {
             List<Map<String, Object>> issues = new ArrayList<>();
 
+            // A file that cannot be read fails the answer: leaving it out would report its
+            // issues as absent.
             List<Path> files;
             if (filePath != null) {
                 Path file = service.getProjectRoot().resolve(filePath).normalize();
+                if (service.getCompilationUnit(file) == null) {
+                    return ToolResponse.fileNotFound(filePath);
+                }
                 files = List.of(file);
             } else {
                 files = service.getAllJavaFiles();
             }
 
             for (Path file : files) {
-                try {
-                    ICompilationUnit cu = service.getCompilationUnit(file);
-                    if (cu == null) continue;
-
-                    // Parse to AST with bindings
-                    ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
-                    parser.setSource(cu);
-                    parser.setResolveBindings(true);
-                    parser.setBindingsRecovery(true);
-
-                    CompilationUnit ast = (CompilationUnit) parser.createAST(Deadline.monitor());
-                    if (ast == null) continue;
-
-                    findIssuesInFile(ast, file, service, issues, severity);
-                } catch (Exception e) {
-                    log.debug("Error analyzing file for bugs {}: {}", file, e.getMessage());
+                ICompilationUnit cu = service.getCompilationUnit(file);
+                if (cu == null) {
+                    throw new IllegalStateException("No compilation unit for "
+                        + service.getPathUtils().formatPath(file));
                 }
+
+                // Parse to AST with bindings
+                ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
+                parser.setSource(cu);
+                parser.setResolveBindings(true);
+                parser.setBindingsRecovery(true);
+
+                CompilationUnit ast = (CompilationUnit) parser.createAST(Deadline.monitor());
+                if (ast == null) {
+                    throw new IllegalStateException("JDT produced no syntax tree for "
+                        + service.getPathUtils().formatPath(file));
+                }
+
+                findIssuesInFile(ast, file, service, issues, severity);
             }
 
             Map<String, Object> data = new LinkedHashMap<>();

@@ -454,6 +454,31 @@ public class SearchService {
     }
 
     /**
+     * Find the declarations of an element in the project's own source {@code .java} files, as
+     * JDT's search reports them. For a method these include each lambda expression implementing
+     * it (MatchLocator.reportMatching(LambdaExpression)), reported with the lambda's own method as
+     * its element and the span from the lambda's start to its arrow. The places the search reports
+     * but cannot confirm are kept apart, as {@link SearchResult#potentialMatches()}.
+     *
+     * @throws IllegalArgumentException when JDT's search has no pattern for {@code element}
+     */
+    public SearchResult findDeclarationsInSources(IJavaElement element, int maxResults) throws CoreException {
+        SearchPattern pattern = SearchPattern.createPattern(element, IJavaSearchConstants.DECLARATIONS);
+        if (pattern == null) {
+            throw new IllegalArgumentException("JDT's search has no declaration pattern for " + element);
+        }
+        CollectingSearchRequestor requestor = new CollectingSearchRequestor(maxResults, true);
+        engine.search(
+            pattern,
+            new SearchParticipant[] { SearchEngine.getDefaultSearchParticipant() },
+            sourceScope,
+            requestor,
+            Deadline.monitor()
+        );
+        return requestor.toResult();
+    }
+
+    /**
      * Find only read accesses to a field.
      * AI-centric: helps identify unused or write-only fields.
      */

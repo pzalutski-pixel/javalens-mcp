@@ -108,13 +108,11 @@ public class FindReferencesTool extends AbstractTool {
             SearchResult result = service.getSearchService()
                 .findAllReferences(element, maxResults);
 
-            // Convert matches to reference info
+            // Convert matches to reference info; a match whose location cannot be read fails
+            // the answer, never leaves the list short of the count
             List<Map<String, Object>> references = new ArrayList<>();
             for (SearchMatch match : result.matches()) {
-                Map<String, Object> refInfo = createReferenceInfo(match, service);
-                if (refInfo != null) {
-                    references.add(refInfo);
-                }
+                references.add(createReferenceInfo(match, service));
             }
 
             Map<String, Object> data = new LinkedHashMap<>();
@@ -149,45 +147,39 @@ public class FindReferencesTool extends AbstractTool {
     }
 
     private Map<String, Object> createReferenceInfo(SearchMatch match, IJdtService service) {
-        try {
-            Map<String, Object> info = new LinkedHashMap<>();
+        Map<String, Object> info = new LinkedHashMap<>();
 
-            // File path
-            if (match.getResource() != null) {
-                IPath location = match.getResource().getLocation();
-                if (location != null) {
-                    info.put("filePath", service.getPathUtils().formatPath(location.toOSString()));
-                }
+        // File path
+        if (match.getResource() != null) {
+            IPath location = match.getResource().getLocation();
+            if (location != null) {
+                info.put("filePath", service.getPathUtils().formatPath(location.toOSString()));
             }
-
-            // Get ICompilationUnit for line/column calculation
-            Object element = match.getElement();
-            if (element instanceof IJavaElement javaElement) {
-                ICompilationUnit cu = (ICompilationUnit) javaElement.getAncestor(IJavaElement.COMPILATION_UNIT);
-                if (cu != null) {
-                    int refLine = service.getLineNumber(cu, match.getOffset());
-                    int refColumn = service.getColumnNumber(cu, match.getOffset());
-                    info.put("line", refLine);
-                    info.put("column", refColumn);
-
-                    // Get context line
-                    String context = service.getContextLine(cu, match.getOffset());
-                    if (!context.isEmpty()) {
-                        info.put("context", context);
-                    }
-                }
-            }
-
-            // Reference kind based on match accuracy
-            String refKind = getReferenceKind(match);
-            info.put("referenceKind", refKind);
-
-            return info;
-
-        } catch (Exception e) {
-            log.debug("Error creating reference info: {}", e.getMessage());
-            return null;
         }
+
+        // Get ICompilationUnit for line/column calculation
+        Object element = match.getElement();
+        if (element instanceof IJavaElement javaElement) {
+            ICompilationUnit cu = (ICompilationUnit) javaElement.getAncestor(IJavaElement.COMPILATION_UNIT);
+            if (cu != null) {
+                int refLine = service.getLineNumber(cu, match.getOffset());
+                int refColumn = service.getColumnNumber(cu, match.getOffset());
+                info.put("line", refLine);
+                info.put("column", refColumn);
+
+                // Get context line
+                String context = service.getContextLine(cu, match.getOffset());
+                if (!context.isEmpty()) {
+                    info.put("context", context);
+                }
+            }
+        }
+
+        // Reference kind based on match accuracy
+        String refKind = getReferenceKind(match);
+        info.put("referenceKind", refKind);
+
+        return info;
     }
 
     private String getReferenceKind(SearchMatch match) {

@@ -60,6 +60,10 @@ public class GetDiagnosticsTool extends AbstractTool {
             the diagnostics of that severity; all (the default) keeps both. Any
             other value is rejected with INVALID_PARAMETER.
 
+            Every file is checked and every diagnostic kept is counted in
+            totalDiagnostics, errorCount and warningCount; maxResults limits only
+            the diagnostics listed, and meta.truncated says when the list is cut.
+
             Requires load_project to be called first.
             """;
     }
@@ -92,14 +96,11 @@ public class GetDiagnosticsTool extends AbstractTool {
         }
 
         try {
+            // Every file is checked and every diagnostic counted; maxResults cuts the list only.
             List<Map<String, Object>> diagnostics = new ArrayList<>();
             int errorCount = 0;
             int warningCount = 0;
             int filesChecked = 0;
-
-            // Collect one past the cap so "exactly at the cap" and "actually
-            // truncated" are distinguishable in the truncated flag.
-            int collectBudget = maxResults == Integer.MAX_VALUE ? maxResults : maxResults + 1;
 
             if (filePath != null && !filePath.isBlank()) {
                 // Check single file
@@ -109,26 +110,22 @@ public class GetDiagnosticsTool extends AbstractTool {
                     return ToolResponse.fileNotFound(filePath);
                 }
                 filesChecked = 1;
-                DiagnosticCounts counts = collectDiagnostics(service, cu, path, severity, collectBudget, diagnostics);
+                DiagnosticCounts counts = collectDiagnostics(service, cu, path, severity, diagnostics);
                 errorCount = counts.errors;
                 warningCount = counts.warnings;
             } else {
                 // Check all files in the project
                 for (IPackageFragmentRoot root : service.getJavaProject().getPackageFragmentRoots()) {
-                    if (diagnostics.size() >= collectBudget) break;
                     if (root.getKind() != IPackageFragmentRoot.K_SOURCE) continue;
 
                     for (IJavaElement child : root.getChildren()) {
-                        if (diagnostics.size() >= collectBudget) break;
                         if (!(child instanceof IPackageFragment pkg)) continue;
 
                         for (ICompilationUnit cu : pkg.getCompilationUnits()) {
-                            if (diagnostics.size() >= collectBudget) break;
                             filesChecked++;
 
                             Path cuPath = getCompilationUnitPath(cu);
-                            DiagnosticCounts counts = collectDiagnostics(service, cu, cuPath, severity,
-                                collectBudget - diagnostics.size(), diagnostics);
+                            DiagnosticCounts counts = collectDiagnostics(service, cu, cuPath, severity, diagnostics);
                             errorCount += counts.errors;
                             warningCount += counts.warnings;
                         }
@@ -136,26 +133,20 @@ public class GetDiagnosticsTool extends AbstractTool {
                 }
             }
 
-            boolean truncated = diagnostics.size() > maxResults;
-            if (truncated) {
-                Map<String, Object> removed = diagnostics.remove(diagnostics.size() - 1);
-                if ("error".equals(removed.get("severity"))) {
-                    errorCount--;
-                } else {
-                    warningCount--;
-                }
-            }
+            int total = diagnostics.size();
+            boolean truncated = total > maxResults;
+            List<Map<String, Object>> listed = truncated ? new ArrayList<>(diagnostics.subList(0, maxResults)) : diagnostics;
 
             Map<String, Object> data = new LinkedHashMap<>();
-            data.put("totalDiagnostics", diagnostics.size());
+            data.put("totalDiagnostics", total);
             data.put("errorCount", errorCount);
             data.put("warningCount", warningCount);
             data.put("filesChecked", filesChecked);
-            data.put("diagnostics", diagnostics);
+            data.put("diagnostics", listed);
 
             return ToolResponse.success(data, ResponseMeta.builder()
-                .totalCount(diagnostics.size())
-                .returnedCount(diagnostics.size())
+                .totalCount(total)
+                .returnedCount(listed.size())
                 .truncated(truncated)
                 .suggestedNextTools(List.of(
                     "go_to_definition to navigate to error location",
@@ -180,9 +171,15 @@ public class GetDiagnosticsTool extends AbstractTool {
         return Path.of(cu.getElementName());
     }
 
+    /**
+     * Adds every error and warning of {@code cu} that {@code severity} keeps to {@code diagnostics}
+     * and counts them.
+     *
+     * @throws IllegalStateException when JDT reconciles {@code cu} to no syntax tree: its
+     *     diagnostics cannot be read, and answering none would claim the file is clean
+     */
     private DiagnosticCounts collectDiagnostics(IJdtService service, ICompilationUnit cu, Path path,
-                                                  String severity, int remaining,
-                                                  List<Map<String, Object>> diagnostics) {
+                                                  String severity, List<Map<String, Object>> diagnostics) {
         int errorCount = 0;
         int warningCount = 0;
 
@@ -212,20 +209,13 @@ public class GetDiagnosticsTool extends AbstractTool {
             }
 
             if (ast == null) {
-                log.debug("No AST returned for {}", path);
-                return new DiagnosticCounts(0, 0);
+                throw new IllegalStateException("JDT produced no syntax tree for "
+                    + service.getPathUtils().formatPath(path));
             }
 
             IProblem[] problems = ast.getProblems();
 
-            int addedHere = 0;
             for (IProblem problem : problems) {
-                // Break when this file has contributed `remaining` diagnostics. The
-                // previous check `diagnostics.size() >= diagnostics.size() + remaining`
-                // was a no-op (always false unless remaining <= 0), so the cap was never
-                // enforced.
-                if (addedHere >= remaining) break;
-
                 boolean isError = problem.isError();
                 boolean isWarning = problem.isWarning();
 
@@ -253,7 +243,6 @@ public class GetDiagnosticsTool extends AbstractTool {
                 diag.put("category", categorizeProblem(problem));
 
                 diagnostics.add(diag);
-                addedHere++;
             }
         } catch (JavaModelException e) {
             log.debug("Error reconciling {}: {}", path, e.getMessage());

@@ -92,7 +92,8 @@ public class AnalyzeMethodTool extends AbstractTool {
             callers and callees; each list holds the first maxCallers (default 20)
             or maxCallees (default 50) of them, callers in search order and callees
             in source order. meta.totalCount counts both, meta.returnedCount those
-            listed, and meta.truncated is true when either list is cut.
+            listed, and meta.truncated is true when either list is cut. A negative
+            maxCallers or maxCallees is INVALID_PARAMETER.
 
             The method is the one the position names, wherever it is declared: its
             file and line are those of its declaration, and its callees are read
@@ -144,6 +145,12 @@ public class AnalyzeMethodTool extends AbstractTool {
         if (column < 0) {
             return ToolResponse.invalidParameter("column", "Must be >= 0 (zero-based)");
         }
+        if (maxCallers < 0) {
+            return ToolResponse.invalidParameter("maxCallers", "Must be >= 0; got: " + maxCallers);
+        }
+        if (maxCallees < 0) {
+            return ToolResponse.invalidParameter("maxCallees", "Must be >= 0; got: " + maxCallees);
+        }
 
         try {
             Path path = Path.of(filePath);
@@ -182,8 +189,7 @@ public class AnalyzeMethodTool extends AbstractTool {
             Map<String, Object> callerBlock = calls(callers, maxCallers);
             List<SearchMatch> potential = references.potentialMatches();
             Map<String, Object> potentialCallers = potentialMatches(
-                potential.subList(0, Math.max(0, Math.min(maxCallers, potential.size()))), references.potentialTotal(),
-                service);
+                potential.subList(0, Math.min(maxCallers, potential.size())), references.potentialTotal(), service);
             if (potentialCallers != null) {
                 callerBlock.put("potentialMatches", potentialCallers);
             }
@@ -288,9 +294,9 @@ public class AnalyzeMethodTool extends AbstractTool {
         return result;
     }
 
-    /** The first {@code max} of {@code all}; none when {@code max} is not positive. */
+    /** The first {@code max} of {@code all}, {@code max} not negative. */
     private static List<Map<String, Object>> listed(List<Map<String, Object>> all, int max) {
-        return all.subList(0, Math.max(0, Math.min(max, all.size())));
+        return all.subList(0, Math.min(max, all.size()));
     }
 
     /** Every distinct caller in {@code found}, every reference to the method, in search order. */

@@ -133,10 +133,8 @@ public class AnalyzeChangeImpactTool extends AbstractTool {
                     potentialTotal += found.potentialTotal();
                     for (SearchMatch potential : found.potentialMatches()) {
                         Map<String, Object> place = formatMatch(potential, service);
-                        if (place != null) {
-                            place.put("depth", d + 1);
-                            potentialSites.add(place);
-                        }
+                        place.put("depth", d + 1);
+                        potentialSites.add(place);
                     }
                     List<SearchMatch> matches = found.matches();
 

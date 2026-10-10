@@ -146,50 +146,79 @@ public final class TextEditConverter {
     }
 
     /**
-     * Renders the text a source slice becomes after applying the given edit
-     * maps. Used when a tool's contract pins ONE edit spanning a whole node
-     * (a method signature, a call) while ASTRewrite produced fine-grained
-     * edits inside that span: the caller converts the rewrite, applies it to
-     * the node's slice here, and emits a single edit with the result.
-     *
-     * <p>Edits fully outside the slice are ignored; an edit crossing the
-     * slice boundary is an error (the aggregate would be incomplete).
+     * The leaf edits of one rewrite, each given to exactly one span of the source. Used when a
+     * tool's contract pins ONE edit spanning a whole node (a method signature, a call) while
+     * ASTRewrite produced fine-grained edits inside it: {@link #take} renders the text a span
+     * becomes, and {@link #requireAllTaken} fails when an edit was given to no span, since the
+     * answer would leave it out.
      */
-    public static String applyToSlice(List<Map<String, Object>> editMaps,
-                                      int sliceStart, int sliceEnd, String source) {
-        List<Map<String, Object>> inSlice = new ArrayList<>();
-        for (Map<String, Object> edit : editMaps) {
-            int start = ((Number) (edit.containsKey("offset")
-                ? edit.get("offset") : edit.get("startOffset"))).intValue();
-            int end = edit.containsKey("endOffset")
-                ? ((Number) edit.get("endOffset")).intValue() : start;
-            if (end <= sliceStart || start >= sliceEnd) {
-                continue;
-            }
-            if (start < sliceStart || end > sliceEnd) {
-                throw new IllegalStateException("Edit crosses slice boundary ["
-                    + sliceStart + "," + sliceEnd + "): " + edit);
-            }
-            inSlice.add(edit);
-        }
-        // Apply back-to-front so earlier offsets stay valid.
-        inSlice.sort((a, b) -> Integer.compare(
-            ((Number) (b.containsKey("offset") ? b.get("offset") : b.get("startOffset"))).intValue(),
-            ((Number) (a.containsKey("offset") ? a.get("offset") : a.get("startOffset"))).intValue()));
+    public static final class Slices {
 
-        StringBuilder out = new StringBuilder(source.substring(sliceStart, sliceEnd));
-        for (Map<String, Object> edit : inSlice) {
-            String type = (String) edit.get("type");
-            if ("insert".equals(type)) {
-                int at = ((Number) edit.get("offset")).intValue() - sliceStart;
-                out.insert(at, (String) edit.get("newText"));
-            } else {
-                int from = ((Number) edit.get("startOffset")).intValue() - sliceStart;
-                int to = ((Number) edit.get("endOffset")).intValue() - sliceStart;
-                out.replace(from, to, "delete".equals(type) ? "" : (String) edit.get("newText"));
+        private final List<Leaf> leaves = new ArrayList<>();
+        private final boolean[] taken;
+        private final String source;
+
+        /**
+         * @param root   the edit tree of the rewrite
+         * @param source the compilation unit's source the edits were computed against
+         */
+        public Slices(TextEdit root, String source) {
+            collectLeaves(root, leaves);
+            leaves.sort(null); // by offset; stable, so tree order is kept within an offset
+            this.taken = new boolean[leaves.size()];
+            this.source = source;
+        }
+
+        /**
+         * The text {@code [start, end)} of the source becomes when every edit within it that no
+         * span has taken yet is applied, insertions at start and at end included; those edits
+         * are taken. An edit crossing start or end is an error: the span's text would be
+         * incomplete.
+         */
+        public String take(int start, int end) {
+            StringBuilder out = new StringBuilder();
+            int cursor = start;
+            int replacedFrom = -1;
+            for (int i = 0; i < leaves.size(); i++) {
+                Leaf leaf = leaves.get(i);
+                int leafEnd = leaf.offset + leaf.length;
+                boolean outside = leaf.length == 0
+                    ? leaf.offset < start || leaf.offset > end
+                    : leafEnd <= start || leaf.offset >= end;
+                if (taken[i] || outside) {
+                    continue;
+                }
+                if (leaf.offset < start || leafEnd > end) {
+                    throw new IllegalStateException("Edit crosses the span [" + start + "," + end + "): "
+                        + leaf.offset + "+" + leaf.length);
+                }
+                if (leaf.offset >= cursor) {
+                    out.append(source, cursor, leaf.offset);
+                    cursor = leaf.offset;
+                } else if (leaf.length > 0 || leaf.offset != replacedFrom) {
+                    throw new IllegalStateException("Edits overlap at " + leaf.offset);
+                }
+                out.append(leaf.text);
+                if (leaf.length > 0) {
+                    replacedFrom = leaf.offset;
+                    cursor = leafEnd;
+                }
+                taken[i] = true;
+            }
+            out.append(source, cursor, end);
+            return out.toString();
+        }
+
+        /** Fails when an edit of the rewrite was taken by no span. */
+        public void requireAllTaken() {
+            for (int i = 0; i < leaves.size(); i++) {
+                if (!taken[i]) {
+                    Leaf leaf = leaves.get(i);
+                    throw new IllegalStateException("Edit at " + leaf.offset + "+" + leaf.length
+                        + " belongs to no span: " + leaf.text);
+                }
             }
         }
-        return out.toString();
     }
 
     private static Map<String, Object> rangeEdit(String type, int offset, int length,

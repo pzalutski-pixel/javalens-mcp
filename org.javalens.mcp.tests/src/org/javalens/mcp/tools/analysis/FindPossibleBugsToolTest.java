@@ -211,6 +211,17 @@ class FindPossibleBugsToolTest {
                 + "(case-insensitive); got: critical")));
     }
 
+    @Test
+    @DisplayName("a file that does not exist is FILE_NOT_FOUND, as the other file tools answer")
+    void missingFile_isFileNotFound() {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", "src/main/java/com/example/Missing.java");
+        assertPayload(args, Map.of("success", false, "error", Map.of(
+            "code", "FILE_NOT_FOUND",
+            "message", "File not found: src/main/java/com/example/Missing.java",
+            "hint", "Verify the file path is correct and the file exists")));
+    }
+
     // ========== exact payload helpers ==========
 
     private static final String BUG_PATTERNS = "src/main/java/com/example/BugPatterns.java";

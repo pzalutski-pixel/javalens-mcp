@@ -248,6 +248,17 @@ class AnalyzeMethodToolTest {
             () -> assertPayload(noColumn, refusal("Invalid parameter 'column': Must be >= 0 (zero-based)")));
     }
 
+    @Test @DisplayName("a negative maxCallers or maxCallees is INVALID_PARAMETER")
+    void negativeLimits_areRefused() {
+        ObjectNode callers = at(calculatorPath, 14, 15);
+        callers.put("maxCallers", -1);
+        ObjectNode callees = at(calculatorPath, 14, 15);
+        callees.put("maxCallees", -1);
+        assertAll(
+            () -> assertPayload(callers, refusal("Invalid parameter 'maxCallers': Must be >= 0; got: -1")),
+            () -> assertPayload(callees, refusal("Invalid parameter 'maxCallees': Must be >= 0; got: -1")));
+    }
+
     @Test @DisplayName("non-existent file -> FILE_NOT_FOUND; non-method position -> INVALID_PARAMETER")
     void handlesInvalidInputs() {
         // Line 0 col 0 of Calculator is the package declaration, not a method.

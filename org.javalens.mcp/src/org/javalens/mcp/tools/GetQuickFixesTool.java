@@ -142,14 +142,11 @@ public class GetQuickFixesTool extends AbstractTool {
                 }
             }
 
+            // With no syntax tree the problems cannot be read; answering none would claim the
+            // line has no problem.
             if (ast == null) {
-                Map<String, Object> empty = new LinkedHashMap<>();
-                empty.put("filePath", service.getPathUtils().formatPath(path));
-                empty.put("line", line);
-                empty.put("problemCount", 0);
-                empty.put("problems", List.of());
-                empty.put("fixes", List.of());
-                return ToolResponse.success(empty);
+                throw new IllegalStateException("JDT produced no syntax tree for "
+                    + service.getPathUtils().formatPath(path));
             }
 
             IProblem[] problems = ast.getProblems();

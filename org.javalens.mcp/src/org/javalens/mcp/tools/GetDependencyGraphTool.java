@@ -81,7 +81,9 @@ public class GetDependencyGraphTool extends AbstractTool {
             At package scope the graph covers the package and its subpackages:
             each import is an edge from the package of the file declaring it to
             the package it imports, and every edge's source and target is a node,
-            as is the requested package.
+            as is the requested package. A name that is no package of the
+            project's source folders, a library's package such as java.util
+            included, is SYMBOL_NOT_FOUND.
 
             Dependency types tracked:
             - import: Direct imports
@@ -129,6 +131,9 @@ public class GetDependencyGraphTool extends AbstractTool {
                 }
                 collectTypeDependencies(type, service, graph, includeExternal, depth, new HashSet<>());
             } else if ("package".equals(scope)) {
+                if (!hasSourcePackage(name, service)) {
+                    return ToolResponse.symbolNotFound("No source package named " + name);
+                }
                 collectPackageDependencies(name, service, graph, includeExternal);
             } else {
                 return ToolResponse.invalidParameter("scope", "Must be 'type' or 'package'");
@@ -345,6 +350,16 @@ public class GetDependencyGraphTool extends AbstractTool {
                 }
             }
         }
+    }
+
+    /** Whether a source folder of the project holds a package named {@code packageName}. */
+    private static boolean hasSourcePackage(String packageName, IJdtService service) throws Exception {
+        for (IPackageFragmentRoot root : service.getJavaProject().getPackageFragmentRoots()) {
+            if (root.getKind() == IPackageFragmentRoot.K_SOURCE && root.getPackageFragment(packageName).exists()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

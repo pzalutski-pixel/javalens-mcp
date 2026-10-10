@@ -9,8 +9,6 @@ import org.javalens.core.search.SearchResult;
 import org.javalens.core.search.SearchService;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -24,8 +22,6 @@ import java.util.function.Supplier;
  * These usages are invisible to static reference searches like find_references.
  */
 public class FindReflectionUsageTool extends AbstractTool {
-
-    private static final Logger log = LoggerFactory.getLogger(FindReflectionUsageTool.class);
 
     // (declaring type, method name). All overloads of each name are searched, so e.g.
     // both Class.forName(String) and Class.forName(String, boolean, ClassLoader) are caught.
@@ -117,49 +113,46 @@ public class FindReflectionUsageTool extends AbstractTool {
                 String methodName = entry[1];
                 String label = typeName.substring(typeName.lastIndexOf('.') + 1) + "." + methodName;
 
-                try {
-                    IType type = service.findType(typeName);
-                    if (type == null) continue;
+                // A failed lookup or search fails the answer, never leaves the method's calls out
+                IType type = service.findType(typeName);
+                if (type == null) continue;
 
-                    // Every call of every overload of methodName on this type: maxResults caps
-                    // the calls listed per reflection method (per label), not per overload,
-                    // and the label's count is every call.
-                    List<SearchMatch> labelMatches = new ArrayList<>();
-                    List<SearchMatch> labelPotential = new ArrayList<>();
-                    int labelTotal = 0;
-                    for (IMethod method : type.getMethods()) {
-                        if (!methodName.equals(method.getElementName())) continue;
-                        if (!method.exists()) continue;
+                // Every call of every overload of methodName on this type: maxResults caps
+                // the calls listed per reflection method (per label), not per overload,
+                // and the label's count is every call.
+                List<SearchMatch> labelMatches = new ArrayList<>();
+                List<SearchMatch> labelPotential = new ArrayList<>();
+                int labelTotal = 0;
+                for (IMethod method : type.getMethods()) {
+                    if (!methodName.equals(method.getElementName())) continue;
+                    if (!method.exists()) continue;
 
-                        // Source-scoped: reflection-method references that matter are
-                        // the project's own call sites. The full-scope search leaked
-                        // classpath and workspace-metadata (target/work) matches.
-                        SearchResult result = service.getSearchService()
-                            .findAllReferencesInSources(method, SearchService.ALL_MATCHES);
-                        labelTotal += result.totalEncountered();
-                        labelMatches.addAll(result.matches());
-                        labelPotential.addAll(result.potentialMatches());
-                        potentialTotal += result.potentialTotal();
-                    }
-
-                    // The first maxResults calls in source order, whatever overload each calls,
-                    // and as many of the calls the search could not confirm
-                    for (Map<String, Object> match : formatMatches(firstInSourceOrder(labelMatches, maxResults), service)) {
-                        match.put("reflectionMethod", label);
-                        allCalls.add(match);
-                    }
-                    for (Map<String, Object> match : formatMatches(firstInSourceOrder(labelPotential, maxResults), service)) {
-                        match.put("reflectionMethod", label);
-                        potentialCalls.add(match);
-                    }
-
-                    if (labelTotal > 0) {
-                        summary.put(label, labelTotal);
-                    }
-                    grandTotalEncountered += labelTotal;
-                } catch (Exception e) {
-                    log.debug("Could not scan for {}.{}: {}", typeName, methodName, e.getMessage());
+                    // Source-scoped: reflection-method references that matter are
+                    // the project's own call sites. The full-scope search leaked
+                    // classpath and workspace-metadata (target/work) matches.
+                    SearchResult result = service.getSearchService()
+                        .findAllReferencesInSources(method, SearchService.ALL_MATCHES);
+                    labelTotal += result.totalEncountered();
+                    labelMatches.addAll(result.matches());
+                    labelPotential.addAll(result.potentialMatches());
+                    potentialTotal += result.potentialTotal();
                 }
+
+                // The first maxResults calls in source order, whatever overload each calls,
+                // and as many of the calls the search could not confirm
+                for (Map<String, Object> match : formatMatches(firstInSourceOrder(labelMatches, maxResults), service)) {
+                    match.put("reflectionMethod", label);
+                    allCalls.add(match);
+                }
+                for (Map<String, Object> match : formatMatches(firstInSourceOrder(labelPotential, maxResults), service)) {
+                    match.put("reflectionMethod", label);
+                    potentialCalls.add(match);
+                }
+
+                if (labelTotal > 0) {
+                    summary.put(label, labelTotal);
+                }
+                grandTotalEncountered += labelTotal;
             }
 
             boolean truncated = grandTotalEncountered > allCalls.size();

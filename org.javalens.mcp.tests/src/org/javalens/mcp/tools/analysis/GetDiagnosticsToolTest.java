@@ -136,7 +136,7 @@ class GetDiagnosticsToolTest {
         withMax.put("maxResults", 1);
         assertAll(
             () -> assertPayload(withSeverity, diagnostics(0, 0, 1, List.of())),
-            () -> assertCut(withMax, List.of(refactoringTargetWarnings().get(0))));
+            () -> assertCut(withMax, 0, 5, 1, List.of(refactoringTargetWarnings().get(0))));
     }
 
     @Test @DisplayName("Without filePath every file of capped-lists is checked: the unresolved Widget and the unused field")
@@ -244,7 +244,18 @@ class GetDiagnosticsToolTest {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", refactoringTargetPath);
         args.put("maxResults", 1);
-        assertCut(args, List.of(refactoringTargetWarnings().get(0)));
+        assertCut(args, 0, 5, 1, List.of(refactoringTargetWarnings().get(0)));
+    }
+
+    @Test
+    @DisplayName("maxResults=1 over capped-lists checks all 19 files, lists the unresolved Widget and counts both diagnostics")
+    void maxResults_projectWideCountsEveryDiagnostic() throws Exception {
+        JdtServiceImpl capped = helper.loadProject("capped-lists");
+        String assembly = Files.readString(capped.getProjectRoot().resolve(ASSEMBLY));
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("maxResults", 1);
+        assertPayload(new GetDiagnosticsTool(() -> capped), new EnvelopeHarness(capped), args,
+            cut(1, 1, 19, List.of(widgetError(assembly))), UnaryOperator.identity());
     }
 
     // ========== exact payload helpers ==========
@@ -331,17 +342,27 @@ class GetDiagnosticsToolTest {
     }
 
     /**
-     * The one-file payload for {@code args} lists exactly {@code listed}, checks one file and
-     * reports the cut. Exact counts are impossible here: the scan stops one diagnostic past
-     * maxResults, so totalDiagnostics, errorCount, warningCount and meta.totalCount count the
-     * diagnostics listed, not every diagnostic of the file; they are left out and every other
-     * field is pinned.
+     * The one-file payload for {@code args} lists exactly {@code listed} and reports the cut: every
+     * diagnostic of the file is counted, {@code errors} and {@code warnings} of them.
      */
-    private void assertCut(ObjectNode args, List<Map<String, Object>> listed) {
+    private void assertCut(ObjectNode args, int errors, int warnings, int filesChecked,
+                           List<Map<String, Object>> listed) {
+        assertPayload(tool, envelope, args, cut(errors, warnings, filesChecked, listed), UnaryOperator.identity());
+    }
+
+    /**
+     * The success payload listing {@code listed} of {@code errors + warnings} diagnostics, every one
+     * counted, in {@code filesChecked} files, the rest cut.
+     */
+    private static Map<String, Object> cut(int errors, int warnings, int filesChecked, List<Map<String, Object>> listed) {
         Map<String, Object> data = new LinkedHashMap<>();
-        data.put("filesChecked", 1);
+        data.put("totalDiagnostics", errors + warnings);
+        data.put("errorCount", errors);
+        data.put("warningCount", warnings);
+        data.put("filesChecked", filesChecked);
         data.put("diagnostics", listed);
         Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("totalCount", errors + warnings);
         meta.put("returnedCount", listed.size());
         meta.put("truncated", true);
         meta.put("suggestedNextTools", NEXT_TOOLS);
@@ -349,12 +370,7 @@ class GetDiagnosticsToolTest {
         expected.put("success", true);
         expected.put("data", data);
         expected.put("meta", meta);
-        assertPayload(tool, envelope, args, expected, payload -> {
-            JsonNode copy = payload.deepCopy();
-            ((ObjectNode) copy.path("data")).remove(List.of("totalDiagnostics", "errorCount", "warningCount"));
-            ((ObjectNode) copy.path("meta")).remove("totalCount");
-            return copy;
-        });
+        return expected;
     }
 
     /**

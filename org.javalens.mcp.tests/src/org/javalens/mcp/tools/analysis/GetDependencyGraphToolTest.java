@@ -125,6 +125,15 @@ class GetDependencyGraphToolTest {
                 symbolNotFound("com.nonexistent.Type")));
     }
 
+    @Test @DisplayName("a package with no source package of that name, unknown or a library's such as java.util, is SYMBOL_NOT_FOUND")
+    void unknownPackage_isSymbolNotFound() {
+        assertAll(
+            () -> assertPayload(args("package", "com.nonexistent", null, null),
+                symbolNotFound("No source package named com.nonexistent")),
+            () -> assertPayload(args("package", "java.util", null, null),
+                symbolNotFound("No source package named java.util")));
+    }
+
     // ========== Semantic-grade tests ==========
 
     @Test

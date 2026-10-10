@@ -300,7 +300,7 @@ public abstract class AbstractTool implements Tool {
     }
 
     /**
-     * Format a list of SearchMatch results into structured output.
+     * Format a list of SearchMatch results into structured output, one entry per match.
      * Extracts file path, line, column, and context for each match.
      *
      * @param matches The search matches to format
@@ -310,53 +310,47 @@ public abstract class AbstractTool implements Tool {
     protected List<Map<String, Object>> formatMatches(List<SearchMatch> matches, IJdtService service) {
         List<Map<String, Object>> results = new ArrayList<>();
         for (SearchMatch match : matches) {
-            Map<String, Object> info = formatMatch(match, service);
-            if (info != null) {
-                results.add(info);
-            }
+            results.add(formatMatch(match, service));
         }
         return results;
     }
 
     /**
-     * Format a single SearchMatch into structured output.
+     * Format a single SearchMatch into structured output. A failure reading the match's location
+     * propagates: a match left out would leave a list short of its count.
      *
      * @param match The search match to format
      * @param service The JDT service for path and position resolution
-     * @return Formatted match info map, or null if formatting fails
+     * @return Formatted match info map
      */
     protected Map<String, Object> formatMatch(SearchMatch match, IJdtService service) {
-        try {
-            Map<String, Object> info = new LinkedHashMap<>();
-            ICompilationUnit cu = MatchResolver.resolveCu(match);
+        Map<String, Object> info = new LinkedHashMap<>();
+        ICompilationUnit cu = MatchResolver.resolveCu(match);
 
-            // Prefer the CU's resource path; fall back to the raw match resource when
-            // the CU couldn't be resolved (binary JDK matches and similar edge cases).
-            IPath location = null;
-            if (cu != null && cu.getResource() != null) {
-                location = cu.getResource().getLocation();
-            } else if (match.getResource() != null) {
-                location = match.getResource().getLocation();
-            }
-            if (location != null) {
-                info.put("filePath", service.getPathUtils().formatPath(location.toOSString()));
-            }
-
-            info.put("offset", match.getOffset());
-            info.put("length", match.getLength());
-
-            if (cu != null && match.getOffset() >= 0) {
-                info.put("line", service.getLineNumber(cu, match.getOffset()));
-                info.put("column", service.getColumnNumber(cu, match.getOffset()));
-                String context = service.getContextLine(cu, match.getOffset());
-                if (context != null && !context.isEmpty()) {
-                    info.put("context", context.trim());
-                }
-            }
-
-            return info;
-        } catch (Exception e) {
-            return null;
+        // Prefer the CU's resource path; fall back to the raw match resource when
+        // the CU couldn't be resolved (binary JDK matches and similar edge cases).
+        IPath location = null;
+        if (cu != null && cu.getResource() != null) {
+            location = cu.getResource().getLocation();
+        } else if (match.getResource() != null) {
+            location = match.getResource().getLocation();
         }
+        if (location != null) {
+            info.put("filePath", service.getPathUtils().formatPath(location.toOSString()));
+        }
+
+        info.put("offset", match.getOffset());
+        info.put("length", match.getLength());
+
+        if (cu != null && match.getOffset() >= 0) {
+            info.put("line", service.getLineNumber(cu, match.getOffset()));
+            info.put("column", service.getColumnNumber(cu, match.getOffset()));
+            String context = service.getContextLine(cu, match.getOffset());
+            if (context != null && !context.isEmpty()) {
+                info.put("context", context.trim());
+            }
+        }
+
+        return info;
     }
 }

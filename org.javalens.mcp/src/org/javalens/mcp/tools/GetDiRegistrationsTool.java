@@ -1,14 +1,13 @@
 package org.javalens.mcp.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.eclipse.core.runtime.CoreException;
 import org.eclipse.jdt.core.IType;
 import org.javalens.core.IJdtService;
 import org.javalens.core.search.SearchResult;
 import org.javalens.core.search.SearchService.ReferenceKind;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -22,8 +21,6 @@ import java.util.function.Supplier;
  * Also supports Jakarta/javax.inject annotations.
  */
 public class GetDiRegistrationsTool extends AbstractTool {
-
-    private static final Logger log = LoggerFactory.getLogger(GetDiRegistrationsTool.class);
 
     private static final String[][] COMPONENT_ANNOTATIONS = {
         {"org.springframework.stereotype.Component", "Component"},
@@ -162,9 +159,12 @@ public class GetDiRegistrationsTool extends AbstractTool {
     /**
      * The registrations of {@code annotations}: for each annotation type its first
      * {@code maxResults} matches, and the count of every match of every one of them; and as many
-     * of the places the search could not confirm, and the count of them.
+     * of the places the search could not confirm, and the count of them. An annotation type the
+     * project's classpath does not hold has no registrations; a failed lookup or search fails the
+     * answer, never leaves its registrations out.
      */
-    private Category scanAnnotations(IJdtService service, String[][] annotations, int maxResults) {
+    private Category scanAnnotations(IJdtService service, String[][] annotations, int maxResults)
+            throws CoreException {
         List<Map<String, Object>> results = new ArrayList<>();
         int total = 0;
         List<Map<String, Object>> potential = new ArrayList<>();
@@ -174,24 +174,20 @@ public class GetDiRegistrationsTool extends AbstractTool {
             String fqn = annotation[0];
             String label = annotation[1];
 
-            try {
-                IType annotationType = service.findType(fqn);
-                if (annotationType == null) continue;
+            IType annotationType = service.findType(fqn);
+            if (annotationType == null) continue;
 
-                SearchResult result = service.getSearchService().findReferences(
-                    annotationType, ReferenceKind.ANNOTATION, maxResults);
-                total += result.totalEncountered();
-                for (Map<String, Object> match : formatMatches(result.matches(), service)) {
-                    match.put("annotation", "@" + label);
-                    results.add(match);
-                }
-                potentialTotal += result.potentialTotal();
-                for (Map<String, Object> match : formatMatches(result.potentialMatches(), service)) {
-                    match.put("annotation", "@" + label);
-                    potential.add(match);
-                }
-            } catch (Exception e) {
-                log.debug("Could not scan for {}: {}", fqn, e.getMessage());
+            SearchResult result = service.getSearchService().findReferences(
+                annotationType, ReferenceKind.ANNOTATION, maxResults);
+            total += result.totalEncountered();
+            for (Map<String, Object> match : formatMatches(result.matches(), service)) {
+                match.put("annotation", "@" + label);
+                results.add(match);
+            }
+            potentialTotal += result.potentialTotal();
+            for (Map<String, Object> match : formatMatches(result.potentialMatches(), service)) {
+                match.put("annotation", "@" + label);
+                potential.add(match);
             }
         }
 
