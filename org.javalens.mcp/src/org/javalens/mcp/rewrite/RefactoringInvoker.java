@@ -65,9 +65,11 @@ public final class RefactoringInvoker {
      * refusal's reasons or the warnings, are listed by the place each names in source, its file
      * then its offset, those naming one place, and after all of them those naming none, as JDT
      * reports them, each naming a file as every tool names it. Where JDT reports in the order of a
-     * hash set of Java elements, whose hashes follow the project's name
-     * (ReferenceFinderUtil.extractElements :173-180, through which pull up, extract superclass and
-     * push down read the members their members use), this order is the same for every load.
+     * hash set or map of Java elements, whose hashes follow the project's name (the members a moved
+     * member uses, ReferenceFinderUtil.extractElements :173-180, read by pull up and extract
+     * superclass; the visibility changes, MemberVisibilityAdjustor.rewriteVisibility :1087 over
+     * the hash map of adjustments pull up, extract superclass and push down hand it), this order is
+     * the same for every load.
      */
     public static Outcome run(JavaRefactoringDescriptor descriptor, IJdtService service)
             throws Exception {

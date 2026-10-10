@@ -95,11 +95,16 @@ class ChangeMethodSignatureToolTest {
     }
 
     @Test
-    @DisplayName("change return type: declaration newSignature uses new return type; calls keep their text")
+    @DisplayName("changing formatMessage's return type to void, which its body and callers in its file use, is refused, naming each compile error")
     void changesReturnType() {
-        assertPayload(formatMessageArgs(null, "void"), formatMessage("formatMessage", "void",
-            List.of("message", "String", "count", "int"), "void formatMessage(String message, int count)",
-            "formatMessage(\"Items\", 5)", "formatMessage(\"Total\", 10)"));
+        // formatMessage (line 71, return type at 11) returns a String its callers in
+        // printMessages (line 78, return type at 11) assign and print: void breaks all three
+        String at = "src/main/java/com/example/RefactoringTarget.java:";
+        assertPayload(formatMessageArgs(null, "void"), refusal("Invalid parameter 'newParameters': "
+            + "Void methods cannot return a value, in RefactoringTarget.formatMessage at " + at + "71:11; "
+            + "Type mismatch: cannot convert from void to String, in RefactoringTarget.printMessages at " + at + "78:11; "
+            + "The method println(boolean) in the type PrintStream is not applicable for the arguments (void),"
+            + " in RefactoringTarget.printMessages at " + at + "78:11"));
     }
 
     // ========== Required Parameter Tests ==========
@@ -210,12 +215,13 @@ class ChangeMethodSignatureToolTest {
     }
 
     @Test
-    @DisplayName("Empty newParameters array removes all params: signature becomes `String formatMessage()`")
+    @DisplayName("removing all of formatMessage's parameters, which its body reads, is refused, naming the compile error")
     void removesAllParameters() {
+        // formatMessage's body reads message first, which no longer resolves
         ObjectNode args = formatMessageArgs(null, null);
         args.set("newParameters", objectMapper.createArrayNode());
-        assertPayload(args, formatMessage("formatMessage", "String", List.of(), "String formatMessage()",
-            "formatMessage()", "formatMessage()"));
+        assertPayload(args, refusal("Invalid parameter 'newParameters': message cannot be resolved to a variable,"
+            + " in RefactoringTarget.formatMessage at src/main/java/com/example/RefactoringTarget.java:71:11"));
     }
 
     @Test

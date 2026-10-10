@@ -141,6 +141,30 @@ class ParameterRangeTest {
         args.put("name", "com.example.Calculator");
         assertRefused(tool, args, "depth", 0, "Must be >= 1; got: 0");
         assertRefused(tool, args, "depth", -1, "Must be >= 1; got: -1");
+        ObjectNode packageArgs = mapper.createObjectNode();
+        packageArgs.put("scope", "package");
+        packageArgs.put("name", "com.example");
+        assertRefused(tool, packageArgs, "depth", 0, "Must be >= 1; got: 0");
+    }
+
+    @Test
+    @DisplayName("analyze_type: maxUsages 0 is accepted, Calculator's usage counts unclipped")
+    void analyzeType_zeroMaxUsagesAccepted() throws Exception {
+        // Calculator's uses (AnalyzeTypeToolTest.calculator_exactMembersHierarchyAndUsages): 5
+        // instantiations, 1 cast, 2 instanceof checks, 2 type arguments; maxUsages clips only
+        // the sample of places the search could not confirm, of which Calculator has none.
+        ObjectNode args = mapper.createObjectNode();
+        args.put("typeName", "com.example.Calculator");
+        args.put("maxUsages", 0);
+        AnalyzeTypeTool tool = new AnalyzeTypeTool(() -> service);
+        JsonNode expected = mapper.valueToTree(Map.of(
+            "instantiations", 5, "casts", 1, "instanceofChecks", 2, "typeArguments", 2, "total", 10));
+        JsonNode direct = mapper.readTree(mapper.writeValueAsString(tool.execute(args.deepCopy())));
+        JsonNode wire = envelope.assertEnvelopeFidelity(tool.getName(), args);
+        assertAll(
+            () -> assertEquals(true, direct.path("success").asBoolean(), "execute() success for " + args),
+            () -> assertEquals(expected, direct.path("data").path("usages"), "execute() usages for " + args),
+            () -> assertEquals(expected, wire.path("data").path("usages"), "envelope usages for " + args));
     }
 
     private String file(String relative) {

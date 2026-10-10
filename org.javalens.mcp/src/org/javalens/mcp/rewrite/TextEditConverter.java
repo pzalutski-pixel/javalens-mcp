@@ -176,6 +176,19 @@ public final class TextEditConverter {
          * incomplete.
          */
         public String take(int start, int end) {
+            return take(start, end, true);
+        }
+
+        /**
+         * As {@link #take(int, int)}, but an insertion at {@code end} is left to the text that
+         * starts there: the text before a node whose own edits begin with an insertion at its
+         * start (ASTRewrite renders a replaced name as a deletion and an insertion there).
+         */
+        public String takeBefore(int start, int end) {
+            return take(start, end, false);
+        }
+
+        private String take(int start, int end, boolean insertionsAtEnd) {
             StringBuilder out = new StringBuilder();
             int cursor = start;
             int replacedFrom = -1;
@@ -183,7 +196,7 @@ public final class TextEditConverter {
                 Leaf leaf = leaves.get(i);
                 int leafEnd = leaf.offset + leaf.length;
                 boolean outside = leaf.length == 0
-                    ? leaf.offset < start || leaf.offset > end
+                    ? leaf.offset < start || leaf.offset > end || (!insertionsAtEnd && leaf.offset == end && end > start)
                     : leafEnd <= start || leaf.offset >= end;
                 if (taken[i] || outside) {
                     continue;

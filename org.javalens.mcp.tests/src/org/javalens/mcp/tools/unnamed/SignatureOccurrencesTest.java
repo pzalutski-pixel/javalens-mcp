@@ -271,15 +271,14 @@ class SignatureOccurrencesTest {
     }
 
     @Test
-    @DisplayName("Reordering Pair.pick's parameters, whose call pick(1, 2) is an argument of another, is INTERNAL_ERROR naming that call")
-    void reorderOfArgumentHoldingChangedPlaceFails() {
-        assertPayload(mapper, new ChangeMethodSignatureTool(() -> service), envelope,
-            args(PAIR, 4, 15, null, newParameter("second", "int", null), newParameter("first", "int", null)),
-            map("success", false, "error", map(
-                "code", "INTERNAL_ERROR",
-                "message", "Internal error: Cannot reorder the arguments holding the place at "
-                    + PAIR + ":9:20: that place would not change",
-                "hint", "This may be a bug. Check server logs for details.")));
+    @DisplayName("Reordering Pair.pick's parameters, whose call pick(1, 2) is an argument of another, reorders both calls' arguments within one edit")
+    void reorderOfArgumentHoldingChangedPlace() {
+        assertChange(args(PAIR, 4, 15, null, newParameter("second", "int", null), newParameter("first", "int", null)),
+            data("pick", "pick", "int", "int", 2,
+                List.of(parameter("second", "int"), parameter("first", "int")), map(
+                    PAIR, List.of(
+                        declaration(4, 11, 4, 42, "int pick(int first, int second)", "int pick(int second, int first)"),
+                        replace(9, 15, 9, 34, "pick(pick(1, 2), 3)", "pick(3, pick(2, 1))")))));
     }
 
     @Test

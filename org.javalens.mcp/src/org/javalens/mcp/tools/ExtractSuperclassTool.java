@@ -61,8 +61,11 @@ public class ExtractSuperclassTool extends AbstractTool {
 
             USAGE: Position on the member to extract; provide the new superclass name.
             OUTPUT: createdFiles carries the new superclass file content;
-            editsByFile carries the source class's edits. Nothing is written -
-            create the file and apply the edits yourself.
+            editsByFile carries the source class's edits; warnings, present only when
+            there is one, JDT's findings from its condition checking, by the place
+            each names (file, then position; those naming one place in JDT's
+            order, those naming none last). Nothing is written - create the file
+            and apply the edits yourself.
 
             IMPORTANT: Uses ZERO-BASED coordinates.
 

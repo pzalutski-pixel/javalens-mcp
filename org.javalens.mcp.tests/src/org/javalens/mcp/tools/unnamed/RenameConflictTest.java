@@ -11,6 +11,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
+import org.junit.jupiter.api.function.Executable;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -632,7 +633,7 @@ class RenameConflictTest {
     private static void assertCompiles(Path root, String... files) throws Exception {
         JdtServiceImpl reloaded = new JdtServiceImpl();
         reloaded.loadProject(root);
-        assertAll(List.of(files).stream().map(file -> (org.junit.jupiter.api.function.Executable) () ->
+        assertAll(List.of(files).stream().map(file -> (Executable) () ->
             assertEquals(List.of(), NestedTypes.errors(reloaded, root.resolve(file)), "errors in " + file)));
     }
 }

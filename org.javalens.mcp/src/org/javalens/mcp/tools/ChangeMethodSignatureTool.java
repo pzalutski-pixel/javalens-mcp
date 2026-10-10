@@ -10,6 +10,8 @@ import org.eclipse.jdt.core.ISourceRange;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.Signature;
+import org.eclipse.jdt.core.WorkingCopyOwner;
+import org.eclipse.jdt.core.compiler.IProblem;
 import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTParser;
@@ -53,12 +55,21 @@ import org.eclipse.jdt.core.dom.rewrite.ASTRewrite;
 import org.eclipse.jdt.core.dom.rewrite.ListRewrite;
 import org.eclipse.jdt.core.search.MethodReferenceMatch;
 import org.eclipse.jdt.core.search.SearchMatch;
+import org.eclipse.jdt.internal.core.manipulation.util.BasicElementLabels;
+import org.eclipse.jdt.internal.corext.refactoring.Checks;
+import org.eclipse.jdt.internal.corext.refactoring.RefactoringCoreMessages;
+import org.eclipse.jdt.internal.corext.refactoring.rename.RefactoringAnalyzeUtil;
+import org.eclipse.jdt.internal.corext.refactoring.util.JavaElementUtil;
+import org.eclipse.jdt.internal.corext.refactoring.util.JavaStatusContext;
+import org.eclipse.jdt.internal.corext.util.Messages;
+import org.eclipse.ltk.core.refactoring.RefactoringStatus;
 import org.javalens.core.Deadline;
 import org.javalens.core.IJdtService;
 import org.javalens.core.search.SearchResult;
 import org.javalens.core.search.SearchService;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
+import org.javalens.mcp.rewrite.RefactoringInvoker;
 import org.javalens.mcp.rewrite.TextEditConverter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -294,6 +305,30 @@ public class ChangeMethodSignatureTool extends AbstractTool {
                 }
             }
 
+            // An oldName names the parameter one new parameter renames
+            Set<String> givenOldNames = new HashSet<>();
+            for (ParameterInfo param : newParameters) {
+                if (param.oldName != null && !givenOldNames.add(param.oldName)) {
+                    return ToolResponse.invalidParameter("newParameters",
+                        "oldName '" + param.oldName + "' is given to more than one parameter");
+                }
+            }
+
+            // JDT's checks of the new parameter names, each refusal fatal at once
+            // (ChangeSignatureProcessor.checkParameterNamesAndValues :785-803 with checkParameterName
+            // :806-813, then checkForDuplicateParameterNames :1263-1275)
+            RefactoringStatus findings = new RefactoringStatus();
+            for (ParameterInfo param : newParameters) {
+                findings.merge(Checks.checkTempName(param.name, method));
+                if (findings.hasFatalError()) {
+                    return refusal(findings, service);
+                }
+            }
+            findings.merge(duplicateParameterNames(newParameters));
+            if (findings.hasFatalError()) {
+                return refusal(findings, service);
+            }
+
             // Build parameter mapping for call site updates
             // Map old param index -> new param index (or -1 if removed)
             int[] paramMapping = buildParameterMapping(oldParamNames, newParameters);
@@ -312,6 +347,7 @@ public class ChangeMethodSignatureTool extends AbstractTool {
                 return ToolResponse.invalidParameter("position", "Method at position, " + oldName + " in "
                     + ElementNames.qualifiedName(method.getDeclaringType()) + ", cannot be changed: " + binary);
             }
+            findings.merge(rippleParameterNames(newParameters, oldParamNames, ripple));
 
             // Every call site of each of them must be rewritten, each once. The calls are
             // searched in the project's sources only, where the edits are made.
@@ -334,6 +370,9 @@ public class ChangeMethodSignatureTool extends AbstractTool {
                     }
                 }
             }
+            // A place the search for one of the methods confirms is no potential match, whatever
+            // the search for another reports there
+            potential.removeIf(match -> referenced.contains(placeOf(match)));
             // In source order, file by file: JDT's search reports a type's field initializers
             // before its methods (MatchLocator.reportMatching :3246-3300), and each related
             // method's places after those of the method searched before it.
@@ -359,6 +398,7 @@ public class ChangeMethodSignatureTool extends AbstractTool {
             if (!method.isConstructor() && (change.parametersChanged() || change.parametersRenamed())) {
                 List<SearchMatch> lambdas = new ArrayList<>();
                 Set<String> lambdaPlaces = new HashSet<>();
+                List<SearchMatch> potentialLambdas = new ArrayList<>();
                 for (IMethod declared : ripple) {
                     SearchResult found = service.getSearchService().findDeclarationsInSources(
                         declared, SearchService.ALL_MATCHES);
@@ -368,9 +408,15 @@ public class ChangeMethodSignatureTool extends AbstractTool {
                         }
                     }
                     for (SearchMatch match : found.potentialMatches()) {
-                        if (isLambdaMethod(match) && potentialPlaces.add(placeOf(match))) {
-                            potential.add(match);
+                        if (isLambdaMethod(match)) {
+                            potentialLambdas.add(match);
                         }
+                    }
+                }
+                // A lambda expression one method's search confirms is no potential match either
+                for (SearchMatch match : potentialLambdas) {
+                    if (!lambdaPlaces.contains(placeOf(match)) && potentialPlaces.add(placeOf(match))) {
+                        potential.add(match);
                     }
                 }
                 lambdas.sort(SOURCE_ORDER);
@@ -391,6 +437,11 @@ public class ChangeMethodSignatureTool extends AbstractTool {
             }
 
             Map<String, List<Map<String, Object>>> editsByFile = change.edits();
+            findings.merge(change.introducedErrors(editsByFile));
+            RefactoringInvoker.Findings found = RefactoringInvoker.findings(findings, service);
+            if (!found.conflicts().isEmpty()) {
+                return ToolResponse.invalidParameter("newParameters", String.join("; ", found.conflicts()));
+            }
             List<Map<String, Object>> methodReferences = change.methodReferences;
 
             // Count total edits
@@ -418,7 +469,8 @@ public class ChangeMethodSignatureTool extends AbstractTool {
             // Method references cannot be automatically rewritten because the
             // functional-interface signature they bind to would no longer match.
             // Surface them as informational entries plus top-level warnings so the
-            // AI consumer knows manual rewrite is required.
+            // AI consumer knows manual rewrite is required. JDT's warnings on the new names come first.
+            List<String> warnings = new ArrayList<>(found.warnings());
             if (!methodReferences.isEmpty()) {
                 data.put("methodReferences", methodReferences);
                 Set<String> affectedFiles = new LinkedHashSet<>();
@@ -426,12 +478,13 @@ public class ChangeMethodSignatureTool extends AbstractTool {
                     Object filePathObj = ref.get("filePath");
                     if (filePathObj != null) affectedFiles.add(filePathObj.toString());
                 }
-                List<String> warnings = new ArrayList<>();
                 for (String f : affectedFiles) {
                     warnings.add(f + " has method-reference call sites that cannot be " +
                         "automatically updated. Replace each with a lambda or refactor " +
                         "the functional-interface signature.");
                 }
+            }
+            if (!warnings.isEmpty()) {
                 data.put("warnings", warnings);
             }
             Map<String, Object> potentialMatches = potentialMatches(potential, potential.size(), service);
@@ -452,6 +505,52 @@ public class ChangeMethodSignatureTool extends AbstractTool {
             log.error("Error changing method signature: {}", e.getMessage(), e);
             return ToolResponse.internalError(e);
         }
+    }
+
+    /** The refusal naming the conflicts {@code findings} holds, by place. */
+    private static ToolResponse refusal(RefactoringStatus findings, IJdtService service) {
+        return ToolResponse.invalidParameter("newParameters",
+            String.join("; ", RefactoringInvoker.findings(findings, service).conflicts()));
+    }
+
+    /** ChangeSignatureProcessor.checkForDuplicateParameterNames :1263-1275: each name given twice, once. */
+    private static RefactoringStatus duplicateParameterNames(List<ParameterInfo> newParameters) {
+        RefactoringStatus result = new RefactoringStatus();
+        Set<String> found = new HashSet<>();
+        Set<String> doubled = new HashSet<>();
+        for (ParameterInfo param : newParameters) {
+            if (!found.add(param.name) && doubled.add(param.name)) {
+                result.addFatalError(Messages.format(RefactoringCoreMessages.ChangeSignatureRefactoring_duplicate_name,
+                    BasicElementLabels.getJavaElementName(param.name)));
+            }
+        }
+        return result;
+    }
+
+    /**
+     * ChangeSignatureProcessor.checkParameterNamesInRippleMethods :1404-1418: a name the change
+     * gives that the method at position does not have now, which a method changed with it already
+     * gives one of its parameters, is an error, at that method's name.
+     */
+    private static RefactoringStatus rippleParameterNames(List<ParameterInfo> newParameters, String[] oldParamNames,
+                                                          List<IMethod> ripple) throws JavaModelException {
+        Set<String> newNames = new LinkedHashSet<>();
+        for (ParameterInfo param : newParameters) {
+            newNames.add(param.name);
+        }
+        newNames.removeAll(List.of(oldParamNames));
+        RefactoringStatus result = new RefactoringStatus();
+        for (IMethod rippleMethod : ripple) {
+            for (String paramName : rippleMethod.getParameterNames()) {
+                if (newNames.contains(paramName)) {
+                    result.addError(Messages.format(RefactoringCoreMessages.ChangeSignatureRefactoring_already_has,
+                            new String[] {JavaElementUtil.createMethodSignature(rippleMethod),
+                                BasicElementLabels.getJavaElementName(paramName)}),
+                        JavaStatusContext.create(rippleMethod.getCompilationUnit(), rippleMethod.getNameRange()));
+                }
+            }
+        }
+        return result;
     }
 
     /**
@@ -687,6 +786,13 @@ public class ChangeMethodSignatureTool extends AbstractTool {
      * A place the change edits in a file: a span its shared rewrite renders (a declaration's
      * signature, or another place), or an insertion rendered on its own, the edit {@code insert}.
      */
+    /**
+     * A call whose arguments, from {@code start} to {@code end}, are rendered in a new order: each
+     * piece the text of an old argument range, {@code int[] {start, end}}, or a new argument's text.
+     */
+    private record ReorderedCall(int start, int end, List<Object> pieces) {
+    }
+
     private record Place(int start, int end, boolean declaration, Map<String, Object> insert) {
 
         boolean isSpan() {
@@ -717,8 +823,10 @@ public class ChangeMethodSignatureTool extends AbstractTool {
         final Set<SimpleName> renamedNames = new HashSet<>();
         /** The static imports the search reports naming one of the methods. */
         final Set<ImportDeclaration> reportedImports = new LinkedHashSet<>();
-        /** The arguments whose text a reordering call re-renders as written. */
-        final List<ASTNode> rerendered = new ArrayList<>();
+        /** Whether the file holds a changed declaration or lambda expression. */
+        boolean declaring;
+        /** The calls whose arguments are rendered in a new order when the edits are made. */
+        final List<ReorderedCall> reorderedCalls = new ArrayList<>();
 
         FileChange(String path, String source, CompilationUnit ast) {
             this.path = path;
@@ -824,6 +932,16 @@ public class ChangeMethodSignatureTool extends AbstractTool {
         }
 
         /**
+         * {@code parameter} as written, its type {@code type} and its name {@code name}: its
+         * modifiers, annotations, varargs and extra dimensions kept.
+         */
+        private String withTypeAndName(FileChange file, SingleVariableDeclaration parameter, String type, String name) {
+            return file.source.substring(parameter.getStartPosition(), parameter.getType().getStartPosition())
+                + type + file.source.substring(end(parameter.getType()), parameter.getName().getStartPosition())
+                + name + file.source.substring(end(parameter.getName()), end(parameter));
+        }
+
+        /**
          * Renames {@code parameter}, of the declaration or lambda expression whose body is
          * {@code body}, to {@code name} where it is referred to: the @param tag of {@code javadoc}
          * naming it (ChangeSignatureProcessor.changeJavadocTags :2648-2656), then each reference in
@@ -895,14 +1013,15 @@ public class ChangeMethodSignatureTool extends AbstractTool {
          * The declaration of {@code declared}: from its return type (its name, for a constructor)
          * to the end of its parameter list. The name and a changed return type are replaced, and
          * the parameter list is rebuilt through a ListRewrite, so separators and spacing render by
-         * construction. The method at position takes the requested parameters as given. A method
-         * changed with it keeps each parameter kept from the method at position as it declares
-         * it, with its own name and its own type unless that type is changed (an overrider
-         * declares {@code String} where the method it overrides declares {@code T}); a new
-         * parameter is the requested one.
+         * construction. Every declaration keeps each kept parameter as it declares it, modifiers
+         * and annotations included, with its own type unless that type is changed (an overrider
+         * declares {@code String} where the method it overrides declares {@code T}); the method at
+         * position gives it the requested name, a method changed with it its own name unless it is
+         * renamed. A new parameter is the requested one.
          */
         void declaration(IMethod declared, boolean atPosition) throws JavaModelException {
             FileChange file = file(declared.getCompilationUnit());
+            file.declaring = true;
             MethodDeclaration methodDecl = findMethodDeclaration(file.ast, declared);
             if (methodDecl == null) {
                 throw new IllegalStateException("No declaration of " + declared.getElementName() + " in " + file.path);
@@ -934,15 +1053,15 @@ public class ChangeMethodSignatureTool extends AbstractTool {
             for (int newIdx = 0; newIdx < newParameters.size(); newIdx++) {
                 ParameterInfo param = newParameters.get(newIdx);
                 int oldIdx = oldIndexOf(paramMapping, newIdx);
-                if (!atPosition && oldIdx >= 0 && oldIdx < declaredParams.size()) {
+                if (oldIdx >= 0 && oldIdx < declaredParams.size()) {
+                    // A kept parameter keeps its modifiers and annotations as written; only its name
+                    // (ChangeSignatureProcessor.changeParamgumentName :2317) and a changed type change.
+                    // The method at position takes the requested name, another its own unless renamed.
                     SingleVariableDeclaration own = declaredParams.get(oldIdx);
-                    String name = renamed.getOrDefault(own, own.getName().getIdentifier());
-                    if (param.type.equals(Signature.toString(oldParamTypes[oldIdx]))) {
-                        paramsRewrite.insertLast(placeholder(file, withName(file, own, name),
-                            ASTNode.SINGLE_VARIABLE_DECLARATION), null);
-                        continue;
-                    }
-                    paramsRewrite.insertLast(newParameter(factory, rewrite, param.type, name), null);
+                    String name = atPosition ? param.name : renamed.getOrDefault(own, own.getName().getIdentifier());
+                    String text = param.type.equals(Signature.toString(oldParamTypes[oldIdx]))
+                        ? withName(file, own, name) : withTypeAndName(file, own, param.type, name);
+                    paramsRewrite.insertLast(placeholder(file, text, ASTNode.SINGLE_VARIABLE_DECLARATION), null);
                     continue;
                 }
                 paramsRewrite.insertLast(newParameter(factory, rewrite, param.type, param.name), null);
@@ -1034,25 +1153,29 @@ public class ChangeMethodSignatureTool extends AbstractTool {
             List<Expression> oldArgs = (List<Expression>) callArguments(node);
             ListRewrite argsRewrite = file.rewrite.getListRewrite(node, argumentsProperty(node));
             int lastParam = oldParamTypes.length - 1;
-            if (reordered) {
-                for (Expression oldArg : oldArgs) {
-                    argsRewrite.remove(oldArg, null);
-                }
+            if (reordered && !oldArgs.isEmpty()) {
+                // The arguments are rendered in their new order when the edits are made, each from
+                // its own text with every change within it (a renamed parameter, a call of the
+                // method itself) applied; a varargs parameter passes every argument from its
+                // position on, as written. A new parameter passes its default value.
+                List<Object> pieces = new ArrayList<>();
                 for (int newIdx = 0; newIdx < newParameters.size(); newIdx++) {
                     int oldIdx = oldIndexOf(paramMapping, newIdx);
-                    String text;
                     if (oldIdx >= 0 && oldIdx < oldArgs.size()) {
-                        // A varargs parameter passes every argument from its position on
                         Expression last = varargs && oldIdx == lastParam ? oldArgs.get(oldArgs.size() - 1) : oldArgs.get(oldIdx);
-                        text = file.source.substring(oldArgs.get(oldIdx).getStartPosition(), end(last));
-                    } else if (oldIdx >= 0) {
-                        continue;
-                    } else {
-                        text = argumentFor(newParameters.get(newIdx));
+                        pieces.add(new int[] {oldArgs.get(oldIdx).getStartPosition(), end(last)});
+                    } else if (oldIdx < 0) {
+                        pieces.add(argumentFor(newParameters.get(newIdx)));
                     }
-                    argsRewrite.insertLast(placeholder(file, text, ASTNode.SIMPLE_NAME), null);
                 }
-                file.rerendered.addAll(oldArgs);
+                file.reorderedCalls.add(new ReorderedCall(oldArgs.get(0).getStartPosition(),
+                    end(oldArgs.get(oldArgs.size() - 1)), pieces));
+            } else if (reordered) {
+                for (int newIdx = 0; newIdx < newParameters.size(); newIdx++) {
+                    if (oldIndexOf(paramMapping, newIdx) < 0) {
+                        argsRewrite.insertLast(placeholder(file, argumentFor(newParameters.get(newIdx)), ASTNode.SIMPLE_NAME), null);
+                    }
+                }
             } else {
                 for (int i = 0; i < oldArgs.size(); i++) {
                     int oldIdx = varargs ? Math.min(i, lastParam) : i;
@@ -1167,6 +1290,7 @@ public class ChangeMethodSignatureTool extends AbstractTool {
                 throw new IllegalStateException("No compilation unit for the lambda expression at " + placeOf(match));
             }
             FileChange file = file(unit);
+            file.declaring = true;
             LambdaExpression lambda = lambdaAt(file, match.getOffset());
             if (!file.nodes.add(lambda)) {
                 return;
@@ -1472,12 +1596,6 @@ public class ChangeMethodSignatureTool extends AbstractTool {
                 List<Map<String, Object>> edits = new ArrayList<>();
                 for (int i = 0; i < file.places.size(); i++) {
                     Place place = file.places.get(i);
-                    for (ASTNode argument : file.rerendered) {
-                        if (argument.getStartPosition() <= place.start() && place.end() <= end(argument)) {
-                            throw new IllegalStateException("Cannot reorder the arguments holding the place at "
-                                + file.position(place.start()) + ": that place would not change");
-                        }
-                    }
                     if (!place.isSpan()) {
                         for (Place span : file.places) {
                             if (span.isSpan() && span.start() < place.start() && place.start() < span.end()) {
@@ -1491,12 +1609,137 @@ public class ChangeMethodSignatureTool extends AbstractTool {
                     if (withinAnother(file.places, i)) {
                         continue;
                     }
-                    edits.add(spanEdit(file, place, slices.take(place.start(), place.end())));
+                    edits.add(spanEdit(file, place, render(file, slices, place.start(), place.end())));
                 }
                 slices.requireAllTaken();
                 byFile.put(file.path, edits);
             }
             return byFile;
+        }
+
+        /**
+         * The compile errors the change introduces in each file holding a changed declaration or
+         * lambda expression, as ChangeSignatureProcessor.checkCompilationofDeclaringCu :1285-1297
+         * finds them in the declaring unit (RefactoringAnalyzeUtil.getIntroducedCompileProblems, the
+         * errors of shouldReport :1304-1310): each an error naming where it is, the declaration or
+         * lambda expression enclosing it at its place in the file as it is now.
+         */
+        RefactoringStatus introducedErrors(Map<String, List<Map<String, Object>>> editsByFile)
+                throws JavaModelException {
+            RefactoringStatus result = new RefactoringStatus();
+            // Every edited file holds its changed text in a working copy, so each declaring file is
+            // read against the others as changed
+            WorkingCopyOwner owner = new WorkingCopyOwner() { };
+            Map<FileChange, ICompilationUnit> copies = new LinkedHashMap<>();
+            try {
+                for (FileChange file : edited) {
+                    ICompilationUnit copy = ((ICompilationUnit) file.ast.getJavaElement()).getWorkingCopy(owner, null);
+                    copies.put(file, copy);
+                    copy.getBuffer().setContents(changed(file.source, editsByFile.get(file.path)));
+                }
+                for (Map.Entry<FileChange, ICompilationUnit> copy : copies.entrySet()) {
+                    FileChange file = copy.getKey();
+                    if (!file.declaring) {
+                        continue;
+                    }
+                    ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
+                    parser.setWorkingCopyOwner(owner);
+                    parser.setSource(copy.getValue());
+                    parser.setResolveBindings(true);
+                    CompilationUnit after = (CompilationUnit) parser.createAST(Deadline.monitor());
+                    // By position: JDT collects them in a hash set
+                    List<IProblem> introduced = new ArrayList<>(List.of(
+                        RefactoringAnalyzeUtil.getIntroducedCompileProblems(after, file.ast)));
+                    introduced.sort(Comparator.comparingInt(IProblem::getSourceStart));
+                    for (IProblem problem : introduced) {
+                        if (!problem.isError() || problem.getID() == IProblem.UndefinedType) {
+                            continue;
+                        }
+                        result.addError(problem.getMessage() + ", in " + where(file, after, problem));
+                    }
+                }
+            } finally {
+                for (ICompilationUnit copy : copies.values()) {
+                    copy.discardWorkingCopy();
+                }
+            }
+            return result;
+        }
+
+        /** {@code source} with {@code edits}, as edits() gives them for its file, applied. */
+        private static String changed(String source, List<Map<String, Object>> edits) {
+            List<Map<String, Object>> ordered = new ArrayList<>(edits);
+            ordered.sort(Comparator.comparingInt((Map<String, Object> edit) ->
+                (int) edit.getOrDefault("offset", edit.get("startOffset"))).reversed());
+            StringBuilder text = new StringBuilder(source);
+            for (Map<String, Object> edit : ordered) {
+                if ("insert".equals(edit.get("type"))) {
+                    text.insert((int) edit.get("offset"), (String) edit.get("newText"));
+                } else {
+                    text.replace((int) edit.get("startOffset"), (int) edit.get("endOffset"),
+                        (String) edit.getOrDefault("newSignature", edit.get("newText")));
+                }
+            }
+            return text.toString();
+        }
+
+        /**
+         * Where {@code problem}, of the changed text {@code after}, lies: the declaration or lambda
+         * expression enclosing it, at the line and column where it starts. The change replaces
+         * names and parameter lists within lines, so a declaration starts on the same line and
+         * column as before, its return type or name preceding its changed parameters.
+         */
+        private static String where(FileChange file, CompilationUnit after, IProblem problem) {
+            ASTNode node = NodeFinder.perform(after, problem.getSourceStart(),
+                problem.getSourceEnd() - problem.getSourceStart() + 1);
+            String label = null;
+            int at = problem.getSourceStart();
+            for (ASTNode current = node; current != null && label == null; current = current.getParent()) {
+                if (current instanceof LambdaExpression lambda) {
+                    label = "a lambda expression";
+                    at = lambda.getStartPosition();
+                } else if (current instanceof MethodDeclaration declaration) {
+                    IMethodBinding binding = declaration.resolveBinding();
+                    label = (binding != null ? binding.getDeclaringClass().getName() + "." : "")
+                        + declaration.getName().getIdentifier();
+                    at = declaration.getReturnType2() != null ? declaration.getReturnType2().getStartPosition()
+                        : declaration.getName().getStartPosition();
+                }
+            }
+            String place = file.path + ":" + (after.getLineNumber(at) - 1) + ":" + after.getColumnNumber(at);
+            return label == null ? place : label + " at " + place;
+        }
+
+        /**
+         * The text {@code [start, end)} of {@code file} becomes: every edit within it applied, and
+         * the arguments of each reordered call within it rendered in their new order, each with
+         * the changes within it.
+         */
+        private static String render(FileChange file, TextEditConverter.Slices slices, int start, int end) {
+            StringBuilder out = new StringBuilder();
+            int cursor = start;
+            List<ReorderedCall> within = new ArrayList<>();
+            for (ReorderedCall call : file.reorderedCalls) {
+                if (start <= call.start() && call.end() <= end) {
+                    within.add(call);
+                }
+            }
+            within.sort(Comparator.comparingInt(ReorderedCall::start));
+            for (ReorderedCall call : within) {
+                if (call.start() < cursor) {
+                    continue; // within a call rendered before, which renders it
+                }
+                out.append(slices.takeBefore(cursor, call.start()));
+                List<String> arguments = new ArrayList<>();
+                for (Object piece : call.pieces()) {
+                    arguments.add(piece instanceof int[] range
+                        ? render(file, slices, range[0], range[1]) : (String) piece);
+                }
+                out.append(String.join(", ", arguments));
+                cursor = call.end();
+            }
+            out.append(slices.take(cursor, end));
+            return out.toString();
         }
 
         /** Whether the span at {@code index} lies within another span, or repeats an earlier one. */

@@ -86,10 +86,10 @@ public class GetDependencyGraphTool extends AbstractTool {
             project's source folders, a library's package such as java.util
             included, is SYMBOL_NOT_FOUND.
 
-            At type scope, depth is how many steps of dependencies are followed
-            from the type, 1 or more: 1 lists the type's own dependencies, 2 also
-            those of each dependency with source, and so on. Below 1 is
-            INVALID_PARAMETER.
+            depth is 1 or more at either scope; below 1 is INVALID_PARAMETER. At
+            type scope it is how many steps of dependencies are followed from the
+            type: 1 lists the type's own dependencies, 2 also those of each
+            dependency with source, and so on. Package scope does not use it.
 
             Dependency types tracked:
             - import: Direct imports

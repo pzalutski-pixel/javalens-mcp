@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -137,23 +138,23 @@ class GetTypeHierarchyToolTest {
     // ========== Optional Parameters Tests ==========
 
     @Test
-    @DisplayName("maxResults 1 lists Calculator's one superclass, java.lang.Object, not cut")
-    void maxResults_listsSuperclassesUpToTheCap() {
+    @DisplayName("maxResults 1 lists Dog's nearest superclass, Animal, of 2 with java.lang.Object, and meta.truncated=true")
+    void maxResults_capsSuperclassesAndSetsTruncated() throws Exception {
+        // Animal.java: Animal's source range starts at its Javadoc (line 2), Dog's at its own
+        // (line 16), its name at line 19, column 6; Dog has no interface and no subtype.
         ObjectNode args = objectMapper.createObjectNode();
-        args.put("filePath", calculatorPath);
-        args.put("line", 5);
-        args.put("column", 13);
+        args.put("filePath", projectPath.resolve("src/main/java/com/example/Animal.java").toString());
+        args.put("line", 19);
+        args.put("column", 6);
         args.put("maxResults", 1);
-
-        ToolResponse response = tool.execute(args);
-
-        assertTrue(response.isSuccess());
-        Map<String, Object> data = getData(response);
-
-        assertEquals(List.of(Map.of("name", "Object", "qualifiedName", "java.lang.Object", "kind", "class")),
-            getSuperclasses(data));
-        assertEquals(1, data.get("totalSuperclasses"));
-        assertEquals(Boolean.FALSE, response.getMeta().getTruncated());
+        assertWholePayload(args, map(
+            "type", typeInfo("Dog", "com.example.Dog", "class", "Animal.java", 16),
+            "superclasses", List.of(typeInfo("Animal", "com.example.Animal", "class", "Animal.java", 2)),
+            "interfaces", List.of(),
+            "subtypes", List.of(),
+            "totalSuperclasses", 2,
+            "totalInterfaces", 0,
+            "totalSubtypes", 0), 2, 1);
     }
 
     // ========== Parameter Validation Tests ==========
@@ -368,43 +369,83 @@ class GetTypeHierarchyToolTest {
 
     @Test
     @DisplayName("maxResults 2 lists IShape's first two subtypes by file and position, of 7, and meta.truncated=true")
-    @SuppressWarnings("unchecked")
-    void maxResults_capsSubtypesAndSetsTruncated() {
+    void maxResults_capsSubtypesAndSetsTruncated() throws Exception {
         // IShape's seven subtypes by file and position: AnonymousShapeUser.java's two anonymous
         // classes (lines 5 and 14), then its InnerShape and NonStaticInnerShape, FilledCircle,
-        // IFillable and Rectangle.
+        // IFillable and Rectangle. IShape (line 2) has no superclass and no interface.
         ObjectNode args = objectMapper.createObjectNode();
         args.put("typeName", "com.example.IShape");
         args.put("maxResults", 2);
-
-        ToolResponse r = tool.execute(args);
-        Map<String, Object> data = SemanticAssertions.assertSuccessData(r);
-        List<Map<String, Object>> subtypes = SemanticAssertions.getList(data, "subtypes");
-        assertEquals(List.of("com.example.AnonymousShapeUser$1", "com.example.AnonymousShapeUser$2"),
-            subtypes.stream().map(subtype -> subtype.get("qualifiedName")).toList());
-        assertEquals(7, data.get("totalSubtypes"));
-        assertEquals(Boolean.TRUE, r.getMeta().getTruncated(),
-            "meta.truncated must be true when subtypes are capped");
+        assertWholePayload(args, map(
+            "type", typeInfo("IShape", "com.example.IShape", "interface", "IShape.java", 2),
+            "superclasses", List.of(),
+            "interfaces", List.of(),
+            "subtypes", List.of(
+                typeInfo("AnonymousShapeUser$1", "com.example.AnonymousShapeUser$1", "class", "AnonymousShapeUser.java", 5),
+                typeInfo("AnonymousShapeUser$2", "com.example.AnonymousShapeUser$2", "class", "AnonymousShapeUser.java", 14)),
+            "totalSuperclasses", 0,
+            "totalInterfaces", 0,
+            "totalSubtypes", 7), 7, 2);
     }
 
     @Test
     @DisplayName("maxResults 1 lists FilledCircle's first interface, IFillable, of 2 with IShape, and meta.truncated=true")
-    @SuppressWarnings("unchecked")
-    void maxResults_capsInterfacesAndSetsTruncated() {
-        // FilledCircle directly implements IFillable and, through IFillable extends IShape,
-        // IShape: the interfaces of every supertype, IFillable first.
+    void maxResults_capsInterfacesAndSetsTruncated() throws Exception {
+        // FilledCircle (line 2) directly implements IFillable (IFillable.java line 2) and, through
+        // IFillable extends IShape, IShape: the interfaces of every supertype, IFillable first. Its
+        // superclass is java.lang.Object, of a class file, so without file and line; it has no
+        // subtype.
         ObjectNode args = objectMapper.createObjectNode();
         args.put("typeName", "com.example.FilledCircle");
         args.put("maxResults", 1);
+        assertWholePayload(args, map(
+            "type", typeInfo("FilledCircle", "com.example.FilledCircle", "class", "FilledCircle.java", 2),
+            "superclasses", List.of(map("name", "Object", "qualifiedName", "java.lang.Object", "kind", "class")),
+            "interfaces", List.of(typeInfo("IFillable", "com.example.IFillable", "interface", "IFillable.java", 2)),
+            "subtypes", List.of(),
+            "totalSuperclasses", 1,
+            "totalInterfaces", 2,
+            "totalSubtypes", 0), 3, 2);
+    }
 
-        ToolResponse r = tool.execute(args);
-        Map<String, Object> data = SemanticAssertions.assertSuccessData(r);
-        List<Map<String, Object>> interfaces = SemanticAssertions.getList(data, "interfaces");
-        assertEquals(List.of("com.example.IFillable"),
-            interfaces.stream().map(iface -> iface.get("qualifiedName")).toList());
-        assertEquals(2, data.get("totalInterfaces"));
-        assertEquals(Boolean.TRUE, r.getMeta().getTruncated(),
-            "meta.truncated must be true when interfaces list is capped; got: " + r.getMeta().getTruncated());
+    /**
+     * The payload of get_type_hierarchy for {@code args}, through execute() and through the JSON-RPC
+     * envelope, is exactly success with {@code data}, its meta counting {@code total} entries,
+     * {@code returned} of them listed, and the list cut.
+     */
+    private void assertWholePayload(ObjectNode args, Map<String, Object> data, int total, int returned)
+            throws Exception {
+        JsonNode expected = objectMapper.valueToTree(map(
+            "success", true,
+            "data", data,
+            "meta", map(
+                "totalCount", total,
+                "returnedCount", returned,
+                "truncated", true,
+                "suggestedNextTools", List.of(
+                    "get_type_members to see members of a specific type",
+                    "find_implementations to find all implementors",
+                    "find_references to see where type is used"))));
+        JsonNode direct = objectMapper.readTree(objectMapper.writeValueAsString(tool.execute(args.deepCopy())));
+        JsonNode wire = envelope.assertEnvelopeFidelity("get_type_hierarchy", args);
+        assertAll(
+            () -> assertEquals(expected, direct, "execute() payload for " + args),
+            () -> assertEquals(expected, wire, "envelope payload for " + args));
+    }
+
+    /** A type of simple-maven's com.example: its names, kind, file and the line its source range starts on. */
+    private static Map<String, Object> typeInfo(String name, String qualifiedName, String kind, String file, int line) {
+        return map("name", name, "qualifiedName", qualifiedName, "kind", kind,
+            "filePath", "src/main/java/com/example/" + file, "line", line);
+    }
+
+    /** An ordered map of alternating keys and values. */
+    private static Map<String, Object> map(Object... keysAndValues) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        for (int i = 0; i < keysAndValues.length; i += 2) {
+            map.put((String) keysAndValues[i], keysAndValues[i + 1]);
+        }
+        return map;
     }
 
     @Test
