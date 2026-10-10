@@ -67,6 +67,20 @@ class FailureSurfacesTest {
     }
 
     @Test
+    @DisplayName("get_jpa_model whose entity annotation type lookup fails is INTERNAL_ERROR")
+    void jpaModel_failedLookup() throws Exception {
+        FaultyService service = load().failing("findType");
+        assertFails(service, GetJpaModelTool::new, mapper.createObjectNode(), INJECTED);
+    }
+
+    @Test
+    @DisplayName("get_http_endpoints whose route annotation type lookup fails is INTERNAL_ERROR")
+    void httpEndpoints_failedLookup() throws Exception {
+        FaultyService service = load().failing("findType");
+        assertFails(service, GetHttpEndpointsTool::new, mapper.createObjectNode(), INJECTED);
+    }
+
+    @Test
     @DisplayName("rename_symbol whose edit position cannot be read is INTERNAL_ERROR")
     void renameSymbol_unreadablePosition() throws Exception {
         FaultyService service = load().failing("getLineNumber");

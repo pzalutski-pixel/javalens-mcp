@@ -67,6 +67,33 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * edit's raw offsets, which depend on the checkout's line endings, are not pinned, and its texts
  * are compared with "\n" line endings. JDT's rewrite indents what it inserts with the project's
  * formatter settings, a tab for each level.
+ *
+ * <p>Package com.example.more holds the places of the remaining rules, one change each. Steps
+ * declares {@code static int step(int value)} (line 4, return type at column 18, name at 22);
+ * Order calls it in {@code early()} (line 5, column 15), declared above the field {@code late},
+ * whose initializer calls it (line 8, column 15); JDT's search reports a type's field initializers
+ * before its methods (MatchLocator.reportMatching :3246, :3290). Shape declares
+ * {@code int area()} (line 4, return type at 11, name at 15), which Square overrides (line 5,
+ * return type at 11); Measure's {@code total} returns
+ * {@code square.area() + shape.area() + square.area()} (line 5, columns 15, 31 and 46): the search
+ * for Shape.area reports the call through Shape, that for Square.area the calls through Square.
+ * Builder declares {@code Builder with(int value)} (line 6, return type at 11, name at 19) and
+ * chains {@code new Builder().with(1).with(2)} (line 12, column 15). Pair declares
+ * {@code static int pick(int first, int second)} (line 4, return type at 11, name at 15) and calls
+ * {@code pick(pick(1, 2), 3)} (line 9, column 15, the nested call at 20). Mix's class Javadoc
+ * (line 3) links {@code #mix(int a, String s)} (column 21), naming its parameters, and
+ * {@code #mix(int, String)} (column 55); Mix declares {@code static int mix(int a, String s)}
+ * (line 7, return type at 18, name at 22) and calls {@code mix(1, "x")} (line 11, column 15). Fn
+ * declares {@code int run(String text, int times)} (line 5, return type at 4, name at 8), which
+ * Fns implements with the typed lambda {@code (String text, int times) -> ...} (line 4, column 15).
+ * Mode declares the constants {@code ON} (line 4, column 4), written without arguments, and
+ * {@code OFF()} (column 8), and the constructor {@code Mode()} (line 6, column 4). Root declares
+ * {@code public Root()} (line 4, name at 11) and the subclasses {@code private static class Hidden}
+ * (its body brace ending at line 7, column 46) and {@code protected static class Shown} (line 10,
+ * column 47), neither declaring a constructor; Plain.java declares the package-private
+ * {@code class Plain extends Root} (line 2, column 26). Core declares {@code public Core()} (line 4,
+ * name at 11); Busy.java declares {@code public class Busy extends Core}, which declares no
+ * constructor and the method {@code int size()} (line 4, column 4).
  */
 class SignatureOccurrencesTest {
 
@@ -87,6 +114,22 @@ class SignatureOccurrencesTest {
     private static final String FLAG = SIG + "Flag.java";
     private static final String SINGLE = USE + "Single.java";
     private static final String BOTH = USE + "Both.java";
+    private static final String MORE = "src/main/java/com/example/more/";
+    private static final String STEPS = MORE + "Steps.java";
+    private static final String ORDER = MORE + "Order.java";
+    private static final String SHAPE = MORE + "Shape.java";
+    private static final String SQUARE = MORE + "Square.java";
+    private static final String MEASURE = MORE + "Measure.java";
+    private static final String BUILDER = MORE + "Builder.java";
+    private static final String PAIR = MORE + "Pair.java";
+    private static final String MIX = MORE + "Mix.java";
+    private static final String FN = MORE + "Fn.java";
+    private static final String FNS = MORE + "Fns.java";
+    private static final String MODE = MORE + "Mode.java";
+    private static final String ROOT = MORE + "Root.java";
+    private static final String PLAIN = MORE + "Plain.java";
+    private static final String CORE = MORE + "Core.java";
+    private static final String BUSY = MORE + "Busy.java";
 
     private static final List<String> NEXT_TOOLS = List.of(
         "Apply the text edits to complete the signature change",
@@ -176,6 +219,164 @@ class SignatureOccurrencesTest {
         assertPayload(mapper, new ChangeMethodSignatureTool(() -> service), envelope, args(FLAG, 4, 11, "label"),
             invalidParameter("Invalid parameter 'position': Method at position, value in com.example.sig.Flag, "
                 + "cannot be changed: it is an element of an annotation type; rename it with rename_symbol"));
+    }
+
+    @Test
+    @DisplayName("Renaming Steps.step to stride edits the call in early(), declared above the field late, before the call initializing late")
+    void referencesInSourceOrderAcrossMembers() {
+        assertChange(args(STEPS, 4, 22, "stride"), data("step", "stride", "int", "int", 1,
+            List.of(parameter("value", "int")), map(
+                STEPS, List.of(
+                    declaration(4, 18, 4, 37, "int step(int value)", "int stride(int value)")),
+                ORDER, List.of(
+                    replace(5, 15, 5, 28, "Steps.step(1)", "Steps.stride(1)"),
+                    replace(8, 15, 8, 28, "Steps.step(2)", "Steps.stride(2)")))));
+    }
+
+    @Test
+    @DisplayName("Renaming Shape.area to surface, with Square.area, edits the three calls in total() in source order, the call of Shape.area between those of Square.area")
+    void referencesOfRelatedMethodsInSourceOrder() {
+        assertChange(args(SHAPE, 4, 15, "surface"), data("area", "surface", "int", "int", 0, List.of(), map(
+            SHAPE, List.of(
+                declaration(4, 11, 4, 21, "int area()", "int surface()")),
+            SQUARE, List.of(
+                declaration(5, 11, 5, 21, "int area()", "int surface()")),
+            MEASURE, List.of(
+                replace(5, 15, 5, 28, "square.area()", "square.surface()"),
+                replace(5, 31, 5, 43, "shape.area()", "shape.surface()"),
+                replace(5, 46, 5, 59, "square.area()", "square.surface()")))));
+    }
+
+    @Test
+    @DisplayName("Renaming Builder.with to plus and adding int times changes the chained call new Builder().with(1).with(2) in one edit, the inner call within it")
+    void chainedCallChangesWithinOneEdit() {
+        assertChange(args(BUILDER, 6, 19, "plus", newParameter("value", "int", null), newParameter("times", "int", "1")),
+            data("with", "plus", "Builder", "Builder", 1, List.of(parameter("value", "int"), parameter("times", "int")), map(
+                BUILDER, List.of(
+                    declaration(6, 11, 6, 34, "Builder with(int value)", "Builder plus(int value, int times)"),
+                    replace(12, 15, 12, 44, "new Builder().with(1).with(2)", "new Builder().plus(1, 1).plus(2, 1)")))));
+    }
+
+    @Test
+    @DisplayName("Adding int third to Pair.pick changes pick(pick(1, 2), 3) in one edit, the call passed as an argument within it")
+    void callInArgumentChangesWithinOneEdit() {
+        assertChange(args(PAIR, 4, 15, null, newParameter("first", "int", null), newParameter("second", "int", null),
+                newParameter("third", "int", "0")),
+            data("pick", "pick", "int", "int", 2,
+                List.of(parameter("first", "int"), parameter("second", "int"), parameter("third", "int")), map(
+                    PAIR, List.of(
+                        declaration(4, 11, 4, 42, "int pick(int first, int second)",
+                            "int pick(int first, int second, int third)"),
+                        replace(9, 15, 9, 34, "pick(pick(1, 2), 3)", "pick(pick(1, 2, 0), 3, 0)")))));
+    }
+
+    @Test
+    @DisplayName("Reordering Pair.pick's parameters, whose call pick(1, 2) is an argument of another, is INTERNAL_ERROR naming that call")
+    void reorderOfArgumentHoldingChangedPlaceFails() {
+        assertPayload(mapper, new ChangeMethodSignatureTool(() -> service), envelope,
+            args(PAIR, 4, 15, null, newParameter("second", "int", null), newParameter("first", "int", null)),
+            map("success", false, "error", map(
+                "code", "INTERNAL_ERROR",
+                "message", "Internal error: Cannot reorder the arguments holding the place at "
+                    + PAIR + ":9:20: that place would not change",
+                "hint", "This may be a bug. Check server logs for details.")));
+    }
+
+    @Test
+    @DisplayName("Changing Mix.mix's String s to CharSequence and adding java.util.List<String> items names the parameters in the Javadoc link that names its own, types alone in the other")
+    void javadocLinkNamingParameters() {
+        assertChange(args(MIX, 7, 22, null, newParameter("a", "int", null), newParameter("s", "CharSequence", null),
+                newParameter("items", "java.util.List<String>", "null")),
+            data("mix", "mix", "int", "int", 2, List.of(parameter("a", "int"), parameter("s", "CharSequence"),
+                parameter("items", "java.util.List<String>")), map(
+                    MIX, List.of(
+                        declaration(7, 18, 7, 42, "int mix(int a, String s)",
+                            "int mix(int a, CharSequence s, java.util.List<String> items)"),
+                        replace(3, 21, 3, 42, "#mix(int a, String s)", "#mix(int a, CharSequence s, java.util.List items)"),
+                        replace(3, 55, 3, 72, "#mix(int, String)", "#mix(int, CharSequence, java.util.List)"),
+                        replace(11, 15, 11, 26, "mix(1, \"x\")", "mix(1, \"x\", null)")))));
+    }
+
+    @Test
+    @DisplayName("Changing Fn.run's String text to CharSequence retypes text in the typed lambda and keeps int times as written")
+    void typedLambdaParameterTakesItsNewType() {
+        assertChange(args(FN, 5, 8, null, newParameter("text", "CharSequence", null), newParameter("times", "int", null)),
+            data("run", "run", "int", "int", 2, List.of(parameter("text", "CharSequence"), parameter("times", "int")), map(
+                FN, List.of(
+                    declaration(5, 4, 5, 35, "int run(String text, int times)", "int run(CharSequence text, int times)")),
+                FNS, List.of(
+                    replace(4, 15, 4, 39, "(String text, int times)", "(CharSequence text, int times)")))));
+    }
+
+    @Test
+    @DisplayName("Adding int code to Mode() gives the constant ON, written without arguments, and OFF() the argument 0")
+    void enumConstantsWithoutArguments() {
+        assertChange(args(MODE, 6, 4, null, newParameter("code", "int", "0")),
+            constructorData("Mode", 0, List.of(parameter("code", "int")), map(
+                MODE, List.of(
+                    declaration(6, 4, 6, 10, "Mode()", "Mode(int code)"),
+                    replace(4, 4, 4, 6, "ON", "ON(0)"),
+                    replace(4, 8, 4, 13, "OFF()", "OFF(0)")))));
+    }
+
+    @Test
+    @DisplayName("Adding int seed to Root() adds a constructor calling super(7) with its class's access to the private Hidden, the protected Shown and the package-private Plain")
+    void addedConstructorsTakeTheirClassAccess() {
+        assertChange(args(ROOT, 4, 11, null, newParameter("seed", "int", "7")),
+            constructorData("Root", 0, List.of(parameter("seed", "int")), map(
+                ROOT, List.of(
+                    declaration(4, 11, 4, 17, "Root()", "Root(int seed)"),
+                    insert(7, 46, "\n\n\t\tprivate Hidden() {\n\t\t\tsuper(7);\n\t\t}"),
+                    insert(10, 47, "\n\n\t\tprotected Shown() {\n\t\t\tsuper(7);\n\t\t}")),
+                PLAIN, List.of(
+                    insert(2, 26, "\n\n\tPlain() {\n\t\tsuper(7);\n\t}")))));
+    }
+
+    @Test
+    @DisplayName("Adding int level to Core() adds a constructor calling super(3) to Busy, which declares a method and no constructor")
+    void constructorAddedToSubclassDeclaringMethods() {
+        assertChange(args(CORE, 4, 11, null, newParameter("level", "int", "3")),
+            constructorData("Core", 0, List.of(parameter("level", "int")), map(
+                CORE, List.of(
+                    declaration(4, 11, 4, 17, "Core()", "Core(int level)")),
+                BUSY, List.of(
+                    insert(4, 4, "public Busy() {\n\t\tsuper(3);\n\t}\n\n\t")))));
+    }
+
+    @Test
+    @DisplayName("The changes of com.example.more, applied together, compile")
+    void appliedChangesOfMoreCompile() throws Exception {
+        JdtServiceImpl copy = helper.loadProjectCopy(FIXTURE);
+        Path root = helper.getTempDirectory().resolve(FIXTURE);
+        ChangeMethodSignatureTool tool = new ChangeMethodSignatureTool(() -> copy);
+        Map<String, List<Map<String, Object>>> edits = new LinkedHashMap<>();
+        for (ObjectNode args : List.of(
+                args(root, STEPS, 4, 22, "stride"),
+                args(root, SHAPE, 4, 15, "surface"),
+                args(root, BUILDER, 6, 19, "plus", newParameter("value", "int", null), newParameter("times", "int", "1")),
+                args(root, PAIR, 4, 15, null, newParameter("first", "int", null), newParameter("second", "int", null),
+                    newParameter("third", "int", "0")),
+                args(root, MIX, 7, 22, null, newParameter("a", "int", null), newParameter("s", "CharSequence", null),
+                    newParameter("items", "java.util.List<String>", "null")),
+                args(root, FN, 5, 8, null, newParameter("text", "CharSequence", null), newParameter("times", "int", null)),
+                args(root, MODE, 6, 4, null, newParameter("code", "int", "0")),
+                args(root, ROOT, 4, 11, null, newParameter("seed", "int", "7")),
+                args(root, CORE, 4, 11, null, newParameter("level", "int", "3")))) {
+            editsByFile(tool, args).forEach((file, fileEdits) ->
+                edits.computeIfAbsent(file, key -> new ArrayList<>()).addAll(fileEdits));
+        }
+        for (Map.Entry<String, List<Map<String, Object>>> file : edits.entrySet()) {
+            Path path = root.resolve(file.getKey());
+            Files.writeString(path, applied(Files.readString(path, StandardCharsets.UTF_8), file.getValue()),
+                StandardCharsets.UTF_8);
+        }
+        JdtServiceImpl reloaded = new JdtServiceImpl();
+        reloaded.loadProject(root);
+        List<String> files = List.of(STEPS, ORDER, SHAPE, SQUARE, MEASURE, BUILDER, PAIR, MIX, FN, FNS, MODE, ROOT,
+            PLAIN, CORE, BUSY);
+        assertEquals(Set.copyOf(files), edits.keySet());
+        assertAll(files.stream().map(file -> (org.junit.jupiter.api.function.Executable) () ->
+            assertEquals(List.of(), NestedTypes.errors(reloaded, root.resolve(file)), "errors in " + file)));
     }
 
     @Test

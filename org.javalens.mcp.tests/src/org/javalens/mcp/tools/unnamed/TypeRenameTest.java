@@ -59,7 +59,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * {@code @Tag(value = "kind")} (line 21, value at 9), returning
  * {@code Widget.KIND + com.example.shapes.Widget.KIND + ...} (line 23: 15, 48). After it, the
  * package-private top-level class {@code Bench} (line 27, column 6) declares
- * {@code Widget held = Widget.of("held")} (line 29: Widget at 4 and 18, of at 25). Positions are
+ * {@code Widget held = Widget.of("held")} (line 29: Widget at 4 and 18, of at 25). Stool.java,
+ * beside Workshop.java, declares {@code Stool}. Positions are
  * zero-based; each file's edits come last position first, and an edit's raw offsets are pinned
  * only as its span, the length of text it replaces.
  */
@@ -134,6 +135,13 @@ class TypeRenameTest {
     }
 
     @Test
+    @DisplayName("Renaming Bench, a top-level class in Workshop.java, to Stool, whose file Stool.java already exists beside Workshop.java, is INVALID_PARAMETER")
+    void secondaryTypeRenameOntoExistingFileIsRefused() {
+        assertPayload(mapper, new RenameSymbolTool(() -> service), envelope, position(WORKSHOP, 27, 6, "Stool"),
+            invalidParameter("Invalid parameter 'newName': Compilation unit 'Stool.java' already exists"));
+    }
+
+    @Test
     @DisplayName("Renaming Widget.of to create edits its declaration, its Javadoc link, both calls and the static import on the name of")
     void methodRenameEditsStaticImportOnTheName() {
         Map<String, Object> editsByFile = map(
@@ -158,6 +166,12 @@ class TypeRenameTest {
         Path root = applied(WIDGET, 5, 13, "Gadget");
         Files.move(root.resolve(WIDGET), root.resolve(GADGET));
         assertCompiles(root, GADGET, WORKSHOP);
+    }
+
+    @Test
+    @DisplayName("Bench renamed to Stand, its edits applied and no file renamed, compiles")
+    void appliedSecondaryTypeRenameCompiles() throws Exception {
+        assertCompiles(applied(WORKSHOP, 27, 6, "Stand"), WORKSHOP);
     }
 
     @Test

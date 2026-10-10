@@ -1,6 +1,7 @@
 package org.javalens.mcp.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.eclipse.core.runtime.CoreException;
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.dom.AST;
@@ -151,32 +152,34 @@ public class GetJpaModelTool extends AbstractTool {
         }
     }
 
-    private List<IType> findEntityTypes(IJdtService service, List<Map<String, Object>> potential) {
+    /**
+     * The types annotated with an entity annotation. An annotation type the project's classpath
+     * does not hold annotates none; a failed lookup or search fails the answer, never leaves that
+     * annotation's entities out.
+     */
+    private List<IType> findEntityTypes(IJdtService service, List<Map<String, Object>> potential)
+            throws CoreException {
         Set<String> seen = new LinkedHashSet<>();
         List<IType> types = new ArrayList<>();
         for (String fqn : ENTITY_ANNOTATIONS) {
-            try {
-                IType annotationType = service.findType(fqn);
-                if (annotationType == null) {
-                    continue;
+            IType annotationType = service.findType(fqn);
+            if (annotationType == null) {
+                continue;
+            }
+            // Every use of the annotation: only those on types are entities. A use the search
+            // could not confirm makes no entity; it is a potential match.
+            SearchResult found = service.getSearchService().findReferences(
+                annotationType, SearchService.ReferenceKind.ANNOTATION, SearchService.ALL_MATCHES);
+            for (Map<String, Object> place : formatMatches(found.potentialMatches(), service)) {
+                place.put("annotation", "@" + annotationType.getElementName());
+                potential.add(place);
+            }
+            List<SearchMatch> matches = found.matches();
+            for (SearchMatch match : matches) {
+                if (match.getElement() instanceof IType type
+                    && seen.add(type.getHandleIdentifier())) {
+                    types.add(type);
                 }
-                // Every use of the annotation: only those on types are entities. A use the search
-                // could not confirm makes no entity; it is a potential match.
-                SearchResult found = service.getSearchService().findReferences(
-                    annotationType, SearchService.ReferenceKind.ANNOTATION, SearchService.ALL_MATCHES);
-                for (Map<String, Object> place : formatMatches(found.potentialMatches(), service)) {
-                    place.put("annotation", "@" + annotationType.getElementName());
-                    potential.add(place);
-                }
-                List<SearchMatch> matches = found.matches();
-                for (SearchMatch match : matches) {
-                    if (match.getElement() instanceof IType type
-                        && seen.add(type.getHandleIdentifier())) {
-                        types.add(type);
-                    }
-                }
-            } catch (Exception e) {
-                log.debug("Could not scan for {}: {}", fqn, e.getMessage());
             }
         }
         return types;

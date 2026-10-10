@@ -1,6 +1,7 @@
 package org.javalens.mcp.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.eclipse.core.runtime.IPath;
 import org.eclipse.jdt.core.Flags;
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IJavaElement;
@@ -62,6 +63,7 @@ import org.slf4j.LoggerFactory;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -305,6 +307,10 @@ public class ChangeMethodSignatureTool extends AbstractTool {
                     }
                 }
             }
+            // In source order, file by file: JDT's search reports a type's field initializers
+            // before its methods (MatchLocator.reportMatching :3246-3300), and each related
+            // method's places after those of the method searched before it.
+            references.sort(SOURCE_ORDER);
 
             Change change = new Change(service, method, ripple, oldName, newName, oldReturnType, newReturnType,
                 oldParamTypes, newParameters, paramMapping);
@@ -450,6 +456,44 @@ public class ChangeMethodSignatureTool extends AbstractTool {
     /** A match's place: its file and offset. */
     private static String placeOf(SearchMatch match) {
         return (match.getResource() == null ? "" : match.getResource().getFullPath().toString()) + "@" + match.getOffset();
+    }
+
+    /** Matches by file, its location compared segment by segment, then by offset. */
+    private static final Comparator<SearchMatch> SOURCE_ORDER = (a, b) -> {
+        String[] left = locationSegments(a);
+        String[] right = locationSegments(b);
+        for (int i = 0; i < Math.min(left.length, right.length); i++) {
+            int bySegment = left[i].compareTo(right[i]);
+            if (bySegment != 0) {
+                return bySegment;
+            }
+        }
+        int byFile = Integer.compare(left.length, right.length);
+        return byFile != 0 ? byFile : Integer.compare(a.getOffset(), b.getOffset());
+    };
+
+    private static String[] locationSegments(SearchMatch match) {
+        IPath location = match.getResource() == null ? null : match.getResource().getLocation();
+        return location == null ? new String[0] : location.segments();
+    }
+
+    /**
+     * Whether {@code node} is the name of a class that declares no constructor. JDT's search
+     * reports the implicit super() call of its default constructor at that name, with the synthetic
+     * flag of the class's last method: true while the default constructor is its only method, false
+     * once the class declares one (ConstructorLocator.newDeclarationMatch :298-305).
+     */
+    private static boolean namesClassWithoutConstructor(ASTNode node) {
+        if (!(node instanceof SimpleName name) || !(name.getParent() instanceof TypeDeclaration type)
+                || type.getName() != name) {
+            return false;
+        }
+        for (Object body : type.bodyDeclarations()) {
+            if (body instanceof MethodDeclaration declaration && declaration.isConstructor()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private MethodDeclaration findMethodDeclaration(CompilationUnit ast, IMethod method) {
@@ -798,7 +842,8 @@ public class ChangeMethodSignatureTool extends AbstractTool {
 
         /**
          * The place a reference match selects. An implicit super() call the search reports
-         * (synthetic) is updated by {@link #implicitSuperCalls}; a call, an enum constant and a
+         * (synthetic, or at the name of a class declaring no constructor, the call of its default
+         * constructor) is updated by {@link #implicitSuperCalls}; a call, an enum constant and a
          * Javadoc reference are rewritten; a static import is updated by {@link #staticImports};
          * a method reference is reported, never rewritten. Any other node fails the change, as
          * JDT's refactoring reports an error for it (NullOccurrenceUpdate :2979-2993): leaving it
@@ -814,6 +859,9 @@ public class ChangeMethodSignatureTool extends AbstractTool {
             }
             FileChange file = file(unit);
             ASTNode node = occurrence(NodeFinder.perform(file.ast, match.getOffset(), match.getLength()));
+            if (constructor && namesClassWithoutConstructor(node)) {
+                return;
+            }
             if (!file.nodes.add(node)) {
                 return;
             }

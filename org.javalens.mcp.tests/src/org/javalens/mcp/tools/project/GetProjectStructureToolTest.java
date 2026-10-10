@@ -13,8 +13,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -22,12 +24,13 @@ class GetProjectStructureToolTest {
 
     @RegisterExtension
     TestProjectHelper helper = new TestProjectHelper();
+    private JdtServiceImpl service;
     private GetProjectStructureTool tool;
     private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() throws Exception {
-        JdtServiceImpl service = helper.loadProject("simple-maven");
+        service = helper.loadProject("simple-maven");
         tool = new GetProjectStructureTool(() -> service);
         objectMapper = new ObjectMapper();
     }
@@ -211,32 +214,87 @@ class GetProjectStructureToolTest {
     }
 
     @Test
-    @DisplayName("maxDepth 20, the largest accepted, lists every package of simple-maven's main source root, those of depth 4 included")
-    @SuppressWarnings("unchecked")
-    void maxDepth_largestAcceptedListsEveryPackage() {
-        // The main source root holds the default package (empty, with subpackages), com,
-        // com.example and its subpackages cycledemo (a, b), genericunused, service and
-        // staticcycle (x, y); the deepest have 4 segments. 0 and 21 are refused
-        // (ParameterRangeTest). The names are compared sorted.
+    @DisplayName("maxDepth 20, the largest accepted, lists every package of simple-maven, those of depth 4 included, in the tool's order")
+    void maxDepth_largestAcceptedListsEveryPackage() throws Exception {
+        // The main source root (src/main/java, the build model's first root) holds, folder by
+        // folder in name order, each folder before its subfolders: the default package (empty,
+        // with subpackages), com (empty), com.example (58 files), com.example.cycledemo
+        // (empty) with a and b (1 file each), genericunused (5), service (1) and staticcycle
+        // (empty) with x and y (1 each). The test root (src/test/java) holds the default
+        // package, com and com.example (3 files). 0 and 21 are refused (ParameterRangeTest).
         ObjectNode args = objectMapper.createObjectNode();
         args.put("maxDepth", 20);
-        ToolResponse response = tool.execute(args);
-        assertTrue(response.isSuccess(), () -> "maxDepth=20 must succeed; got: " + response.getError());
+        assertWholePayload(args, structure(
+            List.of(
+                pkg("(default package)", 0), pkg("com", 0), pkg("com.example", 58),
+                pkg("com.example.cycledemo", 0), pkg("com.example.cycledemo.a", 1),
+                pkg("com.example.cycledemo.b", 1), pkg("com.example.genericunused", 5),
+                pkg("com.example.service", 1), pkg("com.example.staticcycle", 0),
+                pkg("com.example.staticcycle.x", 1), pkg("com.example.staticcycle.y", 1)),
+            List.of(pkg("(default package)", 0), pkg("com", 0), pkg("com.example", 3))));
+    }
 
-        List<Map<String, Object>> sourceRoots =
-            (List<Map<String, Object>>) getData(response).get("sourceRoots");
-        Map<String, Object> mainRoot = sourceRoots.stream()
-            .filter(rt -> ((String) rt.get("path")).replace('\\', '/').endsWith("src-main-java"))
-            .findFirst()
-            .orElseThrow();
-        List<String> names = ((List<Map<String, Object>>) mainRoot.get("packages")).stream()
-            .map(p -> (String) p.get("name"))
-            .sorted()
-            .toList();
-        assertEquals(List.of("(default package)", "com", "com.example", "com.example.cycledemo",
-            "com.example.cycledemo.a", "com.example.cycledemo.b", "com.example.genericunused",
-            "com.example.service", "com.example.staticcycle", "com.example.staticcycle.x",
-            "com.example.staticcycle.y"), names);
+    @Test
+    @DisplayName("maxDepth 1, the smallest accepted, lists only the default package and com of each source root, which hold no file")
+    void maxDepth_smallestAcceptedListsDepthOnePackages() throws Exception {
+        // The default package counts as depth 1, as com does; com.example and deeper are left
+        // out, and totals count the packages listed and their files.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("maxDepth", 1);
+        assertWholePayload(args, structure(
+            List.of(pkg("(default package)", 0), pkg("com", 0)),
+            List.of(pkg("(default package)", 0), pkg("com", 0))));
+    }
+
+    /**
+     * The payload of simple-maven's structure: its main and test source roots listing
+     * {@code main} and {@code test}, the totals counting those packages and their files. The
+     * project name carries a suffix fresh at each load, so it and the root are the loaded
+     * service's.
+     */
+    private Map<String, Object> structure(List<Map<String, Object>> main, List<Map<String, Object>> test) {
+        String project = service.getJavaProject().getElementName();
+        int packages = main.size() + test.size();
+        int files = Stream.concat(main.stream(), test.stream()).mapToInt(p -> (int) p.get("fileCount")).sum();
+        return ordered(
+            "success", true,
+            "data", ordered(
+                "projectName", project,
+                "projectRoot", service.getProjectRoot().toString(),
+                "sourceRoots", List.of(
+                    ordered("path", "/" + project + "/src-0-src-main-java", "packages", main, "packageCount", main.size()),
+                    ordered("path", "/" + project + "/src-1-src-test-java", "packages", test, "packageCount", test.size())),
+                "totalPackages", packages,
+                "totalFiles", files),
+            "meta", ordered(
+                "totalCount", packages,
+                "returnedCount", packages,
+                "suggestedNextTools", List.of(
+                    "search_symbols to find types",
+                    "get_document_symbols to explore a file",
+                    "get_classpath_info for dependencies")));
+    }
+
+    private static Map<String, Object> pkg(String name, int fileCount) {
+        return ordered("name", name, "fileCount", fileCount);
+    }
+
+    private static Map<String, Object> ordered(Object... keysAndValues) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        for (int i = 0; i < keysAndValues.length; i += 2) {
+            map.put((String) keysAndValues[i], keysAndValues[i + 1]);
+        }
+        return map;
+    }
+
+    /** The payload for {@code args}, through execute() and through the JSON-RPC envelope, equals {@code expected}. */
+    private void assertWholePayload(ObjectNode args, Map<String, Object> expected) throws Exception {
+        JsonNode expectedJson = objectMapper.valueToTree(expected);
+        JsonNode direct = objectMapper.readTree(objectMapper.writeValueAsString(tool.execute(args.deepCopy())));
+        JsonNode wire = new EnvelopeHarness(service).assertEnvelopeFidelity("get_project_structure", args);
+        assertAll(
+            () -> assertEquals(expectedJson, direct, "execute() payload for " + args),
+            () -> assertEquals(expectedJson, wire, "envelope payload for " + args));
     }
 
     @Test

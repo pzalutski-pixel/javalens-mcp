@@ -182,44 +182,45 @@ public class GetHttpEndpointsTool extends AbstractTool {
         }
     }
 
+    /**
+     * The routes of the verb annotation {@code annotationFqn}. An annotation type the project's
+     * classpath does not hold registers none; a failed lookup or search fails the answer, never
+     * leaves that annotation's routes out.
+     */
     private void collectEndpoints(IJdtService service, String annotationFqn, String httpMethod,
                                   String framework, List<Map<String, Object>> endpoints,
                                   Map<String, CompilationUnit> astCache, Set<String> seenHandlers,
-                                  List<Map<String, Object>> potential) {
-        try {
-            IType annotationType = service.findType(annotationFqn);
-            if (annotationType == null) {
-                return;
+                                  List<Map<String, Object>> potential) throws Exception {
+        IType annotationType = service.findType(annotationFqn);
+        if (annotationType == null) {
+            return;
+        }
+        // Every use of the annotation: only those on methods are handlers. A use the search
+        // could not confirm registers no route; it is a potential match.
+        SearchResult found = service.getSearchService().findReferences(
+            annotationType, SearchService.ReferenceKind.ANNOTATION, SearchService.ALL_MATCHES);
+        for (Map<String, Object> place : formatMatches(found.potentialMatches(), service)) {
+            place.put("annotation", "@" + annotationType.getElementName());
+            potential.add(place);
+        }
+        List<SearchMatch> matches = found.matches();
+        for (SearchMatch match : matches) {
+            if (!(match.getElement() instanceof IMethod handler)) {
+                continue;
             }
-            // Every use of the annotation: only those on methods are handlers. A use the search
-            // could not confirm registers no route; it is a potential match.
-            SearchResult found = service.getSearchService().findReferences(
-                annotationType, SearchService.ReferenceKind.ANNOTATION, SearchService.ALL_MATCHES);
-            for (Map<String, Object> place : formatMatches(found.potentialMatches(), service)) {
-                place.put("annotation", "@" + annotationType.getElementName());
-                potential.add(place);
+            // Only a class a framework can register holds routes.
+            if (!registrable(handler.getDeclaringType())) {
+                continue;
             }
-            List<SearchMatch> matches = found.matches();
-            for (SearchMatch match : matches) {
-                if (!(match.getElement() instanceof IMethod handler)) {
-                    continue;
-                }
-                // Only a class a framework can register holds routes.
-                if (!registrable(handler.getDeclaringType())) {
-                    continue;
-                }
-                String dedupeKey = handler.getHandleIdentifier() + "|" + annotationFqn;
-                if (!seenHandlers.add(dedupeKey)) {
-                    continue;
-                }
-                Map<String, Object> endpoint =
-                    assembleEndpoint(service, handler, annotationFqn, httpMethod, framework, astCache);
-                if (endpoint != null) {
-                    endpoints.add(endpoint);
-                }
+            String dedupeKey = handler.getHandleIdentifier() + "|" + annotationFqn;
+            if (!seenHandlers.add(dedupeKey)) {
+                continue;
             }
-        } catch (Exception e) {
-            log.debug("Could not scan for {}: {}", annotationFqn, e.getMessage());
+            Map<String, Object> endpoint =
+                assembleEndpoint(service, handler, annotationFqn, httpMethod, framework, astCache);
+            if (endpoint != null) {
+                endpoints.add(endpoint);
+            }
         }
     }
 
