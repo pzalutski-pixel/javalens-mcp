@@ -45,7 +45,9 @@ public class IntroduceParameterObjectTool extends AbstractTool {
 
             USAGE: Position on the method name; optionally name the class and parameter.
             OUTPUT: editsByFile with all required edits; warnings from JDT's
-            condition checking. Edits are returned as text - apply them yourself.
+            condition checking, by the place each names (file, then position;
+            those naming one place in JDT's order, those naming none last). Edits
+            are returned as text - apply them yourself.
 
             IMPORTANT: Uses ZERO-BASED coordinates.
 

@@ -30,8 +30,8 @@ public class GetTypeHierarchyTool extends AbstractTool {
 
     private static final Logger log = LoggerFactory.getLogger(GetTypeHierarchyTool.class);
 
-    /** The largest {@code maxDepth} accepted. */
-    private static final int MAX_DEPTH = 50;
+    /** The largest {@code maxResults} accepted. */
+    private static final int MAX_RESULTS = 50;
 
     public GetTypeHierarchyTool(Supplier<IJdtService> serviceSupplier) {
         super(serviceSupplier);
@@ -64,7 +64,10 @@ public class GetTypeHierarchyTool extends AbstractTool {
             places naming the type, or a subtype, as a supertype that JDT could not
             confirm.
 
-            maxDepth outside 1 to 50 is INVALID_PARAMETER.
+            maxResults, the most entries each of superclasses, interfaces and
+            subtypes lists (totalSuperclasses, totalInterfaces and totalSubtypes
+            count all of them, and meta.truncated says when a list is cut), is 1 to
+            50; outside that range is INVALID_PARAMETER.
 
             """ + POTENTIAL_MATCHES + """
             Requires load_project to be called first.
@@ -78,7 +81,7 @@ public class GetTypeHierarchyTool extends AbstractTool {
             .optional("line", "integer", "Zero-based line number")
             .optional("column", "integer", "Zero-based column number")
             .optional("typeName", "string", "Fully qualified type name (alternative to position)")
-            .optional("maxDepth", "integer", "Maximum depth of hierarchy to return, 1 to 50 (default 10)")
+            .optional("maxResults", "integer", "Most entries each list holds, 1 to 50 (default 10)")
             .build();
     }
 
@@ -88,10 +91,10 @@ public class GetTypeHierarchyTool extends AbstractTool {
         String typeName = getStringParam(arguments, "typeName");
         int line = getIntParam(arguments, "line", -1);
         int column = getIntParam(arguments, "column", -1);
-        int maxDepth = getIntParam(arguments, "maxDepth", 10);
-        if (maxDepth < 1 || maxDepth > MAX_DEPTH) {
-            return ToolResponse.invalidParameter("maxDepth",
-                "Must be between 1 and " + MAX_DEPTH + "; got: " + maxDepth);
+        int maxResults = getIntParam(arguments, "maxResults", 10);
+        if (maxResults < 1 || maxResults > MAX_RESULTS) {
+            return ToolResponse.invalidParameter("maxResults",
+                "Must be between 1 and " + MAX_RESULTS + "; got: " + maxResults);
         }
 
         try {
@@ -130,7 +133,7 @@ public class GetTypeHierarchyTool extends AbstractTool {
             List<IType> superclasses = hierarchy.allSuperclasses();
             List<Map<String, Object>> superclassList = new ArrayList<>();
             for (IType superclass : superclasses) {
-                if (superclassList.size() >= maxDepth) break;
+                if (superclassList.size() >= maxResults) break;
                 superclassList.add(createTypeInfo(superclass, service));
             }
             data.put("superclasses", superclassList);
@@ -139,7 +142,7 @@ public class GetTypeHierarchyTool extends AbstractTool {
             List<IType> interfaces = hierarchy.allSuperInterfaces();
             List<Map<String, Object>> interfaceList = new ArrayList<>();
             for (IType iface : interfaces) {
-                if (interfaceList.size() >= maxDepth) break;
+                if (interfaceList.size() >= maxResults) break;
                 interfaceList.add(createTypeInfo(iface, service));
             }
             data.put("interfaces", interfaceList);
@@ -154,11 +157,11 @@ public class GetTypeHierarchyTool extends AbstractTool {
             List<IType> subtypes = hierarchy.allSubtypes();
             List<Map<String, Object>> subtypeList = new ArrayList<>();
             for (IType subtype : subtypes) {
-                if (subtypeList.size() >= maxDepth) break;
+                if (subtypeList.size() >= maxResults) break;
                 subtypeList.add(createTypeInfo(subtype, service));
             }
             data.put("subtypes", subtypeList);
-            Map<String, Object> potential = potentialSubtypes(hierarchy, maxDepth, service);
+            Map<String, Object> potential = potentialSubtypes(hierarchy, maxResults, service);
             if (potential != null) {
                 data.put("potentialMatches", potential);
             }

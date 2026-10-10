@@ -74,7 +74,7 @@ public class AnalyzeTypeTool extends AbstractTool {
             type or one of its supertypes. The hierarchy's potentialMatches are
             places naming the type as a supertype that JDT could not confirm; the
             usage summary's are uses it could not confirm, the first maxUsages of
-            each category.
+            each category. maxUsages below 0 is INVALID_PARAMETER.
 
             """ + POTENTIAL_MATCHES + """
             Requires load_project to be called first.
@@ -86,7 +86,7 @@ public class AnalyzeTypeTool extends AbstractTool {
         return SchemaBuilder.object()
             .required("typeName", "string", "Fully qualified or simple type name")
             .optional("includeUsages", "boolean", "Include usage analysis (default true)")
-            .optional("maxUsages", "integer", "Max usages per category (default 10)")
+            .optional("maxUsages", "integer", "Max usages per category, 0 or more (default 10)")
             .build();
     }
 
@@ -99,6 +99,9 @@ public class AnalyzeTypeTool extends AbstractTool {
 
         boolean includeUsages = getBooleanParam(arguments, "includeUsages", true);
         int maxUsages = getIntParam(arguments, "maxUsages", 10);
+        if (maxUsages < 0) {
+            return ToolResponse.invalidParameter("maxUsages", "Must be >= 0; got: " + maxUsages);
+        }
 
         try {
             IType type = service.findType(typeName);

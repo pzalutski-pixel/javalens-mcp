@@ -28,6 +28,7 @@ import org.eclipse.jdt.core.dom.IMethodBinding;
 import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.IVariableBinding;
 import org.eclipse.jdt.core.dom.ImportDeclaration;
+import org.eclipse.jdt.core.dom.Javadoc;
 import org.eclipse.jdt.core.dom.LambdaExpression;
 import org.eclipse.jdt.core.dom.MemberRef;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
@@ -44,6 +45,7 @@ import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
 import org.eclipse.jdt.core.dom.Statement;
 import org.eclipse.jdt.core.dom.SuperConstructorInvocation;
 import org.eclipse.jdt.core.dom.SuperMethodInvocation;
+import org.eclipse.jdt.core.dom.TagElement;
 import org.eclipse.jdt.core.dom.Type;
 import org.eclipse.jdt.core.dom.TypeDeclaration;
 import org.eclipse.jdt.core.dom.VariableDeclaration;
@@ -145,8 +147,20 @@ public class ChangeMethodSignatureTool extends AbstractTool {
             PARAMETER OPERATIONS:
             - Add new parameter with default value for existing calls
             - Remove parameter (will remove from calls)
-            - Rename parameter
+            - Rename parameter: give it its new name and, as oldName, the name it
+              has now. Each declaration and lambda expression that names it so
+              takes the new name in its parameter list and every reference to it
+              in its body, a declaration's @param tag naming it too, and a
+              Javadoc reference naming it takes the new name; calls keep their
+              arguments. A declaration or lambda expression that names it
+              otherwise keeps its own name. An oldName that names no parameter
+              of the method is INVALID_PARAMETER.
             - Reorder parameters (specify all parameters in new order)
+
+            A renamed parameter's @param tag and references follow its
+            declaration's or lambda expression's edit, in source order. The edits
+            of the lambda expressions come in source order, file by file, as the
+            other places do.
 
             IMPORTANT: Uses ZERO-BASED coordinates.
 
@@ -165,12 +179,14 @@ public class ChangeMethodSignatureTool extends AbstractTool {
             .optional("newReturnType", "string", "New return type (optional, omit to keep current)")
             .optionalCustom("newParameters", Map.of(
                 "type", "array",
-                "description", "New parameter list. Each item: {name, type, defaultValue?}. Order matters.",
+                "description", "New parameter list. Each item: {name, type, oldName?, defaultValue?}. Order matters.",
                 "items", Map.of(
                     "type", "object",
                     "properties", Map.of(
                         "name", Map.of("type", "string", "description", "Parameter name"),
                         "type", Map.of("type", "string", "description", "Parameter type"),
+                        "oldName", Map.of("type", "string", "description",
+                            "The parameter's current name, when it is renamed to name"),
                         "defaultValue", Map.of("type", "string", "description", "Default value for new params at call sites")
                     )
                 )
@@ -203,12 +219,13 @@ public class ChangeMethodSignatureTool extends AbstractTool {
                 String pName = param.has("name") ? param.get("name").asText() : null;
                 String pType = param.has("type") ? param.get("type").asText() : null;
                 String pDefault = param.has("defaultValue") ? param.get("defaultValue").asText() : null;
+                String pOldName = param.has("oldName") ? param.get("oldName").asText() : null;
 
                 if (pName == null || pType == null) {
                     return ToolResponse.invalidParameter("newParameters",
                         "Each parameter must have 'name' and 'type'");
                 }
-                newParameters.add(new ParameterInfo(pName, pType, pDefault));
+                newParameters.add(new ParameterInfo(pName, pType, pDefault, pOldName));
             }
         }
 
@@ -262,8 +279,18 @@ public class ChangeMethodSignatureTool extends AbstractTool {
                     newParameters.add(new ParameterInfo(
                         oldParamNames[i],
                         Signature.toString(oldParamTypes[i]),
+                        null,
                         null
                     ));
+                }
+            }
+
+            // A renamed parameter is the parameter its oldName names
+            for (ParameterInfo param : newParameters) {
+                if (param.oldName != null && !List.of(oldParamNames).contains(param.oldName)) {
+                    return ToolResponse.invalidParameter("newParameters", "oldName '" + param.oldName
+                        + "' names no parameter of " + oldName + (oldParamNames.length == 0 ? ", which has none"
+                            : ", whose parameters are " + String.join(", ", oldParamNames)));
                 }
             }
 
@@ -313,7 +340,7 @@ public class ChangeMethodSignatureTool extends AbstractTool {
             references.sort(SOURCE_ORDER);
 
             Change change = new Change(service, method, ripple, oldName, newName, oldReturnType, newReturnType,
-                oldParamTypes, newParameters, paramMapping);
+                oldParamTypes, oldParamNames, newParameters, paramMapping);
 
             // 1. Each declaration, in the order of their types by file and position
             for (IMethod declared : ripple) {
@@ -327,14 +354,17 @@ public class ChangeMethodSignatureTool extends AbstractTool {
             }
 
             // 3. The lambda expressions implementing any of the methods, whose parameters change
-            // with theirs (JDT's search reports each as a declaration of the method)
-            if (!method.isConstructor() && change.parametersChanged()) {
+            // with theirs (JDT's search reports each as a declaration of the method), in source
+            // order, file by file, whichever method's search reports them
+            if (!method.isConstructor() && (change.parametersChanged() || change.parametersRenamed())) {
+                List<SearchMatch> lambdas = new ArrayList<>();
+                Set<String> lambdaPlaces = new HashSet<>();
                 for (IMethod declared : ripple) {
                     SearchResult found = service.getSearchService().findDeclarationsInSources(
                         declared, SearchService.ALL_MATCHES);
                     for (SearchMatch match : found.matches()) {
-                        if (isLambdaMethod(match)) {
-                            change.lambda(match);
+                        if (isLambdaMethod(match) && lambdaPlaces.add(placeOf(match))) {
+                            lambdas.add(match);
                         }
                     }
                     for (SearchMatch match : found.potentialMatches()) {
@@ -342,6 +372,10 @@ public class ChangeMethodSignatureTool extends AbstractTool {
                             potential.add(match);
                         }
                     }
+                }
+                lambdas.sort(SOURCE_ORDER);
+                for (SearchMatch match : lambdas) {
+                    change.lambda(match);
                 }
             }
 
@@ -420,6 +454,10 @@ public class ChangeMethodSignatureTool extends AbstractTool {
         }
     }
 
+    /**
+     * Each old parameter's index in the new list, or -1 when it is removed: the new parameter
+     * whose oldName names it, renamed, or else the one of its name.
+     */
     private int[] buildParameterMapping(String[] oldNames, List<ParameterInfo> newParams) {
         int[] mapping = new int[oldNames.length];
 
@@ -428,7 +466,7 @@ public class ChangeMethodSignatureTool extends AbstractTool {
 
             // Find this param in new list
             for (int newIdx = 0; newIdx < newParams.size(); newIdx++) {
-                if (oldNames[oldIdx].equals(newParams.get(newIdx).name)) {
+                if (oldNames[oldIdx].equals(newParams.get(newIdx).identity())) {
                     mapping[oldIdx] = newIdx;
                     break;
                 }
@@ -706,6 +744,7 @@ public class ChangeMethodSignatureTool extends AbstractTool {
         private final String oldReturnType;
         private final String newReturnType;
         private final String[] oldParamTypes;
+        private final String[] oldParamNames;
         private final List<ParameterInfo> newParameters;
         private final int[] paramMapping;
         /** Whether a kept parameter moves before one it followed, so calls re-render their arguments. */
@@ -715,7 +754,7 @@ public class ChangeMethodSignatureTool extends AbstractTool {
         final List<Map<String, Object>> methodReferences = new ArrayList<>();
 
         Change(IJdtService service, IMethod method, List<IMethod> ripple, String oldName, String newName,
-               String oldReturnType, String newReturnType, String[] oldParamTypes,
+               String oldReturnType, String newReturnType, String[] oldParamTypes, String[] oldParamNames,
                List<ParameterInfo> newParameters, int[] paramMapping) throws JavaModelException {
             this.service = service;
             this.ripple = new HashSet<>(ripple);
@@ -726,6 +765,7 @@ public class ChangeMethodSignatureTool extends AbstractTool {
             this.oldReturnType = oldReturnType;
             this.newReturnType = newReturnType;
             this.oldParamTypes = oldParamTypes;
+            this.oldParamNames = oldParamNames;
             this.newParameters = newParameters;
             this.paramMapping = paramMapping;
             boolean moved = false;
@@ -752,6 +792,79 @@ public class ChangeMethodSignatureTool extends AbstractTool {
                 }
             }
             return false;
+        }
+
+        /** Whether a parameter is renamed: kept, under a new name. */
+        boolean parametersRenamed() {
+            for (int oldIdx = 0; oldIdx < oldParamNames.length; oldIdx++) {
+                if (renamedTo(oldIdx) != null) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /** The new name of the parameter at {@code oldIdx} when it is renamed; else null. */
+        private String renamedTo(int oldIdx) {
+            int newIdx = oldIdx < paramMapping.length ? paramMapping[oldIdx] : -1;
+            if (newIdx < 0) {
+                return null;
+            }
+            String name = newParameters.get(newIdx).name;
+            return name.equals(oldParamNames[oldIdx]) ? null : name;
+        }
+
+        /**
+         * {@code parameter} as written, its name {@code name}: its modifiers, type and extra
+         * dimensions kept.
+         */
+        private String withName(FileChange file, VariableDeclaration parameter, String name) {
+            return file.source.substring(parameter.getStartPosition(), parameter.getName().getStartPosition())
+                + name + file.source.substring(end(parameter.getName()), end(parameter));
+        }
+
+        /**
+         * Renames {@code parameter}, of the declaration or lambda expression whose body is
+         * {@code body}, to {@code name} where it is referred to: the @param tag of {@code javadoc}
+         * naming it (ChangeSignatureProcessor.changeJavadocTags :2648-2656), then each reference in
+         * {@code body} (TempOccurrenceAnalyzer, as changeParamgumentName :2306-2318 finds them),
+         * each a place of its own, in source order.
+         */
+        private void renameReferences(FileChange file, VariableDeclaration parameter, ASTNode body,
+                                      Javadoc javadoc, String name) {
+            String old = parameter.getName().getIdentifier();
+            if (javadoc != null) {
+                for (Object tag : javadoc.tags()) {
+                    if (tag instanceof TagElement element && TagElement.TAG_PARAM.equals(element.getTagName())
+                            && !element.fragments().isEmpty() && element.fragments().get(0) instanceof SimpleName named
+                            && named.getIdentifier().equals(old)) {
+                        renameName(file, named, name);
+                    }
+                }
+            }
+            if (body == null) {
+                return;
+            }
+            IVariableBinding binding = parameter.resolveBinding();
+            if (binding == null) {
+                throw new IllegalStateException("The compiler resolves no binding for the parameter " + old
+                    + " at " + file.position(parameter.getStartPosition()));
+            }
+            body.accept(new ASTVisitor() {
+                @Override
+                public boolean visit(SimpleName node) {
+                    if (node.getIdentifier().equals(old) && node.resolveBinding() instanceof IVariableBinding variable
+                            && variable.isEqualTo(binding)) {
+                        renameName(file, node, name);
+                    }
+                    return true;
+                }
+            });
+        }
+
+        private void renameName(FileChange file, SimpleName node, String name) {
+            file.rewrite.replace(node, placeholder(file, name, ASTNode.SIMPLE_NAME), null);
+            add(file, new Place(node.getStartPosition(), end(node), false, null));
         }
 
         private FileChange file(ICompilationUnit unit) throws JavaModelException {
@@ -808,18 +921,28 @@ public class ChangeMethodSignatureTool extends AbstractTool {
             for (SingleVariableDeclaration oldParam : declaredParams) {
                 paramsRewrite.remove(oldParam, null);
             }
+            // A renamed parameter takes its new name where this declaration names it as the method
+            // at position does (ChangeSignatureProcessor.changeParamgumentName :2306-2310)
+            Map<SingleVariableDeclaration, String> renamed = new LinkedHashMap<>();
+            for (int oldIdx = 0; oldIdx < declaredParams.size(); oldIdx++) {
+                String renamedTo = renamedTo(oldIdx);
+                SingleVariableDeclaration own = declaredParams.get(oldIdx);
+                if (renamedTo != null && own.getName().getIdentifier().equals(oldParamNames[oldIdx])) {
+                    renamed.put(own, renamedTo);
+                }
+            }
             for (int newIdx = 0; newIdx < newParameters.size(); newIdx++) {
                 ParameterInfo param = newParameters.get(newIdx);
                 int oldIdx = oldIndexOf(paramMapping, newIdx);
                 if (!atPosition && oldIdx >= 0 && oldIdx < declaredParams.size()) {
                     SingleVariableDeclaration own = declaredParams.get(oldIdx);
+                    String name = renamed.getOrDefault(own, own.getName().getIdentifier());
                     if (param.type.equals(Signature.toString(oldParamTypes[oldIdx]))) {
-                        paramsRewrite.insertLast(placeholder(file, file.source.substring(own.getStartPosition(),
-                            end(own)), ASTNode.SINGLE_VARIABLE_DECLARATION), null);
+                        paramsRewrite.insertLast(placeholder(file, withName(file, own, name),
+                            ASTNode.SINGLE_VARIABLE_DECLARATION), null);
                         continue;
                     }
-                    paramsRewrite.insertLast(newParameter(factory, rewrite, param.type,
-                        own.getName().getIdentifier()), null);
+                    paramsRewrite.insertLast(newParameter(factory, rewrite, param.type, name), null);
                     continue;
                 }
                 paramsRewrite.insertLast(newParameter(factory, rewrite, param.type, param.name), null);
@@ -834,6 +957,10 @@ public class ChangeMethodSignatureTool extends AbstractTool {
                 : end(declaredParams.get(declaredParams.size() - 1));
             file.nodes.add(methodDecl);
             add(file, new Place(start, past(file.source, parametersFrom, ')'), true, null));
+            for (Map.Entry<SingleVariableDeclaration, String> parameter : renamed.entrySet()) {
+                renameReferences(file, parameter.getKey(), methodDecl.getBody(), methodDecl.getJavadoc(),
+                    parameter.getValue());
+            }
         }
 
         /**
@@ -981,7 +1108,7 @@ public class ChangeMethodSignatureTool extends AbstractTool {
             SimpleName name;
             if (node instanceof MethodRef ref) {
                 name = ref.getName();
-                if (parametersChanged()) {
+                if (parametersChanged() || parametersRenamed()) {
                     @SuppressWarnings("unchecked")
                     List<MethodRefParameter> old = ref.parameters();
                     ListRewrite list = file.rewrite.getListRewrite(ref, MethodRef.PARAMETERS_PROPERTY);
@@ -995,9 +1122,21 @@ public class ChangeMethodSignatureTool extends AbstractTool {
                         String text;
                         if (oldIdx >= 0 && oldIdx < old.size()) {
                             MethodRefParameter own = old.get(oldIdx);
-                            text = param.type.equals(Signature.toString(oldParamTypes[oldIdx]))
-                                ? file.source.substring(own.getStartPosition(), end(own))
-                                : erasure(param.type) + (own.getName() != null ? " " + own.getName().getIdentifier() : "");
+                            // A name the reference gives the parameter takes its new name
+                            // (DocReferenceUpdate.changeParamgumentName :2910-2918)
+                            String renamedTo = own.getName() == null ? null : renamedTo(oldIdx);
+                            boolean sameType = param.type.equals(Signature.toString(oldParamTypes[oldIdx]));
+                            if (sameType && renamedTo == null) {
+                                text = file.source.substring(own.getStartPosition(), end(own));
+                            } else {
+                                String type = sameType
+                                    ? file.source.substring(own.getStartPosition(), end(own.getType()))
+                                        + (own.isVarargs() ? "..." : "")
+                                    : erasure(param.type);
+                                String ownName = own.getName() == null ? null
+                                    : renamedTo != null ? renamedTo : own.getName().getIdentifier();
+                                text = type + (ownName != null ? " " + ownName : "");
+                            }
                         } else {
                             text = erasure(param.type) + (named ? " " + param.name : "");
                         }
@@ -1039,18 +1178,27 @@ public class ChangeMethodSignatureTool extends AbstractTool {
             for (VariableDeclaration parameter : old) {
                 list.remove(parameter, null);
             }
+            // A renamed parameter takes its new name where the lambda expression names it as the
+            // method at position does (AbstractDeclarationUpdate.changeParamgumentName :2306-2310)
+            Map<VariableDeclaration, String> renamed = new LinkedHashMap<>();
+            for (int oldIdx = 0; oldIdx < old.size(); oldIdx++) {
+                String renamedTo = renamedTo(oldIdx);
+                if (renamedTo != null && old.get(oldIdx).getName().getIdentifier().equals(oldParamNames[oldIdx])) {
+                    renamed.put(old.get(oldIdx), renamedTo);
+                }
+            }
             for (int newIdx = 0; newIdx < newParameters.size(); newIdx++) {
                 ParameterInfo param = newParameters.get(newIdx);
                 int oldIdx = oldIndexOf(paramMapping, newIdx);
                 if (oldIdx >= 0 && oldIdx < old.size()) {
                     VariableDeclaration own = old.get(oldIdx);
+                    String name = renamed.getOrDefault(own, own.getName().getIdentifier());
                     if (own instanceof SingleVariableDeclaration
                             && !param.type.equals(Signature.toString(oldParamTypes[oldIdx]))) {
-                        list.insertLast(placeholder(file, param.type + " " + own.getName().getIdentifier(),
+                        list.insertLast(placeholder(file, param.type + " " + name,
                             ASTNode.SINGLE_VARIABLE_DECLARATION), null);
                     } else {
-                        list.insertLast(placeholder(file, file.source.substring(own.getStartPosition(), end(own)),
-                            own.getNodeType()), null);
+                        list.insertLast(placeholder(file, withName(file, own, name), own.getNodeType()), null);
                     }
                 } else if (typed) {
                     list.insertLast(placeholder(file, param.type + " " + param.name,
@@ -1067,6 +1215,9 @@ public class ChangeMethodSignatureTool extends AbstractTool {
                 end = end(old.get(old.size() - 1));
             }
             add(file, new Place(lambda.getStartPosition(), end, false, null));
+            for (Map.Entry<VariableDeclaration, String> parameter : renamed.entrySet()) {
+                renameReferences(file, parameter.getKey(), lambda.getBody(), null, parameter.getValue());
+            }
         }
 
         /** The lambda expression starting at {@code offset}, where JDT's search places its declaration. */
@@ -1411,11 +1562,19 @@ public class ChangeMethodSignatureTool extends AbstractTool {
         final String name;
         final String type;
         final String defaultValue;
+        /** The name the parameter has now, when it is renamed; else null. */
+        final String oldName;
 
-        ParameterInfo(String name, String type, String defaultValue) {
+        ParameterInfo(String name, String type, String defaultValue, String oldName) {
             this.name = name;
             this.type = type;
             this.defaultValue = defaultValue;
+            this.oldName = oldName;
+        }
+
+        /** The name of the old parameter this one is: its oldName, else its name. */
+        String identity() {
+            return oldName != null ? oldName : name;
         }
     }
 }

@@ -188,8 +188,7 @@ public class PullUpTool extends AbstractTool {
             // JDT reports the members a pulled-up member uses in the order of hash sets of Java
             // elements (ReferenceFinderUtil.extractElements :173-180), which follows the hash of
             // the project's name: the warnings are listed by the place each names instead.
-            RefactoringInvoker.Outcome outcome = RefactoringInvoker.run(descriptor, service,
-                RefactoringInvoker.WarningOrder.BY_PLACE);
+            RefactoringInvoker.Outcome outcome = RefactoringInvoker.run(descriptor, service);
             if (outcome.refused()) {
                 return ToolResponse.invalidParameter("member",
                     String.join("; ", outcome.reasons()));

@@ -86,6 +86,11 @@ public class GetDependencyGraphTool extends AbstractTool {
             project's source folders, a library's package such as java.util
             included, is SYMBOL_NOT_FOUND.
 
+            At type scope, depth is how many steps of dependencies are followed
+            from the type, 1 or more: 1 lists the type's own dependencies, 2 also
+            those of each dependency with source, and so on. Below 1 is
+            INVALID_PARAMETER.
+
             Dependency types tracked:
             - import: Direct imports
             - extends: Superclass inheritance
@@ -103,7 +108,7 @@ public class GetDependencyGraphTool extends AbstractTool {
         return SchemaBuilder.object()
             .required("scope", "string", "Scope: 'type' or 'package'")
             .required("name", "string", "Type name (fully qualified) or package name")
-            .optional("depth", "integer", "How deep to follow dependencies (default: 1)")
+            .optional("depth", "integer", "How deep to follow dependencies, 1 or more (default: 1)")
             .optional("includeExternal", "boolean", "Include JDK/library dependencies (default: false)")
             .build();
     }
@@ -120,6 +125,9 @@ public class GetDependencyGraphTool extends AbstractTool {
         }
         if (name == null || name.isBlank()) {
             return ToolResponse.invalidParameter("name", "Required");
+        }
+        if (depth < 1) {
+            return ToolResponse.invalidParameter("depth", "Must be >= 1; got: " + depth);
         }
 
         try {

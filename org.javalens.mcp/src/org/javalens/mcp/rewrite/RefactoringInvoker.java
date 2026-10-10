@@ -31,7 +31,7 @@ import java.util.Map;
 /**
  * Runs a JDT refactoring (constructed from its public descriptor) headlessly
  * and converts the resulting {@link Change} tree into the edit JSON JavaLens
- * tools return. The change is NEVER performed — JavaLens analyzes and returns
+ * tools return. The change is NEVER performed: JavaLens analyzes and returns
  * edits as text; the caller is the only writer.
  *
  * <p>Status policy: a FATAL condition (or a failure to construct the
@@ -58,47 +58,32 @@ public final class RefactoringInvoker {
         }
     }
 
-    /** The order of an outcome's warnings. */
-    public enum WarningOrder {
-        /** As JDT reports them. */
-        AS_REPORTED,
-        /**
-         * By the place each names in source, its file then its offset; those naming one place,
-         * and after all of them those naming none, as JDT reports them. Where JDT reports in the
-         * order of a hash set of Java elements, whose hashes follow the project's name, this
-         * order is the same for every load.
-         */
-        BY_PLACE
-    }
-
-    /** {@link #run(JavaRefactoringDescriptor, IJdtService, WarningOrder)}, warnings as JDT reports them. */
+    /**
+     * Runs the refactoring {@code descriptor} describes, never performing it. Its findings, the
+     * refusal's reasons or the warnings, are listed by the place each names in source, its file
+     * then its offset, those naming one place, and after all of them those naming none, as JDT
+     * reports them, each naming a file as every tool names it. Where JDT reports in the order of a
+     * hash set of Java elements, whose hashes follow the project's name
+     * (ReferenceFinderUtil.extractElements :173-180, through which pull up, extract superclass and
+     * push down read the members their members use), this order is the same for every load.
+     */
     public static Outcome run(JavaRefactoringDescriptor descriptor, IJdtService service)
-            throws Exception {
-        return run(descriptor, service, WarningOrder.AS_REPORTED);
-    }
-
-    public static Outcome run(JavaRefactoringDescriptor descriptor, IJdtService service, WarningOrder order)
             throws Exception {
         HeadlessJdtEnvironment.ensure();
 
         RefactoringStatus createStatus = new RefactoringStatus();
         Refactoring refactoring = descriptor.createRefactoring(createStatus);
         if (refactoring == null || createStatus.hasFatalError()) {
-            return Outcome.refusal(messagesOf(createStatus, RefactoringStatus.FATAL));
+            return Outcome.refusal(byPlace(entriesOf(createStatus, RefactoringStatus.FATAL), service));
         }
 
         RefactoringStatus conditions = refactoring.checkAllConditions(Deadline.monitor());
         if (conditions.hasFatalError()) {
-            return Outcome.refusal(messagesOf(conditions, RefactoringStatus.FATAL));
+            return Outcome.refusal(byPlace(entriesOf(conditions, RefactoringStatus.FATAL), service));
         }
         List<RefactoringStatusEntry> entries = new ArrayList<>(entriesOf(createStatus, RefactoringStatus.INFO));
         entries.addAll(entriesOf(conditions, RefactoringStatus.INFO));
-        if (order == WarningOrder.BY_PLACE) {
-            // A stable sort: entries naming one place keep JDT's order
-            entries.sort(Comparator.comparing((RefactoringStatusEntry entry) -> placeOf(entry, service),
-                Comparator.nullsLast(Comparator.comparing(Place::file).thenComparingInt(Place::offset))));
-        }
-        List<String> warnings = entries.stream().map(RefactoringStatusEntry::getMessage).toList();
+        List<String> warnings = byPlace(entries, service);
 
         Change change = refactoring.createChange(Deadline.monitor());
 
@@ -110,15 +95,11 @@ public final class RefactoringInvoker {
         return new Outcome(false, List.of(), warnings, editsByFile, createdFiles, fileRenames);
     }
 
-    private static List<String> messagesOf(RefactoringStatus status, int minSeverity) {
-        return entriesOf(status, minSeverity).stream().map(RefactoringStatusEntry::getMessage).toList();
-    }
-
     /**
      * What a rename's conditions find: {@code conflicts}, the FATAL and ERROR entries, where JDT
      * judges the refactoring would leave the code not compiling or not meaning what it meant, and
      * {@code warnings}, the WARNING and INFO entries. Each list runs by the place its entries name,
-     * as {@link WarningOrder#BY_PLACE} orders, and names a file JDT names by its workspace path as
+     * as {@link #run} orders findings, and names a file JDT names by its workspace path as
      * every tool names it ({@link #withProjectPaths}). JDT's note that its search found places it
      * could not confirm (RefactoringSearchEngine.addStatusErrors :219-224) names no conflict: the
      * tools list those places as potentialMatches.
@@ -295,7 +276,7 @@ public final class RefactoringInvoker {
             return;
         }
 
-        // Never silently drop a change we don't understand — the result would
+        // Never silently drop a change we don't understand: the result would
         // be an incomplete refactoring presented as complete.
         throw new IllegalStateException("Unsupported change type in refactoring result: "
             + change.getClass().getName() + " (" + change.getName() + ")");

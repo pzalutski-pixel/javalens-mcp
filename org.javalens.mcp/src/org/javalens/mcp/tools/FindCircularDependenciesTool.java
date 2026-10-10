@@ -56,6 +56,9 @@ public class FindCircularDependenciesTool extends AbstractTool {
             Uses Tarjan's SCC algorithm to efficiently detect all cycles.
             Reports cycle paths and affected packages.
 
+            maxCycleLength, the most packages a reported cycle joins, is 2 or more
+            (a cycle joins at least two packages); below 2 is INVALID_PARAMETER.
+
             Requires load_project to be called first.
             """;
     }
@@ -64,7 +67,7 @@ public class FindCircularDependenciesTool extends AbstractTool {
     public Map<String, Object> getInputSchema() {
         return SchemaBuilder.object()
             .optional("packageFilter", "string", "Package prefix to analyze (default: all project packages)")
-            .optional("maxCycleLength", "integer", "Maximum cycle length to report (default: 10)")
+            .optional("maxCycleLength", "integer", "Maximum cycle length to report, 2 or more (default: 10)")
             .build();
     }
 
@@ -72,6 +75,9 @@ public class FindCircularDependenciesTool extends AbstractTool {
     protected ToolResponse executeWithService(IJdtService service, JsonNode arguments) {
         String packageFilter = getStringParam(arguments, "packageFilter", null);
         int maxCycleLength = getIntParam(arguments, "maxCycleLength", 10);
+        if (maxCycleLength < 2) {
+            return ToolResponse.invalidParameter("maxCycleLength", "Must be >= 2; got: " + maxCycleLength);
+        }
 
         try {
             // Build package dependency graph

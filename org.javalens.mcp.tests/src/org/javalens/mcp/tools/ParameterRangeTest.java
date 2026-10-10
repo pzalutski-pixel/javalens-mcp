@@ -20,8 +20,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * A numeric parameter outside its documented range is INVALID_PARAMETER naming the range, never
  * moved into the range without a word: maxResults of find_references, find_implementations,
  * find_field_writes and search_symbols (0 to 1000), of get_call_hierarchy_incoming (0 to 500) and
- * of get_document_symbols (0 to 2000); maxDepth of get_project_structure (1 to 20) and of
- * get_type_hierarchy (1 to 50); depth of analyze_change_impact (1 to 3). The fixture is
+ * of get_document_symbols (0 to 2000); maxDepth of get_project_structure (1 to 20); maxResults of
+ * get_type_hierarchy (1 to 50); depth of analyze_change_impact (1 to 3); maxUsages of
+ * analyze_type (0 or more); maxCycleLength of find_circular_dependencies (2 or more: a cycle joins
+ * at least two packages); depth of get_dependency_graph (1 or more). The fixture is
  * simple-maven: Calculator.java declares the field {@code lastResult} (line 6, column 16) and
  * {@code add} (line 14, column 15); IShape.java declares the interface {@code IShape} (line 2,
  * column 17). Each payload is pinned through execute() and through the JSON-RPC envelope.
@@ -99,11 +101,11 @@ class ParameterRangeTest {
     }
 
     @Test
-    @DisplayName("get_type_hierarchy: maxDepth 0 and 51 are INVALID_PARAMETER, the range 1 to 50")
-    void typeHierarchy_maxDepthOutsideRange() throws Exception {
+    @DisplayName("get_type_hierarchy: maxResults 0 and 51 are INVALID_PARAMETER, the range 1 to 50")
+    void typeHierarchy_maxResultsOutsideRange() throws Exception {
         GetTypeHierarchyTool tool = new GetTypeHierarchyTool(() -> service);
-        assertRefused(tool, at(ISHAPE, 2, 17), "maxDepth", 0, "Must be between 1 and 50; got: 0");
-        assertRefused(tool, at(ISHAPE, 2, 17), "maxDepth", 51, "Must be between 1 and 50; got: 51");
+        assertRefused(tool, at(ISHAPE, 2, 17), "maxResults", 0, "Must be between 1 and 50; got: 0");
+        assertRefused(tool, at(ISHAPE, 2, 17), "maxResults", 51, "Must be between 1 and 50; got: 51");
     }
 
     @Test
@@ -112,6 +114,33 @@ class ParameterRangeTest {
         AnalyzeChangeImpactTool tool = new AnalyzeChangeImpactTool(() -> service);
         assertRefused(tool, at(CALCULATOR, 14, 15), "depth", 0, "Must be between 1 and 3; got: 0");
         assertRefused(tool, at(CALCULATOR, 14, 15), "depth", 4, "Must be between 1 and 3; got: 4");
+    }
+
+    @Test
+    @DisplayName("analyze_type: maxUsages -1 is INVALID_PARAMETER, the range 0 or more")
+    void analyzeType_negativeMaxUsages() throws Exception {
+        ObjectNode args = mapper.createObjectNode();
+        args.put("typeName", "com.example.Calculator");
+        assertRefused(new AnalyzeTypeTool(() -> service), args, "maxUsages", -1, "Must be >= 0; got: -1");
+    }
+
+    @Test
+    @DisplayName("find_circular_dependencies: maxCycleLength 1 and -1 are INVALID_PARAMETER, the range 2 or more")
+    void circularDependencies_maxCycleLengthBelowRange() throws Exception {
+        FindCircularDependenciesTool tool = new FindCircularDependenciesTool(() -> service);
+        assertRefused(tool, mapper.createObjectNode(), "maxCycleLength", 1, "Must be >= 2; got: 1");
+        assertRefused(tool, mapper.createObjectNode(), "maxCycleLength", -1, "Must be >= 2; got: -1");
+    }
+
+    @Test
+    @DisplayName("get_dependency_graph: depth 0 and -1 are INVALID_PARAMETER, the range 1 or more")
+    void dependencyGraph_depthBelowRange() throws Exception {
+        GetDependencyGraphTool tool = new GetDependencyGraphTool(() -> service);
+        ObjectNode args = mapper.createObjectNode();
+        args.put("scope", "type");
+        args.put("name", "com.example.Calculator");
+        assertRefused(tool, args, "depth", 0, "Must be >= 1; got: 0");
+        assertRefused(tool, args, "depth", -1, "Must be >= 1; got: -1");
     }
 
     private String file(String relative) {

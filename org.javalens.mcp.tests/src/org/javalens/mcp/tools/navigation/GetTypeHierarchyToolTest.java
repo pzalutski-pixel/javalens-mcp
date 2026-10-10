@@ -137,21 +137,23 @@ class GetTypeHierarchyToolTest {
     // ========== Optional Parameters Tests ==========
 
     @Test
-    @DisplayName("maxDepth limits superclass traversal")
-    void maxDepth_limitsSuperclasses() {
+    @DisplayName("maxResults 1 lists Calculator's one superclass, java.lang.Object, not cut")
+    void maxResults_listsSuperclassesUpToTheCap() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("filePath", calculatorPath);
         args.put("line", 5);
         args.put("column", 13);
-        args.put("maxDepth", 1);
+        args.put("maxResults", 1);
 
         ToolResponse response = tool.execute(args);
 
         assertTrue(response.isSuccess());
         Map<String, Object> data = getData(response);
 
-        List<Map<String, Object>> superclasses = getSuperclasses(data);
-        assertTrue(superclasses.size() <= 1);
+        assertEquals(List.of(Map.of("name", "Object", "qualifiedName", "java.lang.Object", "kind", "class")),
+            getSuperclasses(data));
+        assertEquals(1, data.get("totalSuperclasses"));
+        assertEquals(Boolean.FALSE, response.getMeta().getTruncated());
     }
 
     // ========== Parameter Validation Tests ==========
@@ -212,7 +214,7 @@ class GetTypeHierarchyToolTest {
     private ObjectNode argsByName(String typeName) {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("typeName", typeName);
-        args.put("maxDepth", 50);
+        args.put("maxResults", 50);
         return args;
     }
 
@@ -365,56 +367,44 @@ class GetTypeHierarchyToolTest {
     }
 
     @Test
-    @DisplayName("maxDepth limits subtypes list size and meta.truncated=true")
+    @DisplayName("maxResults 2 lists IShape's first two subtypes by file and position, of 7, and meta.truncated=true")
     @SuppressWarnings("unchecked")
-    void maxDepth_limitsSubtypesAndSetsTruncated() {
+    void maxResults_capsSubtypesAndSetsTruncated() {
+        // IShape's seven subtypes by file and position: AnonymousShapeUser.java's two anonymous
+        // classes (lines 5 and 14), then its InnerShape and NonStaticInnerShape, FilledCircle,
+        // IFillable and Rectangle.
         ObjectNode args = objectMapper.createObjectNode();
         args.put("typeName", "com.example.IShape");
-        args.put("maxDepth", 2);
+        args.put("maxResults", 2);
 
         ToolResponse r = tool.execute(args);
         Map<String, Object> data = SemanticAssertions.assertSuccessData(r);
         List<Map<String, Object>> subtypes = SemanticAssertions.getList(data, "subtypes");
-        assertTrue(subtypes.size() <= 2,
-            "maxDepth=2 must cap subtypes list to 2 entries; got: " + subtypes.size());
-
-        // IShape has 7 subtypes; meta.truncated must be true because not all are returned.
-        int totalSubtypes = ((Number) data.get("totalSubtypes")).intValue();
-        assertEquals(7, totalSubtypes,
-            "totalSubtypes reports the true count regardless of cap; got: " + totalSubtypes);
-        org.javalens.mcp.models.ResponseMeta meta = r.getMeta();
-        assertNotNull(meta);
-        assertEquals(Boolean.TRUE, meta.getTruncated(),
+        assertEquals(List.of("com.example.AnonymousShapeUser$1", "com.example.AnonymousShapeUser$2"),
+            subtypes.stream().map(subtype -> subtype.get("qualifiedName")).toList());
+        assertEquals(7, data.get("totalSubtypes"));
+        assertEquals(Boolean.TRUE, r.getMeta().getTruncated(),
             "meta.truncated must be true when subtypes are capped");
     }
 
     @Test
-    @DisplayName("maxDepth=1 caps interfaces list AND triggers meta.truncated when more interfaces exist")
+    @DisplayName("maxResults 1 lists FilledCircle's first interface, IFillable, of 2 with IShape, and meta.truncated=true")
     @SuppressWarnings("unchecked")
-    void maxDepth_capsInterfacesListAndSetsTruncated() {
-        // FilledCircle directly implements IFillable AND transitively implements
-        // IShape (via IFillable extends IShape). With maxDepth=1 the interfaces
-        // list must be capped at 1 element while the underlying total >= 2,
-        // exercising the `if (interfaceList.size() >= maxDepth) break;` branch
-        // (which has its own loop, parallel to but distinct from the superclass
-        // and subtype caps that are tested elsewhere).
+    void maxResults_capsInterfacesAndSetsTruncated() {
+        // FilledCircle directly implements IFillable and, through IFillable extends IShape,
+        // IShape: the interfaces of every supertype, IFillable first.
         ObjectNode args = objectMapper.createObjectNode();
         args.put("typeName", "com.example.FilledCircle");
-        args.put("maxDepth", 1);
+        args.put("maxResults", 1);
 
         ToolResponse r = tool.execute(args);
         Map<String, Object> data = SemanticAssertions.assertSuccessData(r);
         List<Map<String, Object>> interfaces = SemanticAssertions.getList(data, "interfaces");
-        assertEquals(1, interfaces.size(),
-            "maxDepth=1 must cap interfaces list to a single entry; got: " + interfaces);
-        int totalInterfaces = ((Number) data.get("totalInterfaces")).intValue();
-        assertTrue(totalInterfaces >= 2,
-            "FilledCircle has IFillable + IShape transitively — totalInterfaces >= 2; got: "
-                + totalInterfaces);
-        org.javalens.mcp.models.ResponseMeta meta = r.getMeta();
-        assertNotNull(meta);
-        assertEquals(Boolean.TRUE, meta.getTruncated(),
-            "meta.truncated must be true when interfaces list is capped; got: " + meta.getTruncated());
+        assertEquals(List.of("com.example.IFillable"),
+            interfaces.stream().map(iface -> iface.get("qualifiedName")).toList());
+        assertEquals(2, data.get("totalInterfaces"));
+        assertEquals(Boolean.TRUE, r.getMeta().getTruncated(),
+            "meta.truncated must be true when interfaces list is capped; got: " + r.getMeta().getTruncated());
     }
 
     @Test
@@ -443,7 +433,7 @@ class GetTypeHierarchyToolTest {
     void envelope_iShape_exactSubtypes() {
         ObjectNode args = envelope.args();
         args.put("typeName", "com.example.IShape");
-        args.put("maxDepth", 50);
+        args.put("maxResults", 50);
         JsonNode payload = envelope.assertEnvelopeFidelity("get_type_hierarchy", args);
 
         assertTrue(payload.get("success").asBoolean(),

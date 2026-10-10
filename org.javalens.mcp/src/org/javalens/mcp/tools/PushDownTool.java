@@ -57,7 +57,9 @@ public class PushDownTool extends AbstractTool {
 
             USAGE: Position on the member name in the superclass.
             OUTPUT: editsByFile covering the superclass (member removed) and each
-            subclass (member added); warnings from JDT's condition checking.
+            subclass (member added); warnings from JDT's condition checking,
+            by the place each names (file, then position; those naming one place
+            in JDT's order, those naming none last).
             Edits are returned as text - apply them yourself.
 
             The direct subclasses are those of the Java model, local and anonymous
