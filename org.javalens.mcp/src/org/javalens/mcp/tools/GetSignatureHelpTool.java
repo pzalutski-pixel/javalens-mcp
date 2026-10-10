@@ -193,34 +193,30 @@ public class GetSignatureHelpTool extends AbstractTool {
         info.put("label", label.toString());
         info.put("parameters", parameters);
 
-        // Try to get documentation
-        try {
-            ISourceRange javadocRange = method.getJavadocRange();
-            if (javadocRange != null) {
-                ICompilationUnit cu = method.getCompilationUnit();
-                if (cu != null) {
-                    String source = cu.getSource();
-                    if (source != null) {
-                        String doc = source.substring(javadocRange.getOffset(),
-                            javadocRange.getOffset() + javadocRange.getLength());
-                        // Clean up
-                        doc = doc.replaceAll("/\\*\\*", "")
-                                 .replaceAll("\\*/", "")
-                                 .replaceAll("(?m)^\\s*\\*\\s?", "")
-                                 .trim();
-                        // Get first sentence
-                        int endSentence = doc.indexOf(".");
-                        if (endSentence > 0 && endSentence < 200) {
-                            doc = doc.substring(0, endSentence + 1);
-                        } else if (doc.length() > 200) {
-                            doc = doc.substring(0, 200) + "...";
-                        }
-                        info.put("documentation", doc);
+        // Documentation: the first sentence of the Javadoc, when the method has one
+        ISourceRange javadocRange = method.getJavadocRange();
+        if (javadocRange != null) {
+            ICompilationUnit cu = method.getCompilationUnit();
+            if (cu != null) {
+                String source = cu.getSource();
+                if (source != null) {
+                    String doc = source.substring(javadocRange.getOffset(),
+                        javadocRange.getOffset() + javadocRange.getLength());
+                    // Clean up
+                    doc = doc.replaceAll("/\\*\\*", "")
+                             .replaceAll("\\*/", "")
+                             .replaceAll("(?m)^\\s*\\*\\s?", "")
+                             .trim();
+                    // Get first sentence
+                    int endSentence = doc.indexOf(".");
+                    if (endSentence > 0 && endSentence < 200) {
+                        doc = doc.substring(0, endSentence + 1);
+                    } else if (doc.length() > 200) {
+                        doc = doc.substring(0, 200) + "...";
                     }
+                    info.put("documentation", doc);
                 }
             }
-        } catch (Exception e) {
-            // Documentation not available
         }
 
         return info;

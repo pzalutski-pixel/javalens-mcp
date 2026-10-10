@@ -98,23 +98,19 @@ public class FindUnusedCodeTool extends AbstractTool {
             }
 
             for (Path file : files) {
-                try {
-                    ICompilationUnit cu = service.getCompilationUnit(file);
-                    if (cu == null) continue;
+                ICompilationUnit cu = service.getCompilationUnit(file);
+                if (cu == null) continue;
 
-                    // Parse to AST with bindings
-                    ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
-                    parser.setSource(cu);
-                    parser.setResolveBindings(true);
-                    parser.setBindingsRecovery(true);
+                // Parse to AST with bindings
+                ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
+                parser.setSource(cu);
+                parser.setResolveBindings(true);
+                parser.setBindingsRecovery(true);
 
-                    CompilationUnit ast = (CompilationUnit) parser.createAST(Deadline.monitor());
-                    if (ast == null) continue;
+                CompilationUnit ast = (CompilationUnit) parser.createAST(Deadline.monitor());
+                if (ast == null) continue;
 
-                    findUnusedInFile(ast, file, service, unusedItems, includeFields, includeMethods);
-                } catch (Exception e) {
-                    log.debug("Error finding unused code in file {}: {}", file, e.getMessage());
-                }
+                findUnusedInFile(ast, file, service, unusedItems, includeFields, includeMethods);
             }
 
             Map<String, Object> data = new LinkedHashMap<>();

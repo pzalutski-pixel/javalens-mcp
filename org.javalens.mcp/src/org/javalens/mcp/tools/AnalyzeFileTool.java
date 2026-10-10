@@ -235,50 +235,53 @@ public class AnalyzeFileTool extends AbstractTool {
         return info;
     }
 
-    private Map<String, Object> collectDiagnostics(ICompilationUnit cu, IJdtService service) {
+    /**
+     * The errors and warnings of {@code cu}. With no syntax tree the problems cannot be read;
+     * listing none would claim the file has no problem.
+     */
+    private Map<String, Object> collectDiagnostics(ICompilationUnit cu, IJdtService service)
+            throws JavaModelException {
         Map<String, Object> result = new LinkedHashMap<>();
         List<Map<String, Object>> errors = new ArrayList<>();
         List<Map<String, Object>> warnings = new ArrayList<>();
 
+        // FORCE_PROBLEM_DETECTION requires the CU to be in working-copy mode.
+        boolean wasWorkingCopy = cu.isWorkingCopy();
+        CompilationUnit ast;
         try {
-            // FORCE_PROBLEM_DETECTION requires the CU to be in working-copy mode.
-            boolean wasWorkingCopy = cu.isWorkingCopy();
-            CompilationUnit ast;
-            try {
-                // Inside the try: JDT registers the working copy before its first cancellation
-                // check (BecomeWorkingCopyOperation :45, Openable :240), so a cancelled call
-                // still leaves one, which the finally discards.
-                if (!wasWorkingCopy) {
-                    cu.becomeWorkingCopy(Deadline.monitor());
-                }
-                ast = (CompilationUnit) cu.reconcile(
-                    AST.getJLSLatest(),
-                    ICompilationUnit.FORCE_PROBLEM_DETECTION,
-                    null,
-                    Deadline.monitor()
-                );
-            } finally {
-                if (!wasWorkingCopy) {
-                    cu.discardWorkingCopy();
-                }
+            // Inside the try: JDT registers the working copy before its first cancellation
+            // check (BecomeWorkingCopyOperation :45, Openable :240), so a cancelled call
+            // still leaves one, which the finally discards.
+            if (!wasWorkingCopy) {
+                cu.becomeWorkingCopy(Deadline.monitor());
             }
-
-            if (ast != null) {
-                for (IProblem problem : ast.getProblems()) {
-                    Map<String, Object> diag = new LinkedHashMap<>();
-                    diag.put("message", problem.getMessage());
-                    diag.put("line", problem.getSourceLineNumber() - 1); // Convert to 0-based
-                    diag.put("column", problem.getSourceStart());
-
-                    if (problem.isError()) {
-                        errors.add(diag);
-                    } else if (problem.isWarning()) {
-                        warnings.add(diag);
-                    }
-                }
+            ast = (CompilationUnit) cu.reconcile(
+                AST.getJLSLatest(),
+                ICompilationUnit.FORCE_PROBLEM_DETECTION,
+                null,
+                Deadline.monitor()
+            );
+        } finally {
+            if (!wasWorkingCopy) {
+                cu.discardWorkingCopy();
             }
-        } catch (JavaModelException e) {
-            log.debug("Error collecting diagnostics: {}", e.getMessage());
+        }
+
+        if (ast == null) {
+            throw new IllegalStateException("JDT produced no syntax tree for "
+                + service.getPathUtils().formatPath(cu.getResource().getLocation().toOSString()));
+        }
+        for (IProblem problem : ast.getProblems()) {
+            Map<String, Object> diag = new LinkedHashMap<>();
+            diag.put("message", problem.getMessage());
+            diag.put("line", problem.getSourceLineNumber() - 1); // Convert to 0-based
+            diag.put("column", problem.getSourceStart());
+
+            if (problem.isError()) {
+                errors.add(diag);
+            } else if (problem.isWarning()) {
+                warnings.add(diag);
+            }
         }
 
         result.put("errors", errors);

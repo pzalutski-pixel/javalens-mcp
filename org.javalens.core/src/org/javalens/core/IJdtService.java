@@ -118,6 +118,7 @@ public interface IJdtService {
      * @param line Zero-based line number
      * @param column Zero-based column number
      * @return IJavaElement at position, or null if not found
+     * @throws IllegalStateException when JDT cannot read the file's compilation unit
      */
     IJavaElement getElementAtPosition(Path filePath, int line, int column);
 
@@ -140,6 +141,7 @@ public interface IJdtService {
      *
      * @param typeName Type name (e.g., "String" or "java.lang.String")
      * @return IType or null if not found
+     * @throws IllegalStateException when JDT cannot read the project's types
      */
     IType findType(String typeName);
 
@@ -149,6 +151,7 @@ public interface IJdtService {
      * @param cu Compilation unit
      * @param offset Character offset
      * @return The source line content
+     * @throws IllegalStateException when JDT cannot read the unit's source
      */
     String getContextLine(ICompilationUnit cu, int offset);
 
@@ -159,6 +162,7 @@ public interface IJdtService {
      * @param line Zero-based line number
      * @param column Zero-based column number
      * @return Character offset in the source
+     * @throws IllegalStateException when JDT cannot read the unit's source
      */
     int getOffset(ICompilationUnit cu, int line, int column);
 
@@ -168,6 +172,7 @@ public interface IJdtService {
      * @param cu Compilation unit
      * @param offset Character offset
      * @return Zero-based line number
+     * @throws IllegalStateException when JDT cannot read the unit's source
      */
     int getLineNumber(ICompilationUnit cu, int offset);
 
@@ -177,6 +182,7 @@ public interface IJdtService {
      * @param cu Compilation unit
      * @param offset Character offset
      * @return Zero-based column number
+     * @throws IllegalStateException when JDT cannot read the unit's source
      */
     int getColumnNumber(ICompilationUnit cu, int offset);
 
@@ -184,6 +190,7 @@ public interface IJdtService {
      * Get all Java source files in the project.
      *
      * @return List of source file paths
+     * @throws IllegalStateException when JDT cannot read the project's source folders
      */
     List<Path> getAllJavaFiles();
 

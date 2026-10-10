@@ -554,26 +554,24 @@ public class JdtServiceImpl implements IJdtService {
      * Block until JDT's search index has finished its background work for the loaded project.
      * Issues a no-op {@code searchAllTypeNames} call with {@code WAIT_UNTIL_READY_TO_SEARCH},
      * which the JDT contract documents as flushing pending index jobs before the search runs.
+     * A failed wait fails the load or the disk sync that waits: no search runs on an index whose
+     * readiness is unknown.
      */
-    private void waitForIndexReady() {
-        try {
-            new SearchEngine().searchAllTypeNames(
-                null, SearchPattern.R_EXACT_MATCH,
-                null, SearchPattern.R_EXACT_MATCH,
-                IJavaSearchConstants.TYPE,
-                SearchEngine.createJavaSearchScope(new IJavaElement[] { javaProject }),
-                new TypeNameRequestor() {
-                    @Override
-                    public void acceptType(int modifiers, char[] packageName, char[] simpleTypeName,
-                                           char[][] enclosingTypeNames, String path) {
-                        // no-op — only here to flush the indexer
-                    }
-                },
-                IJavaSearchConstants.WAIT_UNTIL_READY_TO_SEARCH,
-                new NullProgressMonitor());
-        } catch (CoreException e) {
-            log.warn("Index readiness wait failed: {}. First searches may race.", e.getMessage());
-        }
+    private void waitForIndexReady() throws CoreException {
+        new SearchEngine().searchAllTypeNames(
+            null, SearchPattern.R_EXACT_MATCH,
+            null, SearchPattern.R_EXACT_MATCH,
+            IJavaSearchConstants.TYPE,
+            SearchEngine.createJavaSearchScope(new IJavaElement[] { javaProject }),
+            new TypeNameRequestor() {
+                @Override
+                public void acceptType(int modifiers, char[] packageName, char[] simpleTypeName,
+                                       char[][] enclosingTypeNames, String path) {
+                    // no-op: only here to flush the indexer
+                }
+            },
+            IJavaSearchConstants.WAIT_UNTIL_READY_TO_SEARCH,
+            new NullProgressMonitor());
     }
 
     /**
@@ -584,7 +582,7 @@ public class JdtServiceImpl implements IJdtService {
      *
      * @return the libraries still unsearchable, as load warnings show them, sorted
      */
-    private List<String> repairLibraryIndexes() throws JavaModelException {
+    private List<String> repairLibraryIndexes() throws CoreException {
         LibraryIndexVerifier libraries = new LibraryIndexVerifier(javaProject);
         List<IPath> unsearchable = libraries.findUnsearchable();
         if (unsearchable.isEmpty()) {
@@ -725,11 +723,15 @@ public class JdtServiceImpl implements IJdtService {
         return buildModel == null ? null : buildModel.buildSystem();
     }
 
+    /** The number of raw classpath entries; 0 before a load. A classpath JDT cannot read fails. */
     public int getClasspathEntryCount() {
-        try {
-            return javaProject != null ? javaProject.getRawClasspath().length : 0;
-        } catch (Exception e) {
+        if (javaProject == null) {
             return 0;
+        }
+        try {
+            return javaProject.getRawClasspath().length;
+        } catch (JavaModelException e) {
+            throw new IllegalStateException("Cannot read the project's classpath: " + e.getMessage(), e);
         }
     }
 
@@ -807,8 +809,8 @@ public class JdtServiceImpl implements IJdtService {
             log.debug("No element found at position");
             return null;
         } catch (JavaModelException e) {
-            log.warn("Error getting element at position: {}", e.getMessage());
-            return null;
+            throw new IllegalStateException("Cannot read the element at line " + line + ", column " + column
+                + " of " + cu.getElementName() + ": " + e.getMessage(), e);
         }
     }
 
@@ -817,18 +819,13 @@ public class JdtServiceImpl implements IJdtService {
      * a reference, which names a symbol of its own. Read from a syntax tree without bindings.
      */
     private boolean isUnresolvedReferenceName(ICompilationUnit cu, int offset) {
-        try {
-            org.eclipse.jdt.core.dom.ASTParser parser =
-                org.eclipse.jdt.core.dom.ASTParser.newParser(org.eclipse.jdt.core.dom.AST.getJLSLatest());
-            parser.setSource(cu);
-            parser.setResolveBindings(false);
-            org.eclipse.jdt.core.dom.ASTNode covering = new org.eclipse.jdt.core.dom.NodeFinder(
-                parser.createAST(Deadline.monitor()), offset, 0).getCoveringNode();
-            return covering instanceof org.eclipse.jdt.core.dom.SimpleName name && !name.isDeclaration();
-        } catch (RuntimeException e) {
-            log.debug("Could not read the name at offset {}: {}", offset, e.getMessage());
-            return false;
-        }
+        org.eclipse.jdt.core.dom.ASTParser parser =
+            org.eclipse.jdt.core.dom.ASTParser.newParser(org.eclipse.jdt.core.dom.AST.getJLSLatest());
+        parser.setSource(cu);
+        parser.setResolveBindings(false);
+        org.eclipse.jdt.core.dom.ASTNode covering = new org.eclipse.jdt.core.dom.NodeFinder(
+            parser.createAST(Deadline.monitor()), offset, 0).getCoveringNode();
+        return covering instanceof org.eclipse.jdt.core.dom.SimpleName name && !name.isDeclaration();
     }
 
     /**
@@ -839,36 +836,32 @@ public class JdtServiceImpl implements IJdtService {
      * misleadingly return the smallest enclosing IMember.
      */
     private boolean isOffsetInsideLiteralOrComment(ICompilationUnit cu, int offset) {
-        try {
-            String source = cu.getSource();
-            if (source == null || offset < 0 || offset >= source.length()) return false;
-            org.eclipse.jdt.core.dom.ASTParser parser =
-                org.eclipse.jdt.core.dom.ASTParser.newParser(org.eclipse.jdt.core.dom.AST.getJLSLatest());
-            parser.setSource(cu);
-            parser.setResolveBindings(false);
-            org.eclipse.jdt.core.dom.CompilationUnit ast =
-                (org.eclipse.jdt.core.dom.CompilationUnit) parser.createAST(Deadline.monitor());
-            // Comments: scan ast.getCommentList() and check ranges.
-            @SuppressWarnings("unchecked")
-            java.util.List<org.eclipse.jdt.core.dom.Comment> comments = ast.getCommentList();
-            if (comments != null) {
-                for (org.eclipse.jdt.core.dom.Comment c : comments) {
-                    int s = c.getStartPosition();
-                    int e = s + c.getLength();
-                    if (offset >= s && offset < e) return true;
-                }
+        String source = sourceOf(cu);
+        if (offset < 0 || offset >= source.length()) return false;
+        org.eclipse.jdt.core.dom.ASTParser parser =
+            org.eclipse.jdt.core.dom.ASTParser.newParser(org.eclipse.jdt.core.dom.AST.getJLSLatest());
+        parser.setSource(cu);
+        parser.setResolveBindings(false);
+        org.eclipse.jdt.core.dom.CompilationUnit ast =
+            (org.eclipse.jdt.core.dom.CompilationUnit) parser.createAST(Deadline.monitor());
+        // Comments: scan ast.getCommentList() and check ranges.
+        @SuppressWarnings("unchecked")
+        java.util.List<org.eclipse.jdt.core.dom.Comment> comments = ast.getCommentList();
+        if (comments != null) {
+            for (org.eclipse.jdt.core.dom.Comment c : comments) {
+                int s = c.getStartPosition();
+                int e = s + c.getLength();
+                if (offset >= s && offset < e) return true;
             }
-            // Literals: find covering node and check its type.
-            org.eclipse.jdt.core.dom.NodeFinder finder =
-                new org.eclipse.jdt.core.dom.NodeFinder(ast, offset, 0);
-            org.eclipse.jdt.core.dom.ASTNode covering = finder.getCoveringNode();
-            if (covering instanceof org.eclipse.jdt.core.dom.StringLiteral) return true;
-            if (covering instanceof org.eclipse.jdt.core.dom.CharacterLiteral) return true;
-            if (covering instanceof org.eclipse.jdt.core.dom.TextBlock) return true;
-            return false;
-        } catch (Exception e) {
-            return false;
         }
+        // Literals: find covering node and check its type.
+        org.eclipse.jdt.core.dom.NodeFinder finder =
+            new org.eclipse.jdt.core.dom.NodeFinder(ast, offset, 0);
+        org.eclipse.jdt.core.dom.ASTNode covering = finder.getCoveringNode();
+        if (covering instanceof org.eclipse.jdt.core.dom.StringLiteral) return true;
+        if (covering instanceof org.eclipse.jdt.core.dom.CharacterLiteral) return true;
+        if (covering instanceof org.eclipse.jdt.core.dom.TextBlock) return true;
+        return false;
     }
 
     /**
@@ -944,8 +937,7 @@ public class JdtServiceImpl implements IJdtService {
 
             return null;
         } catch (JavaModelException e) {
-            log.warn("Error finding type {}: {}", typeName, e.getMessage());
-            return null;
+            throw new IllegalStateException("Cannot look up the type " + typeName + ": " + e.getMessage(), e);
         }
     }
 
@@ -985,102 +977,87 @@ public class JdtServiceImpl implements IJdtService {
         }
     }
 
+    /**
+     * The source of {@code cu}. A unit whose source JDT cannot read, or gives no source for (a
+     * buffer it has closed), fails: no position read from it would be true.
+     */
+    private static String sourceOf(ICompilationUnit cu) {
+        String source;
+        try {
+            source = cu.getSource();
+        } catch (JavaModelException e) {
+            throw new IllegalStateException("Cannot read the source of " + cu.getElementName() + ": " + e.getMessage(), e);
+        }
+        if (source == null) {
+            throw new IllegalStateException("JDT gave no source for " + cu.getElementName());
+        }
+        return source;
+    }
+
     @Override
     public String getContextLine(ICompilationUnit cu, int offset) {
-        try {
-            String source = cu.getSource();
-            if (source == null) {
-                return "";
-            }
+        String source = sourceOf(cu);
 
-            // Find line start
-            int lineStart = offset;
-            while (lineStart > 0 && source.charAt(lineStart - 1) != '\n') {
-                lineStart--;
-            }
-
-            // Find line end
-            int lineEnd = offset;
-            while (lineEnd < source.length() && source.charAt(lineEnd) != '\n' && source.charAt(lineEnd) != '\r') {
-                lineEnd++;
-            }
-
-            String line = source.substring(lineStart, Math.min(lineEnd, lineStart + 200));
-            return line.trim();
-        } catch (JavaModelException e) {
-            log.trace("Error getting context line: {}", e.getMessage());
-            return "";
+        // Find line start
+        int lineStart = offset;
+        while (lineStart > 0 && source.charAt(lineStart - 1) != '\n') {
+            lineStart--;
         }
+
+        // Find line end
+        int lineEnd = offset;
+        while (lineEnd < source.length() && source.charAt(lineEnd) != '\n' && source.charAt(lineEnd) != '\r') {
+            lineEnd++;
+        }
+
+        String line = source.substring(lineStart, Math.min(lineEnd, lineStart + 200));
+        return line.trim();
     }
 
     @Override
     public int getOffset(ICompilationUnit cu, int line, int column) {
-        try {
-            String source = cu.getSource();
-            if (source == null) {
-                return 0;
+        String source = sourceOf(cu);
+
+        int offset = 0;
+        int currentLine = 0;
+
+        // Navigate to the correct line
+        while (currentLine < line && offset < source.length()) {
+            if (source.charAt(offset) == '\n') {
+                currentLine++;
             }
-
-            int offset = 0;
-            int currentLine = 0;
-
-            // Navigate to the correct line
-            while (currentLine < line && offset < source.length()) {
-                if (source.charAt(offset) == '\n') {
-                    currentLine++;
-                }
-                offset++;
-            }
-
-            // Add column offset
-            return Math.min(offset + column, source.length());
-        } catch (JavaModelException e) {
-            log.warn("Error calculating offset: {}", e.getMessage());
-            return 0;
+            offset++;
         }
+
+        // Add column offset
+        return Math.min(offset + column, source.length());
     }
 
     @Override
     public int getLineNumber(ICompilationUnit cu, int offset) {
-        try {
-            String source = cu.getSource();
-            if (source == null) {
-                return 0;
-            }
+        String source = sourceOf(cu);
 
-            int line = 0;
-            for (int i = 0; i < offset && i < source.length(); i++) {
-                if (source.charAt(i) == '\n') {
-                    line++;
-                }
+        int line = 0;
+        for (int i = 0; i < offset && i < source.length(); i++) {
+            if (source.charAt(i) == '\n') {
+                line++;
             }
-            return line;
-        } catch (JavaModelException e) {
-            log.warn("Error calculating line number: {}", e.getMessage());
-            return 0;
         }
+        return line;
     }
 
     @Override
     public int getColumnNumber(ICompilationUnit cu, int offset) {
-        try {
-            String source = cu.getSource();
-            if (source == null) {
-                return 0;
-            }
+        String source = sourceOf(cu);
 
-            int column = 0;
-            for (int i = offset - 1; i >= 0; i--) {
-                if (source.charAt(i) == '\n') {
-                    break;
-                }
-                column++;
+        int column = 0;
+        for (int i = offset - 1; i >= 0; i--) {
+            if (source.charAt(i) == '\n') {
+                break;
             }
-            return column;
-        } catch (JavaModelException e) {
-            log.warn("Error calculating column number: {}", e.getMessage());
-            return 0;
+            column++;
         }
+        return column;
     }
 
     @Override
@@ -1102,7 +1079,7 @@ public class JdtServiceImpl implements IJdtService {
                 }
             }
         } catch (JavaModelException e) {
-            log.warn("Error getting Java files: {}", e.getMessage());
+            throw new IllegalStateException("Cannot list the project's source files: " + e.getMessage(), e);
         }
 
         return files;

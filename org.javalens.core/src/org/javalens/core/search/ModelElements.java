@@ -17,6 +17,7 @@ import org.eclipse.jdt.core.dom.AnonymousClassDeclaration;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.IBinding;
 import org.eclipse.jdt.core.dom.IMethodBinding;
+import org.eclipse.jdt.core.dom.ImplicitTypeDeclaration;
 import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.javalens.core.Deadline;
@@ -76,6 +77,12 @@ final class ModelElements {
 
     /** The model element declared by {@code declaration}, a type declaration of this unit. */
     IType typeAt(ASTNode declaration) throws JavaModelException {
+        if (declaration instanceof ImplicitTypeDeclaration) {
+            // The implicitly declared class of a compact source file has no name in the source
+            // (its name node has no position): the model names it after its file, the primary
+            // type of its unit.
+            return unit.findPrimaryType();
+        }
         int offset = declaration instanceof AbstractTypeDeclaration named
             ? named.getName().getStartPosition()
             : declaration.getStartPosition();

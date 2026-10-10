@@ -76,35 +76,31 @@ public class FindTestsTool extends AbstractTool {
             int totalTestMethods = 0;
 
             for (Path file : service.getAllJavaFiles()) {
-                try {
-                    ICompilationUnit cu = service.getCompilationUnit(file);
-                    if (cu == null) continue;
+                ICompilationUnit cu = service.getCompilationUnit(file);
+                if (cu == null) continue;
 
-                    // Parse to AST
-                    ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
-                    parser.setSource(cu);
-                    parser.setResolveBindings(true);
+                // Parse to AST
+                ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
+                parser.setSource(cu);
+                parser.setResolveBindings(true);
 
-                    CompilationUnit ast = (CompilationUnit) parser.createAST(Deadline.monitor());
-                    if (ast == null) continue;
+                CompilationUnit ast = (CompilationUnit) parser.createAST(Deadline.monitor());
+                if (ast == null) continue;
 
-                    List<Map<String, Object>> testsInFile = findTestsInFile(ast, file, service, includeDisabled);
+                List<Map<String, Object>> testsInFile = findTestsInFile(ast, file, service, includeDisabled);
 
-                    for (Map<String, Object> testClass : testsInFile) {
-                        String className = (String) testClass.get("className");
+                for (Map<String, Object> testClass : testsInFile) {
+                    String className = (String) testClass.get("className");
 
-                        // Apply pattern filter
-                        if (pattern != null && !matchesGlob(className, pattern)) {
-                            continue;
-                        }
-
-                        testClasses.add(testClass);
-                        @SuppressWarnings("unchecked")
-                        List<?> methods = (List<?>) testClass.get("testMethods");
-                        totalTestMethods += methods.size();
+                    // Apply pattern filter
+                    if (pattern != null && !matchesGlob(className, pattern)) {
+                        continue;
                     }
-                } catch (Exception e) {
-                    log.debug("Error finding tests in file {}: {}", file, e.getMessage());
+
+                    testClasses.add(testClass);
+                    @SuppressWarnings("unchecked")
+                    List<?> methods = (List<?>) testClass.get("testMethods");
+                    totalTestMethods += methods.size();
                 }
             }
 

@@ -1,6 +1,7 @@
 package org.javalens.mcp.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.eclipse.core.runtime.CoreException;
 import org.eclipse.jdt.core.Flags;
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IJavaElement;
@@ -8,6 +9,7 @@ import org.eclipse.jdt.core.IMember;
 import org.eclipse.jdt.core.IMethod;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.ITypeParameter;
+import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.Signature;
 import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTNode;
@@ -303,43 +305,39 @@ public class AnalyzeMethodTool extends AbstractTool {
     private List<Map<String, Object>> findCallers(SearchResult found, IJdtService service) {
         List<Map<String, Object>> callers = new ArrayList<>();
 
-        try {
-            // Every reference: callers are the distinct enclosing methods, and each is
-            // counted however many references it holds.
-            List<SearchMatch> references = found.matches();
+        // Every reference: callers are the distinct enclosing methods, and each is
+        // counted however many references it holds.
+        List<SearchMatch> references = found.matches();
 
-            Set<String> seenCallers = new HashSet<>();
+        Set<String> seenCallers = new HashSet<>();
 
-            for (SearchMatch match : references) {
-                // A call is attributed to the member holding it that has a name: a call in a
-                // lambda belongs to the method, initializer or field the lambda is written in.
-                // An initializer or field initializer calls as <initializer>.
-                if (match.getElement() instanceof IJavaElement javaElement
-                        && ElementNames.namedMember(javaElement) instanceof IMember caller
-                        && !(caller instanceof IType)) {
-                    String key = caller.getHandleIdentifier();
-                    if (!seenCallers.contains(key)) {
-                        seenCallers.add(key);
+        for (SearchMatch match : references) {
+            // A call is attributed to the member holding it that has a name: a call in a
+            // lambda belongs to the method, initializer or field the lambda is written in.
+            // An initializer or field initializer calls as <initializer>.
+            if (match.getElement() instanceof IJavaElement javaElement
+                    && ElementNames.namedMember(javaElement) instanceof IMember caller
+                    && !(caller instanceof IType)) {
+                String key = caller.getHandleIdentifier();
+                if (!seenCallers.contains(key)) {
+                    seenCallers.add(key);
 
-                        Map<String, Object> callerInfo = new LinkedHashMap<>();
-                        callerInfo.put("method", caller instanceof IMethod ? caller.getElementName()
-                            : ElementNames.INITIALIZER);
-                        callerInfo.put("qualifiedType", ElementNames.qualifiedName(caller.getDeclaringType()));
+                    Map<String, Object> callerInfo = new LinkedHashMap<>();
+                    callerInfo.put("method", caller instanceof IMethod ? caller.getElementName()
+                        : ElementNames.INITIALIZER);
+                    callerInfo.put("qualifiedType", ElementNames.qualifiedName(caller.getDeclaringType()));
 
-                        // Call site location
-                        ICompilationUnit callerCu = caller.getCompilationUnit();
-                        if (callerCu != null && callerCu.getResource() != null) {
-                            callerInfo.put("file", service.getPathUtils().formatPath(
-                                callerCu.getResource().getLocation().toOSString()));
-                            callerInfo.put("callLine", service.getLineNumber(callerCu, match.getOffset()));
-                        }
-
-                        callers.add(callerInfo);
+                    // Call site location
+                    ICompilationUnit callerCu = caller.getCompilationUnit();
+                    if (callerCu != null && callerCu.getResource() != null) {
+                        callerInfo.put("file", service.getPathUtils().formatPath(
+                            callerCu.getResource().getLocation().toOSString()));
+                        callerInfo.put("callLine", service.getLineNumber(callerCu, match.getOffset()));
                     }
+
+                    callers.add(callerInfo);
                 }
             }
-        } catch (Exception e) {
-            log.debug("Error finding callers: {}", e.getMessage());
         }
 
         return callers;
@@ -347,25 +345,21 @@ public class AnalyzeMethodTool extends AbstractTool {
 
     /**
      * The declaration of {@code method}, a method with source, in its own compilation unit,
-     * parsed with bindings, or null when the unit does not parse.
+     * parsed with bindings; null when no method declaration encloses its source range (an
+     * annotation type element, which calls nothing).
      */
-    private MethodDeclaration findDeclaration(IMethod method) {
-        try {
-            ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
-            parser.setSource(method.getCompilationUnit());
-            parser.setResolveBindings(true);
-            parser.setBindingsRecovery(true);
+    private MethodDeclaration findDeclaration(IMethod method) throws JavaModelException {
+        ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
+        parser.setSource(method.getCompilationUnit());
+        parser.setResolveBindings(true);
+        parser.setBindingsRecovery(true);
 
-            CompilationUnit ast = (CompilationUnit) parser.createAST(Deadline.monitor());
-            if (ast == null) {
-                return null;
-            }
-            int offset = method.getSourceRange().getOffset();
-            return findEnclosingMethod(new NodeFinder(ast, offset, 0).getCoveringNode());
-        } catch (Exception e) {
-            log.debug("Error parsing the declaration of {}: {}", method.getElementName(), e.getMessage());
+        CompilationUnit ast = (CompilationUnit) parser.createAST(Deadline.monitor());
+        if (ast == null) {
             return null;
         }
+        int offset = method.getSourceRange().getOffset();
+        return findEnclosingMethod(new NodeFinder(ast, offset, 0).getCoveringNode());
     }
 
     /**
@@ -377,103 +371,99 @@ public class AnalyzeMethodTool extends AbstractTool {
     private List<Map<String, Object>> findCallees(MethodDeclaration methodDecl) {
         List<Map<String, Object>> callees = new ArrayList<>();
 
-        try {
-            if (methodDecl != null) {
-                CompilationUnit ast = (CompilationUnit) methodDecl.getRoot();
-                Set<String> seenCallees = new HashSet<>();
+        if (methodDecl != null) {
+            CompilationUnit ast = (CompilationUnit) methodDecl.getRoot();
+            Set<String> seenCallees = new HashSet<>();
 
-                methodDecl.accept(new ASTVisitor() {
-                    @Override
-                    public boolean visit(AnonymousClassDeclaration node) {
-                        return false;
-                    }
+            methodDecl.accept(new ASTVisitor() {
+                @Override
+                public boolean visit(AnonymousClassDeclaration node) {
+                    return false;
+                }
 
-                    @Override
-                    public boolean visit(TypeDeclarationStatement node) {
-                        return false;
-                    }
+                @Override
+                public boolean visit(TypeDeclarationStatement node) {
+                    return false;
+                }
 
-                    @Override
-                    public boolean visit(MethodInvocation node) {
-                        addCallee(node.resolveMethodBinding(), "METHOD", node.getName().toString(),
+                @Override
+                public boolean visit(MethodInvocation node) {
+                    addCallee(node.resolveMethodBinding(), "METHOD", node.getName().toString(),
+                        ast.getLineNumber(node.getStartPosition()), seenCallees, callees);
+                    return true;
+                }
+
+                @Override
+                public boolean visit(SuperMethodInvocation node) {
+                    addCallee(node.resolveMethodBinding(), "SUPER_METHOD", node.getName().toString(),
+                        ast.getLineNumber(node.getStartPosition()), seenCallees, callees);
+                    return true;
+                }
+
+                @Override
+                public boolean visit(ClassInstanceCreation node) {
+                    // An anonymous class's creation is a call of the superclass constructor
+                    // its constructor runs (CreationCalls).
+                    IMethodBinding constructor = CreationCalls.constructorCalled(node);
+                    if (constructor != null) {
+                        addCallee(CreationCalls.key(node, constructor), constructor, "CONSTRUCTOR",
+                            ElementNames.typeExpression(constructor.getDeclaringClass()),
                             ast.getLineNumber(node.getStartPosition()), seenCallees, callees);
-                        return true;
                     }
+                    return true;
+                }
 
-                    @Override
-                    public boolean visit(SuperMethodInvocation node) {
-                        addCallee(node.resolveMethodBinding(), "SUPER_METHOD", node.getName().toString(),
+                @Override
+                public boolean visit(ConstructorInvocation node) {
+                    IMethodBinding binding = node.resolveConstructorBinding();
+                    if (binding != null) {
+                        addCallee(binding, "THIS_CONSTRUCTOR", ElementNames.typeExpression(binding.getDeclaringClass()),
                             ast.getLineNumber(node.getStartPosition()), seenCallees, callees);
-                        return true;
                     }
+                    return true;
+                }
 
-                    @Override
-                    public boolean visit(ClassInstanceCreation node) {
-                        // An anonymous class's creation is a call of the superclass constructor
-                        // its constructor runs (CreationCalls).
-                        IMethodBinding constructor = CreationCalls.constructorCalled(node);
-                        if (constructor != null) {
-                            addCallee(CreationCalls.key(node, constructor), constructor, "CONSTRUCTOR",
-                                ElementNames.typeExpression(constructor.getDeclaringClass()),
-                                ast.getLineNumber(node.getStartPosition()), seenCallees, callees);
-                        }
-                        return true;
+                @Override
+                public boolean visit(SuperConstructorInvocation node) {
+                    IMethodBinding binding = node.resolveConstructorBinding();
+                    if (binding != null) {
+                        addCallee(binding, "SUPER_CONSTRUCTOR", ElementNames.typeExpression(binding.getDeclaringClass()),
+                            ast.getLineNumber(node.getStartPosition()), seenCallees, callees);
                     }
+                    return true;
+                }
 
-                    @Override
-                    public boolean visit(ConstructorInvocation node) {
-                        IMethodBinding binding = node.resolveConstructorBinding();
-                        if (binding != null) {
-                            addCallee(binding, "THIS_CONSTRUCTOR", ElementNames.typeExpression(binding.getDeclaringClass()),
-                                ast.getLineNumber(node.getStartPosition()), seenCallees, callees);
-                        }
-                        return true;
-                    }
+                // Method references and constructor references are deferred-invocation
+                // dispatch sites. They belong in the callee list as METHOD_REFERENCE.
+                @Override
+                public boolean visit(ExpressionMethodReference node) {
+                    visitMethodReference(node);
+                    return true;
+                }
+                @Override
+                public boolean visit(TypeMethodReference node) {
+                    visitMethodReference(node);
+                    return true;
+                }
+                @Override
+                public boolean visit(SuperMethodReference node) {
+                    visitMethodReference(node);
+                    return true;
+                }
+                @Override
+                public boolean visit(CreationReference node) {
+                    visitMethodReference(node);
+                    return true;
+                }
 
-                    @Override
-                    public boolean visit(SuperConstructorInvocation node) {
-                        IMethodBinding binding = node.resolveConstructorBinding();
-                        if (binding != null) {
-                            addCallee(binding, "SUPER_CONSTRUCTOR", ElementNames.typeExpression(binding.getDeclaringClass()),
-                                ast.getLineNumber(node.getStartPosition()), seenCallees, callees);
-                        }
-                        return true;
+                private void visitMethodReference(MethodReference node) {
+                    IMethodBinding binding = node.resolveMethodBinding();
+                    if (binding != null) {
+                        addCallee(binding, "METHOD_REFERENCE", binding.getName(),
+                            ast.getLineNumber(node.getStartPosition()), seenCallees, callees);
                     }
-
-                    // Method references and constructor references are deferred-invocation
-                    // dispatch sites. They belong in the callee list as METHOD_REFERENCE.
-                    @Override
-                    public boolean visit(ExpressionMethodReference node) {
-                        visitMethodReference(node);
-                        return true;
-                    }
-                    @Override
-                    public boolean visit(TypeMethodReference node) {
-                        visitMethodReference(node);
-                        return true;
-                    }
-                    @Override
-                    public boolean visit(SuperMethodReference node) {
-                        visitMethodReference(node);
-                        return true;
-                    }
-                    @Override
-                    public boolean visit(CreationReference node) {
-                        visitMethodReference(node);
-                        return true;
-                    }
-
-                    private void visitMethodReference(MethodReference node) {
-                        IMethodBinding binding = node.resolveMethodBinding();
-                        if (binding != null) {
-                            addCallee(binding, "METHOD_REFERENCE", binding.getName(),
-                                ast.getLineNumber(node.getStartPosition()), seenCallees, callees);
-                        }
-                    }
-                });
-            }
-        } catch (Exception e) {
-            log.debug("Error finding callees: {}", e.getMessage());
+                }
+            });
         }
 
         return callees;
@@ -527,48 +517,44 @@ public class AnalyzeMethodTool extends AbstractTool {
      * A lambda expression is no member of its own: its method answers for the nearest enclosing
      * method with a name.
      */
-    private Map<String, Object> findOverrideInfo(IMethod method, IJdtService service) {
+    private Map<String, Object> findOverrideInfo(IMethod method, IJdtService service) throws CoreException {
         Map<String, Object> result = new LinkedHashMap<>();
 
-        try {
-            IMethod subject = ElementNames.enclosingMethod(method);
-            ModelHierarchy hierarchy = service.getSearchService().hierarchyOf(subject.getDeclaringType());
+        IMethod subject = ElementNames.enclosingMethod(method);
+        ModelHierarchy hierarchy = service.getSearchService().hierarchyOf(subject.getDeclaringType());
 
-            IMethod overridden = hierarchy.overridden(subject);
-            if (overridden != null) {
-                Map<String, Object> superInfo = new LinkedHashMap<>();
-                superInfo.put("method", overridden.getElementName());
-                superInfo.put("qualifiedType", ElementNames.qualifiedName(overridden.getDeclaringType()));
-                result.put("overrides", superInfo);
-            }
+        IMethod overridden = hierarchy.overridden(subject);
+        if (overridden != null) {
+            Map<String, Object> superInfo = new LinkedHashMap<>();
+            superInfo.put("method", overridden.getElementName());
+            superInfo.put("qualifiedType", ElementNames.qualifiedName(overridden.getDeclaringType()));
+            result.put("overrides", superInfo);
+        }
 
-            List<IMethod> overriders = hierarchy.overriding(subject);
-            if (!overriders.isEmpty()) {
-                List<Map<String, Object>> overriderList = new ArrayList<>();
-                for (IMethod overrider : overriders) {
-                    Map<String, Object> info = new LinkedHashMap<>();
-                    info.put("method", overrider.getElementName());
-                    info.put("qualifiedType", ElementNames.qualifiedName(overrider.getDeclaringType()));
-                    overriderList.add(info);
-                }
-                result.put("overriddenBy", overriderList);
+        List<IMethod> overriders = hierarchy.overriding(subject);
+        if (!overriders.isEmpty()) {
+            List<Map<String, Object>> overriderList = new ArrayList<>();
+            for (IMethod overrider : overriders) {
+                Map<String, Object> info = new LinkedHashMap<>();
+                info.put("method", overrider.getElementName());
+                info.put("qualifiedType", ElementNames.qualifiedName(overrider.getDeclaringType()));
+                overriderList.add(info);
             }
-            // A constructor, a static and a private method override nothing and are overridden by
-            // nothing: a type that may be a subtype, or a supertype that does not resolve, cannot
-            // change that.
-            int flags = subject.getFlags();
-            if (!subject.isConstructor() && !Flags.isStatic(flags) && !Flags.isPrivate(flags)) {
-                Map<String, Object> potential = potentialSubtypes(hierarchy, Integer.MAX_VALUE, service);
-                if (potential != null) {
-                    result.put("potentialMatches", potential);
-                }
-                List<Map<String, Object>> unresolved = unresolvedSupertypes(hierarchy);
-                if (unresolved != null) {
-                    result.put("unresolvedSupertypes", unresolved);
-                }
+            result.put("overriddenBy", overriderList);
+        }
+        // A constructor, a static and a private method override nothing and are overridden by
+        // nothing: a type that may be a subtype, or a supertype that does not resolve, cannot
+        // change that.
+        int flags = subject.getFlags();
+        if (!subject.isConstructor() && !Flags.isStatic(flags) && !Flags.isPrivate(flags)) {
+            Map<String, Object> potential = potentialSubtypes(hierarchy, Integer.MAX_VALUE, service);
+            if (potential != null) {
+                result.put("potentialMatches", potential);
             }
-        } catch (Exception e) {
-            log.debug("Error finding override info: {}", e.getMessage());
+            List<Map<String, Object>> unresolved = unresolvedSupertypes(hierarchy);
+            if (unresolved != null) {
+                result.put("unresolvedSupertypes", unresolved);
+            }
         }
 
         return result;

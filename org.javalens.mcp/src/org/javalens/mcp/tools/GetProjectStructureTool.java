@@ -129,37 +129,33 @@ public class GetProjectStructureTool extends AbstractTool {
         }
     }
 
-    private Map<String, Object> createPackageInfo(IPackageFragment pkg, boolean includeFiles, int maxDepth) {
-        try {
-            String name = pkg.getElementName();
-            if (name.isEmpty()) {
-                name = "(default package)";
-            }
+    /** The package's entry; null for a package deeper than {@code maxDepth}, which is not shown. */
+    private Map<String, Object> createPackageInfo(IPackageFragment pkg, boolean includeFiles, int maxDepth)
+            throws JavaModelException {
+        String name = pkg.getElementName();
+        if (name.isEmpty()) {
+            name = "(default package)";
+        }
 
-            int depth = name.split("\\.").length;
-            if (depth > maxDepth) {
-                return null;
-            }
-
-            Map<String, Object> info = new LinkedHashMap<>();
-            info.put("name", name);
-
-            ICompilationUnit[] units = pkg.getCompilationUnits();
-            info.put("fileCount", units.length);
-
-            if (includeFiles && units.length > 0) {
-                List<String> files = new ArrayList<>();
-                for (ICompilationUnit unit : units) {
-                    files.add(unit.getElementName());
-                }
-                info.put("files", files);
-            }
-
-            return info;
-
-        } catch (JavaModelException e) {
-            log.debug("Error creating package info: {}", e.getMessage());
+        int depth = name.split("\\.").length;
+        if (depth > maxDepth) {
             return null;
         }
+
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("name", name);
+
+        ICompilationUnit[] units = pkg.getCompilationUnits();
+        info.put("fileCount", units.length);
+
+        if (includeFiles && units.length > 0) {
+            List<String> files = new ArrayList<>();
+            for (ICompilationUnit unit : units) {
+                files.add(unit.getElementName());
+            }
+            info.put("files", files);
+        }
+
+        return info;
     }
 }

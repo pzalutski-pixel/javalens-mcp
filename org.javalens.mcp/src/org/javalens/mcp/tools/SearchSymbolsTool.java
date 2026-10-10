@@ -216,52 +216,48 @@ public class SearchSymbolsTool extends AbstractTool {
         return !element.getElementName().isEmpty();
     }
 
-    private Map<String, Object> createSymbolInfo(SearchMatch match, IJavaElement javaElement, IJdtService service) {
+    private Map<String, Object> createSymbolInfo(SearchMatch match, IJavaElement javaElement, IJdtService service)
+            throws JavaModelException {
         Map<String, Object> info = new LinkedHashMap<>();
 
-        try {
-            info.put("name", ElementNames.name(javaElement));
-            info.put("kind", ElementKindResolver.kindOf(javaElement));
+        info.put("name", ElementNames.name(javaElement));
+        info.put("kind", ElementKindResolver.kindOf(javaElement));
 
-            // Location info
-            if (match.getResource() != null) {
-                IPath location = match.getResource().getLocation();
-                if (location != null) {
-                    info.put("filePath", service.getPathUtils().formatPath(location.toOSString()));
-                }
+        // Location info
+        if (match.getResource() != null) {
+            IPath location = match.getResource().getLocation();
+            if (location != null) {
+                info.put("filePath", service.getPathUtils().formatPath(location.toOSString()));
             }
+        }
 
-            // Add line/column from match offset
-            if (javaElement.getOpenable() != null &&
-                javaElement.getOpenable() instanceof org.eclipse.jdt.core.ICompilationUnit cu) {
-                int line = service.getLineNumber(cu, match.getOffset());
-                int column = service.getColumnNumber(cu, match.getOffset());
-                info.put("line", line);
-                info.put("column", column);
+        // Add line/column from match offset
+        if (javaElement.getOpenable() != null &&
+            javaElement.getOpenable() instanceof org.eclipse.jdt.core.ICompilationUnit cu) {
+            int line = service.getLineNumber(cu, match.getOffset());
+            int column = service.getColumnNumber(cu, match.getOffset());
+            info.put("line", line);
+            info.put("column", column);
+        }
+
+        // Type-specific info
+        if (javaElement instanceof IType type) {
+            info.put("qualifiedName", ElementNames.qualifiedName(type));
+            if (type.getPackageFragment() != null) {
+                info.put("package", ElementNames.packageName(type.getPackageFragment().getElementName()));
             }
-
-            // Type-specific info
-            if (javaElement instanceof IType type) {
-                info.put("qualifiedName", ElementNames.qualifiedName(type));
-                if (type.getPackageFragment() != null) {
-                    info.put("package", ElementNames.packageName(type.getPackageFragment().getElementName()));
-                }
-            } else if (javaElement instanceof IMethod method) {
-                info.put("signature", getMethodSignature(method));
-                if (method.getDeclaringType() != null) {
-                    info.put("containingType", ElementNames.qualifiedName(method.getDeclaringType()));
-                }
-            } else if (javaElement instanceof IField field) {
-                // Render the readable type name (e.g. "int", "String"), consistent with
-                // every other tool, not the raw JVM type signature ("I", "QString;").
-                info.put("type", org.eclipse.jdt.core.Signature.toString(field.getTypeSignature()));
-                if (field.getDeclaringType() != null) {
-                    info.put("containingType", ElementNames.qualifiedName(field.getDeclaringType()));
-                }
+        } else if (javaElement instanceof IMethod method) {
+            info.put("signature", getMethodSignature(method));
+            if (method.getDeclaringType() != null) {
+                info.put("containingType", ElementNames.qualifiedName(method.getDeclaringType()));
             }
-
-        } catch (JavaModelException e) {
-            log.debug("Error getting symbol info: {}", e.getMessage());
+        } else if (javaElement instanceof IField field) {
+            // Render the readable type name (e.g. "int", "String"), consistent with
+            // every other tool, not the raw JVM type signature ("I", "QString;").
+            info.put("type", org.eclipse.jdt.core.Signature.toString(field.getTypeSignature()));
+            if (field.getDeclaringType() != null) {
+                info.put("containingType", ElementNames.qualifiedName(field.getDeclaringType()));
+            }
         }
 
         return info;

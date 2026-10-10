@@ -161,12 +161,8 @@ public class GetDiagnosticsTool extends AbstractTool {
     }
 
     private Path getCompilationUnitPath(ICompilationUnit cu) {
-        try {
-            if (cu.getResource() != null && cu.getResource().getLocation() != null) {
-                return Path.of(cu.getResource().getLocation().toOSString());
-            }
-        } catch (Exception e) {
-            log.trace("Error getting CU path: {}", e.getMessage());
+        if (cu.getResource() != null && cu.getResource().getLocation() != null) {
+            return Path.of(cu.getResource().getLocation().toOSString());
         }
         return Path.of(cu.getElementName());
     }
@@ -177,84 +173,74 @@ public class GetDiagnosticsTool extends AbstractTool {
      *
      * @throws IllegalStateException when JDT reconciles {@code cu} to no syntax tree: its
      *     diagnostics cannot be read, and answering none would claim the file is clean
+     * @throws JavaModelException when JDT cannot reconcile {@code cu}: no diagnostic of its own
+     *     stands for that
      */
     private DiagnosticCounts collectDiagnostics(IJdtService service, ICompilationUnit cu, Path path,
-                                                  String severity, List<Map<String, Object>> diagnostics) {
+                                                  String severity, List<Map<String, Object>> diagnostics)
+            throws JavaModelException {
         int errorCount = 0;
         int warningCount = 0;
 
+        // cu.reconcile(... FORCE_PROBLEM_DETECTION ...) only surfaces problems if the
+        // CU is in working-copy mode; otherwise it returns null and every IProblem
+        // (errors and warnings) is silently invisible to this tool.
+        boolean wasWorkingCopy = cu.isWorkingCopy();
+        CompilationUnit ast;
         try {
-            // cu.reconcile(... FORCE_PROBLEM_DETECTION ...) only surfaces problems if the
-            // CU is in working-copy mode; otherwise it returns null and every IProblem
-            // (errors and warnings) is silently invisible to this tool.
-            boolean wasWorkingCopy = cu.isWorkingCopy();
-            CompilationUnit ast;
-            try {
-                // Inside the try: JDT registers the working copy before its first cancellation
-                // check (BecomeWorkingCopyOperation :45, Openable :240), so a cancelled call
-                // still leaves one, which the finally discards.
-                if (!wasWorkingCopy) {
-                    cu.becomeWorkingCopy(Deadline.monitor());
-                }
-                ast = cu.reconcile(
-                    AST.getJLSLatest(),
-                    ICompilationUnit.FORCE_PROBLEM_DETECTION,
-                    null,
-                    Deadline.monitor()
-                );
-            } finally {
-                if (!wasWorkingCopy) {
-                    cu.discardWorkingCopy();
-                }
+            // Inside the try: JDT registers the working copy before its first cancellation
+            // check (BecomeWorkingCopyOperation :45, Openable :240), so a cancelled call
+            // still leaves one, which the finally discards.
+            if (!wasWorkingCopy) {
+                cu.becomeWorkingCopy(Deadline.monitor());
             }
-
-            if (ast == null) {
-                throw new IllegalStateException("JDT produced no syntax tree for "
-                    + service.getPathUtils().formatPath(path));
+            ast = cu.reconcile(
+                AST.getJLSLatest(),
+                ICompilationUnit.FORCE_PROBLEM_DETECTION,
+                null,
+                Deadline.monitor()
+            );
+        } finally {
+            if (!wasWorkingCopy) {
+                cu.discardWorkingCopy();
             }
+        }
 
-            IProblem[] problems = ast.getProblems();
+        if (ast == null) {
+            throw new IllegalStateException("JDT produced no syntax tree for "
+                + service.getPathUtils().formatPath(path));
+        }
 
-            for (IProblem problem : problems) {
-                boolean isError = problem.isError();
-                boolean isWarning = problem.isWarning();
+        IProblem[] problems = ast.getProblems();
 
-                // This tool's contract is errors and warnings only. JDT can report
-                // problems at other severities (e.g. info), which must not be surfaced
-                // or counted here — otherwise totalDiagnostics would exceed
-                // errorCount + warningCount and the severity label would be wrong.
-                if (!isError && !isWarning) continue;
+        for (IProblem problem : problems) {
+            boolean isError = problem.isError();
+            boolean isWarning = problem.isWarning();
 
-                // Filter by severity
-                if ("error".equals(severity) && !isError) continue;
-                if ("warning".equals(severity) && !isWarning) continue;
+            // This tool's contract is errors and warnings only. JDT can report
+            // problems at other severities (e.g. info), which must not be surfaced
+            // or counted here; otherwise totalDiagnostics would exceed
+            // errorCount + warningCount and the severity label would be wrong.
+            if (!isError && !isWarning) continue;
 
-                if (isError) errorCount++;
-                if (isWarning) warningCount++;
+            // Filter by severity
+            if ("error".equals(severity) && !isError) continue;
+            if ("warning".equals(severity) && !isWarning) continue;
 
-                Map<String, Object> diag = new LinkedHashMap<>();
-                diag.put("filePath", service.getPathUtils().formatPath(path));
-                diag.put("line", problem.getSourceLineNumber() - 1); // Convert to 0-based
-                diag.put("startOffset", problem.getSourceStart());
-                diag.put("endOffset", problem.getSourceEnd());
-                diag.put("severity", isError ? "error" : "warning");
-                diag.put("message", problem.getMessage());
-                diag.put("problemId", problem.getID());
-                diag.put("category", categorizeProblem(problem));
+            if (isError) errorCount++;
+            if (isWarning) warningCount++;
 
-                diagnostics.add(diag);
-            }
-        } catch (JavaModelException e) {
-            log.debug("Error reconciling {}: {}", path, e.getMessage());
-            // Add parse error as diagnostic
             Map<String, Object> diag = new LinkedHashMap<>();
             diag.put("filePath", service.getPathUtils().formatPath(path));
-            diag.put("line", 0);
-            diag.put("severity", "error");
-            diag.put("message", "Failed to analyze file: " + e.getMessage());
-            diag.put("category", "PARSE_ERROR");
+            diag.put("line", problem.getSourceLineNumber() - 1); // Convert to 0-based
+            diag.put("startOffset", problem.getSourceStart());
+            diag.put("endOffset", problem.getSourceEnd());
+            diag.put("severity", isError ? "error" : "warning");
+            diag.put("message", problem.getMessage());
+            diag.put("problemId", problem.getID());
+            diag.put("category", categorizeProblem(problem));
+
             diagnostics.add(diag);
-            errorCount++;
         }
 
         return new DiagnosticCounts(errorCount, warningCount);

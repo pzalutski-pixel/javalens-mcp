@@ -16,8 +16,6 @@ import org.eclipse.jdt.core.dom.StringLiteral;
 import org.eclipse.jdt.core.dom.TypeDeclaration;
 import org.javalens.core.Deadline;
 import org.javalens.core.IJdtService;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -29,8 +27,6 @@ import java.util.List;
  * and works with unresolved test-framework imports.
  */
 public final class TestMethodDetector {
-
-    private static final Logger log = LoggerFactory.getLogger(TestMethodDetector.class);
 
     private TestMethodDetector() {
     }
@@ -145,45 +141,41 @@ public final class TestMethodDetector {
     public static List<TestMethod> collectTestMethods(IJdtService service) {
         List<TestMethod> result = new ArrayList<>();
         for (Path file : service.getAllJavaFiles()) {
-            try {
-                ICompilationUnit cu = service.getCompilationUnit(file);
-                if (cu == null) {
-                    continue;
-                }
-                ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
-                parser.setSource(cu);
-                parser.setResolveBindings(true);
-                CompilationUnit ast = (CompilationUnit) parser.createAST(Deadline.monitor());
-                if (ast == null) {
-                    continue;
-                }
-                ast.accept(new ASTVisitor() {
-                    @Override
-                    public boolean visit(TypeDeclaration node) {
-                        boolean classDisabled = isDisabled(node);
-                        String framework = detectFramework(node);
-                        for (MethodDeclaration method : node.getMethods()) {
-                            if (!isTestMethod(method)) {
-                                continue;
-                            }
-                            IMethodBinding binding = method.resolveBinding();
-                            IMethod element = binding != null && binding.getJavaElement() instanceof IMethod m
-                                ? m : null;
-                            result.add(new TestMethod(
-                                element,
-                                node.getName().getIdentifier(),
-                                method.getName().getIdentifier(),
-                                classDisabled || isDisabled(method),
-                                framework,
-                                file,
-                                ast.getLineNumber(method.getName().getStartPosition()) - 1));
-                        }
-                        return true;
-                    }
-                });
-            } catch (Exception e) {
-                log.debug("Error collecting test methods in {}: {}", file, e.getMessage());
+            ICompilationUnit cu = service.getCompilationUnit(file);
+            if (cu == null) {
+                continue;
             }
+            ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
+            parser.setSource(cu);
+            parser.setResolveBindings(true);
+            CompilationUnit ast = (CompilationUnit) parser.createAST(Deadline.monitor());
+            if (ast == null) {
+                continue;
+            }
+            ast.accept(new ASTVisitor() {
+                @Override
+                public boolean visit(TypeDeclaration node) {
+                    boolean classDisabled = isDisabled(node);
+                    String framework = detectFramework(node);
+                    for (MethodDeclaration method : node.getMethods()) {
+                        if (!isTestMethod(method)) {
+                            continue;
+                        }
+                        IMethodBinding binding = method.resolveBinding();
+                        IMethod element = binding != null && binding.getJavaElement() instanceof IMethod m
+                            ? m : null;
+                        result.add(new TestMethod(
+                            element,
+                            node.getName().getIdentifier(),
+                            method.getName().getIdentifier(),
+                            classDisabled || isDisabled(method),
+                            framework,
+                            file,
+                            ast.getLineNumber(method.getName().getStartPosition()) - 1));
+                    }
+                    return true;
+                }
+            });
         }
         return result;
     }

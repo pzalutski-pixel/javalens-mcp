@@ -10,6 +10,7 @@ import org.eclipse.jdt.core.IMethod;
 import org.eclipse.jdt.core.IPackageFragment;
 import org.eclipse.jdt.core.IPackageFragmentRoot;
 import org.eclipse.jdt.core.IType;
+import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.Signature;
 import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTParser;
@@ -306,46 +307,35 @@ public class GetDependencyGraphTool extends AbstractTool {
             graph.depend(typeName, resolveTypeName(type, ifaceName), "interface", includeExternal);
         }
 
-        // 4. Field types
+        // 4. Field types (a name that does not resolve contributes as resolveTypeName says)
         for (IField field : type.getFields()) {
-            try {
-                String fieldType = Signature.toString(field.getTypeSignature());
-                graph.depend(typeName, resolveTypeName(type, fieldType), "type", includeExternal);
-            } catch (Exception e) {
-                // Skip unresolvable types
-            }
+            String fieldType = Signature.toString(field.getTypeSignature());
+            graph.depend(typeName, resolveTypeName(type, fieldType), "type", includeExternal);
         }
 
         // 5. Method signatures
         for (IMethod method : type.getMethods()) {
-            try {
-                // Return type
-                String returnType = Signature.toString(method.getReturnType());
-                if (!returnType.equals("void")) {
-                    graph.depend(typeName, resolveTypeName(type, returnType), "type", includeExternal);
-                }
+            // Return type
+            String returnType = Signature.toString(method.getReturnType());
+            if (!returnType.equals("void")) {
+                graph.depend(typeName, resolveTypeName(type, returnType), "type", includeExternal);
+            }
 
-                // Parameters
-                for (String paramSig : method.getParameterTypes()) {
-                    graph.depend(typeName, resolveTypeName(type, Signature.toString(paramSig)), "type",
-                        includeExternal);
-                }
-            } catch (Exception e) {
-                // Skip unresolvable types
+            // Parameters
+            for (String paramSig : method.getParameterTypes()) {
+                graph.depend(typeName, resolveTypeName(type, Signature.toString(paramSig)), "type",
+                    includeExternal);
             }
         }
 
-        // Recurse for deeper analysis
+        // Recurse for deeper analysis: a node no source type carries (a package, a static
+        // member, a library type) has no dependencies to follow
         if (depth > 1) {
             for (String node : new HashSet<>(graph.nodes)) {
                 if (!visited.contains(node)) {
-                    try {
-                        IType depType = service.findType(node);
-                        if (depType != null && depType.getCompilationUnit() != null) {
-                            collectTypeDependencies(depType, service, graph, includeExternal, depth - 1, visited);
-                        }
-                    } catch (Exception e) {
-                        // Skip unresolvable types
+                    IType depType = service.findType(node);
+                    if (depType != null && depType.getCompilationUnit() != null) {
+                        collectTypeDependencies(depType, service, graph, includeExternal, depth - 1, visited);
                     }
                 }
             }
@@ -459,43 +449,39 @@ public class GetDependencyGraphTool extends AbstractTool {
      * text: {@code isStatic()} and {@code isOnDemand()} say how many trailing components to
      * strip.
      */
-    private String getImportedPackage(IImportDeclaration imp, IBinding binding) {
-        try {
-            if (Flags.isModule(imp.getFlags())) {
-                // import module M; (JEP 511) names a module, not a package. Its
-                // element name is "M.*", which the on-demand strip would read as
-                // a package named after the module. It contributes no package.
-                return "";
-            }
-            if (binding instanceof IPackageBinding pkg) {
-                return pkg.getName();
-            }
-            String resolved = packageOf(binding);
-            if (resolved != null) {
-                return resolved;
-            }
-            String name = imp.getElementName();
-            boolean onDemand = imp.isOnDemand();
-            boolean isStatic = Flags.isStatic(imp.getFlags());
-
-            if (onDemand && name.endsWith(".*")) {
-                name = name.substring(0, name.length() - 2);
-            }
-            if (isStatic && !onDemand) {
-                // Regular static import: "pkg.Type.member" — drop member.
-                int lastDot = name.lastIndexOf('.');
-                if (lastDot > 0) name = name.substring(0, lastDot);
-            }
-            if (onDemand && !isStatic) {
-                // Regular on-demand: name is already the package after .* strip.
-                return name;
-            }
-            // All other cases: name is now "pkg.Type" — drop Type to get pkg.
-            int lastDot = name.lastIndexOf('.');
-            return lastDot > 0 ? name.substring(0, lastDot) : "";
-        } catch (Exception e) {
+    private String getImportedPackage(IImportDeclaration imp, IBinding binding) throws JavaModelException {
+        if (Flags.isModule(imp.getFlags())) {
+            // import module M; (JEP 511) names a module, not a package. Its
+            // element name is "M.*", which the on-demand strip would read as
+            // a package named after the module. It contributes no package.
             return "";
         }
+        if (binding instanceof IPackageBinding pkg) {
+            return pkg.getName();
+        }
+        String resolved = packageOf(binding);
+        if (resolved != null) {
+            return resolved;
+        }
+        String name = imp.getElementName();
+        boolean onDemand = imp.isOnDemand();
+        boolean isStatic = Flags.isStatic(imp.getFlags());
+
+        if (onDemand && name.endsWith(".*")) {
+            name = name.substring(0, name.length() - 2);
+        }
+        if (isStatic && !onDemand) {
+            // Regular static import: "pkg.Type.member": drop member.
+            int lastDot = name.lastIndexOf('.');
+            if (lastDot > 0) name = name.substring(0, lastDot);
+        }
+        if (onDemand && !isStatic) {
+            // Regular on-demand: name is already the package after .* strip.
+            return name;
+        }
+        // All other cases: name is now "pkg.Type": drop Type to get pkg.
+        int lastDot = name.lastIndexOf('.');
+        return lastDot > 0 ? name.substring(0, lastDot) : "";
     }
 
     private static boolean isExternalPackage(String packageName) {
@@ -518,7 +504,7 @@ public class GetDependencyGraphTool extends AbstractTool {
      * fabricated same-package type, and a qualified name that does not resolve is kept as
      * written, its package unknown.
      */
-    private Target resolveTypeName(IType context, String typeName) {
+    private Target resolveTypeName(IType context, String typeName) throws JavaModelException {
         // Remove array brackets and generics
         String baseName = typeName.replaceAll("\\[\\]", "").replaceAll("<.*>", "");
 
@@ -526,16 +512,12 @@ public class GetDependencyGraphTool extends AbstractTool {
             return null;
         }
 
-        try {
-            String[][] resolved = context.resolveType(baseName);
-            if (resolved != null && resolved.length > 0) {
-                String pkg = resolved[0][0] == null ? "" : resolved[0][0];
-                // The type-qualified name, dots between nested types (Outer.Inner).
-                String nested = resolved[0][1].replace('.', '$');
-                return new Target(pkg.isEmpty() ? nested : pkg + "." + nested, pkg, false);
-            }
-        } catch (Exception e) {
-            // Fall through: unresolved names contribute no dependency.
+        String[][] resolved = context.resolveType(baseName);
+        if (resolved != null && resolved.length > 0) {
+            String pkg = resolved[0][0] == null ? "" : resolved[0][0];
+            // The type-qualified name, dots between nested types (Outer.Inner).
+            String nested = resolved[0][1].replace('.', '$');
+            return new Target(pkg.isEmpty() ? nested : pkg + "." + nested, pkg, false);
         }
 
         // Unresolved — do not invent a context-package dependency.

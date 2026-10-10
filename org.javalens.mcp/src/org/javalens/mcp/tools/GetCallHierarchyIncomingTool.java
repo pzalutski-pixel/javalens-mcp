@@ -121,23 +121,22 @@ public class GetCallHierarchyIncomingTool extends AbstractTool {
             String declaringClass = declaringType != null ? ElementNames.qualifiedName(declaringType) : "Unknown";
             String signature = buildMethodSignature(method);
 
-            // Every reference to this method: extraction skips matches it cannot place,
-            // so it must see all of them before the count and the page are taken.
+            // Every reference to this method: each is a caller, so all of them are counted
+            // before the page is taken.
             SearchResult result = service.getSearchService()
                 .findAllReferences(method, SearchService.ALL_MATCHES);
 
-            // Extract caller information from each match. Count total successful
-            // extractions separately from the displayed list so truncated is accurate:
-            // comparing callers.size() to maxResults misreports the exact-equal case.
+            // Extract caller information from each match. A match whose location cannot be read
+            // fails the answer, never leaves the count short. Count all callers separately from
+            // the displayed list so truncated is accurate: comparing callers.size() to maxResults
+            // misreports the exact-equal case.
             List<Map<String, Object>> callers = new ArrayList<>();
             int totalCallers = 0;
             for (SearchMatch match : result.matches()) {
                 Map<String, Object> callerInfo = extractCallerInfo(match, service);
-                if (callerInfo != null) {
-                    totalCallers++;
-                    if (callers.size() < maxResults) {
-                        callers.add(callerInfo);
-                    }
+                totalCallers++;
+                if (callers.size() < maxResults) {
+                    callers.add(callerInfo);
                 }
             }
             boolean truncated = totalCallers > maxResults;
@@ -172,81 +171,71 @@ public class GetCallHierarchyIncomingTool extends AbstractTool {
     }
 
     private Map<String, Object> extractCallerInfo(SearchMatch match, IJdtService service) {
-        try {
-            Map<String, Object> info = new LinkedHashMap<>();
+        Map<String, Object> info = new LinkedHashMap<>();
 
-            // File path
-            if (match.getResource() != null) {
-                IPath location = match.getResource().getLocation();
-                if (location != null) {
-                    info.put("filePath", service.getPathUtils().formatPath(location.toOSString()));
-                }
+        // File path
+        if (match.getResource() != null) {
+            IPath location = match.getResource().getLocation();
+            if (location != null) {
+                info.put("filePath", service.getPathUtils().formatPath(location.toOSString()));
             }
-
-            // Get the enclosing method (the caller)
-            Object element = match.getElement();
-            if (element instanceof IJavaElement javaElement) {
-                ICompilationUnit cu = (ICompilationUnit) javaElement.getAncestor(IJavaElement.COMPILATION_UNIT);
-                if (cu != null) {
-                    // Line and column of the call site
-                    int callLine = service.getLineNumber(cu, match.getOffset());
-                    int callColumn = service.getColumnNumber(cu, match.getOffset());
-                    info.put("line", callLine);
-                    info.put("column", callColumn);
-
-                    // Get context line
-                    String context = service.getContextLine(cu, match.getOffset());
-                    if (!context.isEmpty()) {
-                        info.put("context", context);
-                    }
-                }
-
-                // The caller is the member holding the call that has a name: a call in a
-                // lambda belongs to the method, initializer or field the lambda is written in.
-                IJavaElement caller = ElementNames.namedMember(javaElement);
-                if (caller instanceof IMethod callerMethod) {
-                    info.put("callerMethod", callerMethod.getElementName());
-                    info.put("callerSignature", buildMethodSignature(callerMethod));
-
-                    IType callerType = callerMethod.getDeclaringType();
-                    if (callerType != null) {
-                        info.put("callerClass", ElementNames.qualifiedName(callerType));
-                    }
-                } else {
-                    // Called from initializer or field declaration
-                    IType enclosingType = caller == null ? null : ElementNames.enclosingType(caller);
-                    if (enclosingType != null) {
-                        info.put("callerMethod", ElementNames.INITIALIZER);
-                        info.put("callerClass", ElementNames.qualifiedName(enclosingType));
-                    }
-                }
-
-                return info;
-            }
-
-            return null;
-
-        } catch (Exception e) {
-            log.debug("Error extracting caller info: {}", e.getMessage());
-            return null;
         }
+
+        // Get the enclosing method (the caller)
+        Object element = match.getElement();
+        if (element instanceof IJavaElement javaElement) {
+            ICompilationUnit cu = (ICompilationUnit) javaElement.getAncestor(IJavaElement.COMPILATION_UNIT);
+            if (cu != null) {
+                // Line and column of the call site
+                int callLine = service.getLineNumber(cu, match.getOffset());
+                int callColumn = service.getColumnNumber(cu, match.getOffset());
+                info.put("line", callLine);
+                info.put("column", callColumn);
+
+                // Get context line
+                String context = service.getContextLine(cu, match.getOffset());
+                if (!context.isEmpty()) {
+                    info.put("context", context);
+                }
+            }
+
+            // The caller is the member holding the call that has a name: a call in a
+            // lambda belongs to the method, initializer or field the lambda is written in.
+            IJavaElement caller = ElementNames.namedMember(javaElement);
+            if (caller instanceof IMethod callerMethod) {
+                info.put("callerMethod", callerMethod.getElementName());
+                info.put("callerSignature", buildMethodSignature(callerMethod));
+
+                IType callerType = callerMethod.getDeclaringType();
+                if (callerType != null) {
+                    info.put("callerClass", ElementNames.qualifiedName(callerType));
+                }
+            } else {
+                // Called from initializer or field declaration
+                IType enclosingType = caller == null ? null : ElementNames.enclosingType(caller);
+                if (enclosingType != null) {
+                    info.put("callerMethod", ElementNames.INITIALIZER);
+                    info.put("callerClass", ElementNames.qualifiedName(enclosingType));
+                }
+            }
+
+            return info;
+        }
+
+        throw new IllegalStateException("The reference at offset " + match.getOffset() + " names no Java element");
     }
 
     private String buildMethodSignature(IMethod method) {
-        try {
-            StringBuilder sig = new StringBuilder();
-            sig.append(method.getElementName()).append("(");
+        StringBuilder sig = new StringBuilder();
+        sig.append(method.getElementName()).append("(");
 
-            String[] paramTypes = method.getParameterTypes();
-            for (int i = 0; i < paramTypes.length; i++) {
-                if (i > 0) sig.append(", ");
-                sig.append(Signature.getSignatureSimpleName(paramTypes[i]));
-            }
-
-            sig.append(")");
-            return sig.toString();
-        } catch (Exception e) {
-            return method.getElementName() + "(...)";
+        String[] paramTypes = method.getParameterTypes();
+        for (int i = 0; i < paramTypes.length; i++) {
+            if (i > 0) sig.append(", ");
+            sig.append(Signature.getSignatureSimpleName(paramTypes[i]));
         }
+
+        sig.append(")");
+        return sig.toString();
     }
 }

@@ -16,7 +16,8 @@ import org.eclipse.jdt.core.JavaModelException;
  * casing inside one field and forced AI consumers to special-case.
  *
  * <p>Field-kind classification additionally distinguishes enum constants and
- * static-final constants. Inputs that are not classified return {@code "unknown"}.
+ * static-final constants. Inputs that are not classified return {@code "unknown"}. An element
+ * JDT cannot read fails, naming the element, never takes a default kind.
  */
 public final class ElementKindResolver {
 
@@ -31,7 +32,7 @@ public final class ElementKindResolver {
             try {
                 return method.isConstructor() ? "constructor" : "method";
             } catch (JavaModelException e) {
-                return "method";
+                throw TypeKindResolver.unreadable(method, e);
             }
         }
         if (element instanceof IField field) {
@@ -52,6 +53,7 @@ public final class ElementKindResolver {
     /**
      * Field-specific classification: enum constants and static-final fields get
      * distinct kinds. Use {@link #kindOf(IJavaElement)} for the dispatching form.
+     * A field JDT cannot read fails, naming the field.
      */
     public static String fieldKindOf(IField field) {
         try {
@@ -59,7 +61,7 @@ public final class ElementKindResolver {
             int flags = field.getFlags();
             if (Flags.isStatic(flags) && Flags.isFinal(flags)) return "constant";
         } catch (JavaModelException e) {
-            // Fall through to "field".
+            throw TypeKindResolver.unreadable(field, e);
         }
         return "field";
     }

@@ -16,8 +16,6 @@ import org.eclipse.ltk.core.refactoring.RefactoringStatusEntry;
 import org.eclipse.ltk.core.refactoring.TextEditBasedChange;
 import org.javalens.core.Deadline;
 import org.javalens.core.IJdtService;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -38,8 +36,6 @@ import java.util.Map;
  * a user proceed past non-fatal findings.
  */
 public final class RefactoringInvoker {
-
-    private static final Logger log = LoggerFactory.getLogger(RefactoringInvoker.class);
 
     private RefactoringInvoker() {
     }
@@ -275,13 +271,9 @@ public final class RefactoringInvoker {
     }
 
     private static String formatCuPath(ICompilationUnit cu, IJdtService service) {
-        try {
-            if (cu.getResource() != null && cu.getResource().getLocation() != null) {
-                return service.getPathUtils().formatPath(
-                    Path.of(cu.getResource().getLocation().toOSString()));
-            }
-        } catch (Exception e) {
-            log.debug("Could not resolve path for {}: {}", cu.getElementName(), e.getMessage());
+        if (cu.getResource() != null && cu.getResource().getLocation() != null) {
+            return service.getPathUtils().formatPath(
+                Path.of(cu.getResource().getLocation().toOSString()));
         }
         return cu.getElementName();
     }

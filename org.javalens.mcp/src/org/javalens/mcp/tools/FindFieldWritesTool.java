@@ -118,13 +118,11 @@ public class FindFieldWritesTool extends AbstractTool {
             SearchResult result = service.getSearchService()
                 .findWriteAccesses(field, maxResults);
 
-            // Convert matches to write location info
+            // Convert matches to write location info; a match whose location cannot be read fails
+            // the answer, never leaves the list short of the count
             List<Map<String, Object>> writeLocations = new ArrayList<>();
             for (SearchMatch match : result.matches()) {
-                Map<String, Object> writeInfo = createWriteInfo(match, service);
-                if (writeInfo != null) {
-                    writeLocations.add(writeInfo);
-                }
+                writeLocations.add(createWriteInfo(match, service));
             }
 
             Map<String, Object> data = new LinkedHashMap<>();
@@ -134,11 +132,7 @@ public class FindFieldWritesTool extends AbstractTool {
                 data.put("declaringType", ElementNames.qualifiedName(field.getDeclaringType()));
             }
 
-            try {
-                data.put("fieldType", field.getTypeSignature());
-            } catch (Exception e) {
-                // Ignore if can't get type
-            }
+            data.put("fieldType", field.getTypeSignature());
 
             data.put("totalWriteLocations", result.totalEncountered());
             data.put("writeLocations", writeLocations);
@@ -161,43 +155,37 @@ public class FindFieldWritesTool extends AbstractTool {
     }
 
     private Map<String, Object> createWriteInfo(SearchMatch match, IJdtService service) {
-        try {
-            Map<String, Object> info = new LinkedHashMap<>();
+        Map<String, Object> info = new LinkedHashMap<>();
 
-            // File path
-            if (match.getResource() != null) {
-                IPath location = match.getResource().getLocation();
-                if (location != null) {
-                    info.put("filePath", service.getPathUtils().formatPath(location.toOSString()));
-                }
+        // File path
+        if (match.getResource() != null) {
+            IPath location = match.getResource().getLocation();
+            if (location != null) {
+                info.put("filePath", service.getPathUtils().formatPath(location.toOSString()));
             }
-
-            // Get ICompilationUnit for line/column calculation
-            Object element = match.getElement();
-            if (element instanceof IJavaElement javaElement) {
-                ICompilationUnit cu = (ICompilationUnit) javaElement.getAncestor(IJavaElement.COMPILATION_UNIT);
-                if (cu != null) {
-                    int writeLine = service.getLineNumber(cu, match.getOffset());
-                    int writeColumn = service.getColumnNumber(cu, match.getOffset());
-                    info.put("line", writeLine);
-                    info.put("column", writeColumn);
-
-                    // Get context line (shows the actual write statement)
-                    String context = service.getContextLine(cu, match.getOffset());
-                    if (!context.isEmpty()) {
-                        info.put("context", context);
-                    }
-                }
-            }
-
-            info.put("accessType", "WRITE");
-
-            return info;
-
-        } catch (Exception e) {
-            log.debug("Error creating write info: {}", e.getMessage());
-            return null;
         }
+
+        // Get ICompilationUnit for line/column calculation
+        Object element = match.getElement();
+        if (element instanceof IJavaElement javaElement) {
+            ICompilationUnit cu = (ICompilationUnit) javaElement.getAncestor(IJavaElement.COMPILATION_UNIT);
+            if (cu != null) {
+                int writeLine = service.getLineNumber(cu, match.getOffset());
+                int writeColumn = service.getColumnNumber(cu, match.getOffset());
+                info.put("line", writeLine);
+                info.put("column", writeColumn);
+
+                // Get context line (shows the actual write statement)
+                String context = service.getContextLine(cu, match.getOffset());
+                if (!context.isEmpty()) {
+                    info.put("context", context);
+                }
+            }
+        }
+
+        info.put("accessType", "WRITE");
+
+        return info;
     }
 
     private String getElementKind(IJavaElement element) {

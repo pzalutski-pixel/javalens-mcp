@@ -3,20 +3,23 @@ package org.javalens.mcp.tools;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.jdt.core.ICompilationUnit;
+import org.eclipse.jdt.core.ISourceRange;
 import org.eclipse.jdt.core.IType;
+import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.dom.AST;
+import org.eclipse.jdt.core.dom.AbstractTypeDeclaration;
 import org.eclipse.jdt.core.dom.ASTParser;
-import org.eclipse.jdt.core.dom.ASTVisitor;
 import org.eclipse.jdt.core.dom.Annotation;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.Expression;
 import org.eclipse.jdt.core.dom.FieldDeclaration;
 import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.MemberValuePair;
+import org.eclipse.jdt.core.dom.NodeFinder;
 import org.eclipse.jdt.core.dom.NormalAnnotation;
+import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.SingleMemberAnnotation;
 import org.eclipse.jdt.core.dom.StringLiteral;
-import org.eclipse.jdt.core.dom.TypeDeclaration;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
 import org.eclipse.jdt.core.search.SearchMatch;
 import org.javalens.core.Deadline;
@@ -114,10 +117,7 @@ public class GetJpaModelTool extends AbstractTool {
 
             List<Map<String, Object>> entities = new ArrayList<>();
             for (IType type : entityTypes) {
-                Map<String, Object> entity = assembleEntity(service, type);
-                if (entity != null) {
-                    entities.add(entity);
-                }
+                entities.add(assembleEntity(service, type));
             }
 
             int total = entities.size();
@@ -185,10 +185,16 @@ public class GetJpaModelTool extends AbstractTool {
         return types;
     }
 
+    /**
+     * The entity {@code type}, a type of a project source file (the annotation search reads the
+     * project's sources only), read from its declaration: a class, interface, enum, record or
+     * annotation type, whatever kind carries the annotation. Its fields are the field
+     * declarations of its body.
+     */
     private Map<String, Object> assembleEntity(IJdtService service, IType type) throws Exception {
         ICompilationUnit cu = type.getCompilationUnit();
         if (cu == null) {
-            return null;
+            throw new IllegalStateException("The entity " + type.getElementName() + " has no source file");
         }
         ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
         parser.setSource(cu);
@@ -196,22 +202,7 @@ public class GetJpaModelTool extends AbstractTool {
         CompilationUnit ast = (CompilationUnit) parser.createAST(Deadline.monitor());
 
         String qualifiedName = ElementNames.qualifiedName(type);
-        TypeDeclaration[] declaration = {null};
-        ast.accept(new ASTVisitor() {
-            @Override
-            public boolean visit(TypeDeclaration node) {
-                ITypeBinding binding = node.resolveBinding();
-                if (binding != null && binding.getJavaElement() instanceof IType declared
-                    && qualifiedName.equals(ElementNames.qualifiedName(declared))) {
-                    declaration[0] = node;
-                }
-                return declaration[0] == null;
-            }
-        });
-        if (declaration[0] == null) {
-            return null;
-        }
-        TypeDeclaration typeDecl = declaration[0];
+        AbstractTypeDeclaration typeDecl = declarationOf(ast, type);
 
         Map<String, Object> entity = new LinkedHashMap<>();
         entity.put("name", qualifiedName);
@@ -223,7 +214,13 @@ public class GetJpaModelTool extends AbstractTool {
 
         String idField = null;
         List<Map<String, Object>> relationships = new ArrayList<>();
-        for (FieldDeclaration field : typeDecl.getFields()) {
+        List<FieldDeclaration> fields = new ArrayList<>();
+        for (Object body : typeDecl.bodyDeclarations()) {
+            if (body instanceof FieldDeclaration field) {
+                fields.add(field);
+            }
+        }
+        for (FieldDeclaration field : fields) {
             String fieldName = field.fragments().isEmpty() ? null
                 : ((VariableDeclarationFragment) field.fragments().get(0)).getName().getIdentifier();
             if (fieldName == null) {
@@ -259,6 +256,20 @@ public class GetJpaModelTool extends AbstractTool {
             cu.getResource().getLocation().toOSString()));
         entity.put("line", ast.getLineNumber(typeDecl.getName().getStartPosition()) - 1);
         return entity;
+    }
+
+    /**
+     * The declaration of {@code type} in {@code ast}, its compilation unit: the type declared at
+     * the type's name, whatever its kind.
+     */
+    private static AbstractTypeDeclaration declarationOf(CompilationUnit ast, IType type) throws JavaModelException {
+        ISourceRange name = type.getNameRange();
+        if (NodeFinder.perform(ast, name.getOffset(), name.getLength()) instanceof SimpleName simpleName
+                && simpleName.getParent() instanceof AbstractTypeDeclaration declaration
+                && declaration.getName() == simpleName) {
+            return declaration;
+        }
+        throw new IllegalStateException("No type is declared at the name of " + type.getElementName());
     }
 
     /** Relationship target from the field type binding, through collection type arguments. */

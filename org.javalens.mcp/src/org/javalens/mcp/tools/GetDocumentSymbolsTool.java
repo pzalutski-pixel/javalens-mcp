@@ -183,150 +183,133 @@ public class GetDocumentSymbolsTool extends AbstractTool {
     }
 
     private Map<String, Object> createTypeSymbol(IType type, IJdtService service, ICompilationUnit cu,
-                                                  boolean includePrivate, int maxResults, int[] symbolCount) {
-        try {
-            int flags = type.getFlags();
-            if (!includePrivate && Flags.isPrivate(flags)) {
-                return null;
-            }
-
-            symbolCount[0]++;
-            if (symbolCount[0] > maxResults) return null;
-
-            Map<String, Object> symbol = new LinkedHashMap<>();
-            symbol.put("name", type.getElementName());
-
-            symbol.put("kind", TypeKindResolver.kindOf(type));
-
-            symbol.put("modifiers", ModifierFormatter.format(flags));
-
-            // Get line number
-            int offset = type.getSourceRange().getOffset();
-            symbol.put("line", service.getLineNumber(cu, offset));
-
-            // Get children
-            List<Map<String, Object>> children = new ArrayList<>();
-
-            // Record components — emitted as children of a record alongside
-            // explicit methods. They are not exposed via IType.getFields()
-            // in the current JDT API, so resolve them from the AST.
-            if (type.isRecord()) {
-                for (Map<String, Object> componentSymbol : createRecordComponentSymbols(type, service, cu, maxResults, symbolCount)) {
-                    children.add(componentSymbol);
-                }
-            }
-
-            // Fields
-            for (IField field : type.getFields()) {
-                if (symbolCount[0] >= maxResults) break;
-                Map<String, Object> fieldSymbol = createFieldSymbol(field, service, cu, includePrivate, symbolCount);
-                if (fieldSymbol != null) {
-                    children.add(fieldSymbol);
-                }
-            }
-
-            // Methods
-            for (IMethod method : type.getMethods()) {
-                if (symbolCount[0] >= maxResults) break;
-                Map<String, Object> methodSymbol = createMethodSymbol(method, service, cu, includePrivate, symbolCount);
-                if (methodSymbol != null) {
-                    children.add(methodSymbol);
-                }
-            }
-
-            // Nested types
-            for (IType nestedType : type.getTypes()) {
-                if (symbolCount[0] >= maxResults) break;
-                Map<String, Object> nestedSymbol = createTypeSymbol(nestedType, service, cu, includePrivate, maxResults, symbolCount);
-                if (nestedSymbol != null) {
-                    children.add(nestedSymbol);
-                }
-            }
-
-            if (!children.isEmpty()) {
-                symbol.put("children", children);
-            }
-
-            return symbol;
-
-        } catch (JavaModelException e) {
-            log.debug("Error creating type symbol: {}", e.getMessage());
+                                                  boolean includePrivate, int maxResults, int[] symbolCount)
+            throws JavaModelException {
+        int flags = type.getFlags();
+        if (!includePrivate && Flags.isPrivate(flags)) {
             return null;
         }
+
+        symbolCount[0]++;
+        if (symbolCount[0] > maxResults) return null;
+
+        Map<String, Object> symbol = new LinkedHashMap<>();
+        symbol.put("name", type.getElementName());
+
+        symbol.put("kind", TypeKindResolver.kindOf(type));
+
+        symbol.put("modifiers", ModifierFormatter.format(flags));
+
+        // Get line number
+        int offset = type.getSourceRange().getOffset();
+        symbol.put("line", service.getLineNumber(cu, offset));
+
+        // Get children
+        List<Map<String, Object>> children = new ArrayList<>();
+
+        // Record components, emitted as children of a record alongside
+        // explicit methods. They are not exposed via IType.getFields()
+        // in the current JDT API, so resolve them from the AST.
+        if (type.isRecord()) {
+            for (Map<String, Object> componentSymbol : createRecordComponentSymbols(type, service, cu, maxResults, symbolCount)) {
+                children.add(componentSymbol);
+            }
+        }
+
+        // Fields
+        for (IField field : type.getFields()) {
+            if (symbolCount[0] >= maxResults) break;
+            Map<String, Object> fieldSymbol = createFieldSymbol(field, service, cu, includePrivate, symbolCount);
+            if (fieldSymbol != null) {
+                children.add(fieldSymbol);
+            }
+        }
+
+        // Methods
+        for (IMethod method : type.getMethods()) {
+            if (symbolCount[0] >= maxResults) break;
+            Map<String, Object> methodSymbol = createMethodSymbol(method, service, cu, includePrivate, symbolCount);
+            if (methodSymbol != null) {
+                children.add(methodSymbol);
+            }
+        }
+
+        // Nested types
+        for (IType nestedType : type.getTypes()) {
+            if (symbolCount[0] >= maxResults) break;
+            Map<String, Object> nestedSymbol = createTypeSymbol(nestedType, service, cu, includePrivate, maxResults, symbolCount);
+            if (nestedSymbol != null) {
+                children.add(nestedSymbol);
+            }
+        }
+
+        if (!children.isEmpty()) {
+            symbol.put("children", children);
+        }
+
+        return symbol;
     }
 
     private Map<String, Object> createMethodSymbol(IMethod method, IJdtService service, ICompilationUnit cu,
-                                                    boolean includePrivate, int[] symbolCount) {
-        try {
-            int flags = method.getFlags();
-            if (!includePrivate && Flags.isPrivate(flags)) {
-                return null;
-            }
-
-            symbolCount[0]++;
-
-            Map<String, Object> symbol = new LinkedHashMap<>();
-            symbol.put("name", method.getElementName());
-
-            symbol.put("kind", ElementKindResolver.kindOf(method));
-
-            symbol.put("modifiers", ModifierFormatter.format(flags));
-
-            symbol.put("signature", MethodFormatter.signature(method));
-
-            int offset = method.getSourceRange().getOffset();
-            symbol.put("line", service.getLineNumber(cu, offset));
-
-            return symbol;
-
-        } catch (JavaModelException e) {
-            log.debug("Error creating method symbol: {}", e.getMessage());
+                                                    boolean includePrivate, int[] symbolCount)
+            throws JavaModelException {
+        int flags = method.getFlags();
+        if (!includePrivate && Flags.isPrivate(flags)) {
             return null;
         }
+
+        symbolCount[0]++;
+
+        Map<String, Object> symbol = new LinkedHashMap<>();
+        symbol.put("name", method.getElementName());
+
+        symbol.put("kind", ElementKindResolver.kindOf(method));
+
+        symbol.put("modifiers", ModifierFormatter.format(flags));
+
+        symbol.put("signature", MethodFormatter.signature(method));
+
+        int offset = method.getSourceRange().getOffset();
+        symbol.put("line", service.getLineNumber(cu, offset));
+
+        return symbol;
     }
 
     private List<Map<String, Object>> createRecordComponentSymbols(IType type, IJdtService service,
                                                                      ICompilationUnit cu, int maxResults,
-                                                                     int[] symbolCount) {
+                                                                     int[] symbolCount)
+            throws JavaModelException {
         List<Map<String, Object>> result = new ArrayList<>();
-        try {
-            ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
-            parser.setSource(cu);
-            parser.setResolveBindings(false);
-            CompilationUnit ast = (CompilationUnit) parser.createAST(Deadline.monitor());
-            RecordDeclaration record = findRecordDeclaration(ast, type);
-            if (record == null) return result;
-            for (Object component : record.recordComponents()) {
-                if (symbolCount[0] >= maxResults) break;
-                if (!(component instanceof SingleVariableDeclaration svd)) continue;
-                symbolCount[0]++;
-                Map<String, Object> symbol = new LinkedHashMap<>();
-                symbol.put("name", svd.getName().getIdentifier());
-                symbol.put("kind", "recordComponent");
-                symbol.put("modifiers", List.of("final"));
-                symbol.put("type", svd.getType().toString());
-                symbol.put("line", service.getLineNumber(cu, svd.getStartPosition()));
-                result.add(symbol);
-            }
-        } catch (Exception e) {
-            log.debug("Error collecting record components: {}", e.getMessage());
+        ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
+        parser.setSource(cu);
+        parser.setResolveBindings(false);
+        CompilationUnit ast = (CompilationUnit) parser.createAST(Deadline.monitor());
+        RecordDeclaration record = findRecordDeclaration(ast, type);
+        if (record == null) return result;
+        for (Object component : record.recordComponents()) {
+            if (symbolCount[0] >= maxResults) break;
+            if (!(component instanceof SingleVariableDeclaration svd)) continue;
+            symbolCount[0]++;
+            Map<String, Object> symbol = new LinkedHashMap<>();
+            symbol.put("name", svd.getName().getIdentifier());
+            symbol.put("kind", "recordComponent");
+            symbol.put("modifiers", List.of("final"));
+            symbol.put("type", svd.getType().toString());
+            symbol.put("line", service.getLineNumber(cu, svd.getStartPosition()));
+            result.add(symbol);
         }
         return result;
     }
 
-    private int countRecordComponentsViaAST(IType type) {
-        try {
-            ICompilationUnit cu = type.getCompilationUnit();
-            if (cu == null) return 0;
-            ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
-            parser.setSource(cu);
-            parser.setResolveBindings(false);
-            CompilationUnit ast = (CompilationUnit) parser.createAST(Deadline.monitor());
-            RecordDeclaration record = findRecordDeclaration(ast, type);
-            return record == null ? 0 : record.recordComponents().size();
-        } catch (Exception e) {
-            return 0;
-        }
+    private int countRecordComponentsViaAST(IType type) throws JavaModelException {
+        ICompilationUnit cu = type.getCompilationUnit();
+        if (cu == null) return 0;
+        ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
+        parser.setSource(cu);
+        parser.setResolveBindings(false);
+        CompilationUnit ast = (CompilationUnit) parser.createAST(Deadline.monitor());
+        RecordDeclaration record = findRecordDeclaration(ast, type);
+        return record == null ? 0 : record.recordComponents().size();
     }
 
     /**
@@ -346,34 +329,29 @@ public class GetDocumentSymbolsTool extends AbstractTool {
     }
 
     private Map<String, Object> createFieldSymbol(IField field, IJdtService service, ICompilationUnit cu,
-                                                   boolean includePrivate, int[] symbolCount) {
-        try {
-            int flags = field.getFlags();
-            if (!includePrivate && Flags.isPrivate(flags)) {
-                return null;
-            }
-
-            symbolCount[0]++;
-
-            Map<String, Object> symbol = new LinkedHashMap<>();
-            symbol.put("name", field.getElementName());
-
-            symbol.put("kind", ElementKindResolver.fieldKindOf(field));
-
-            symbol.put("modifiers", ModifierFormatter.format(flags));
-
-            String fieldType = Signature.getSimpleName(Signature.toString(field.getTypeSignature()));
-            symbol.put("type", fieldType);
-
-            int offset = field.getSourceRange().getOffset();
-            symbol.put("line", service.getLineNumber(cu, offset));
-
-            return symbol;
-
-        } catch (JavaModelException e) {
-            log.debug("Error creating field symbol: {}", e.getMessage());
+                                                   boolean includePrivate, int[] symbolCount)
+            throws JavaModelException {
+        int flags = field.getFlags();
+        if (!includePrivate && Flags.isPrivate(flags)) {
             return null;
         }
+
+        symbolCount[0]++;
+
+        Map<String, Object> symbol = new LinkedHashMap<>();
+        symbol.put("name", field.getElementName());
+
+        symbol.put("kind", ElementKindResolver.fieldKindOf(field));
+
+        symbol.put("modifiers", ModifierFormatter.format(flags));
+
+        String fieldType = Signature.getSimpleName(Signature.toString(field.getTypeSignature()));
+        symbol.put("type", fieldType);
+
+        int offset = field.getSourceRange().getOffset();
+        symbol.put("line", service.getLineNumber(cu, offset));
+
+        return symbol;
     }
 
 }

@@ -194,20 +194,17 @@ public class GetTypeHierarchyTool extends AbstractTool {
 
         info.put("kind", TypeKindResolver.kindOf(type));
 
-        try {
-            ICompilationUnit cu = type.getCompilationUnit();
-            if (cu != null && cu.getResource() != null) {
-                IPath location = cu.getResource().getLocation();
-                if (location != null) {
-                    info.put("filePath", service.getPathUtils().formatPath(location.toOSString()));
-                }
-
-                int offset = type.getSourceRange().getOffset();
-                int lineNum = service.getLineNumber(cu, offset);
-                info.put("line", lineNum);
+        // A type of a class file has no file or line
+        ICompilationUnit cu = type.getCompilationUnit();
+        if (cu != null && cu.getResource() != null) {
+            IPath location = cu.getResource().getLocation();
+            if (location != null) {
+                info.put("filePath", service.getPathUtils().formatPath(location.toOSString()));
             }
-        } catch (Exception e) {
-            info.put("external", true);
+
+            int offset = type.getSourceRange().getOffset();
+            int lineNum = service.getLineNumber(cu, offset);
+            info.put("line", lineNum);
         }
 
         return info;

@@ -21,8 +21,6 @@ import org.eclipse.jdt.core.dom.QualifiedName;
 import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.javalens.core.Deadline;
 
 import java.util.ArrayList;
@@ -51,8 +49,6 @@ import java.util.Set;
  * (fact, method, variable); descent is bounded by maxCallDepth.
  */
 final class InterproceduralFlowAnalyzer {
-
-    private static final Logger log = LoggerFactory.getLogger(InterproceduralFlowAnalyzer.class);
 
     private final int maxCallDepth;
     private final Map<String, CompilationUnit> astCache = new HashMap<>();
@@ -232,44 +228,40 @@ final class InterproceduralFlowAnalyzer {
     private void descendIntoCallee(IMethodBinding declaration, int argIndex, ASTNode site,
                                    CompilationUnit callerAst, FactOrigin origin, int depth,
                                    List<Map<String, Object>> steps) {
-        try {
-            if (!(declaration.getJavaElement() instanceof IMethod calleeElement)) {
-                return;
-            }
-            ICompilationUnit calleeCu = calleeElement.getCompilationUnit();
-            if (calleeCu == null) {
-                return;
-            }
-            CompilationUnit calleeAst = astCache.computeIfAbsent(
-                calleeCu.getHandleIdentifier(), k -> parse(calleeCu));
-            if (calleeAst == null) {
-                return;
-            }
-            MethodDeclaration calleeMethod = findMethod(calleeAst, declaration.getKey());
-            if (calleeMethod == null || argIndex >= calleeMethod.parameters().size()) {
-                return;
-            }
-            SingleVariableDeclaration parameter =
-                (SingleVariableDeclaration) calleeMethod.parameters().get(argIndex);
-            IVariableBinding parameterBinding = parameter.resolveBinding();
-            if (parameterBinding == null) {
-                return;
-            }
-
-            List<Map<String, Object>> nextSteps = new ArrayList<>(steps);
-            Map<String, Object> step = new LinkedHashMap<>();
-            step.put("kind", "argument");
-            step.put("callee", ElementNames.methodKey(declaration));
-            step.put("parameter", parameter.getName().getIdentifier());
-            step.put("argIndex", argIndex);
-            step.put("line", lineOf(callerAst, site));
-            nextSteps.add(step);
-
-            walkFrame(origin, calleeMethod, calleeAst, ElementNames.methodKey(declaration),
-                parameterBinding, depth + 1, nextSteps);
-        } catch (Exception e) {
-            log.debug("Could not descend into callee {}: {}", declaration.getName(), e.getMessage());
+        if (!(declaration.getJavaElement() instanceof IMethod calleeElement)) {
+            return;
         }
+        ICompilationUnit calleeCu = calleeElement.getCompilationUnit();
+        if (calleeCu == null) {
+            return;
+        }
+        CompilationUnit calleeAst = astCache.computeIfAbsent(
+            calleeCu.getHandleIdentifier(), k -> parse(calleeCu));
+        if (calleeAst == null) {
+            return;
+        }
+        MethodDeclaration calleeMethod = findMethod(calleeAst, declaration.getKey());
+        if (calleeMethod == null || argIndex >= calleeMethod.parameters().size()) {
+            return;
+        }
+        SingleVariableDeclaration parameter =
+            (SingleVariableDeclaration) calleeMethod.parameters().get(argIndex);
+        IVariableBinding parameterBinding = parameter.resolveBinding();
+        if (parameterBinding == null) {
+            return;
+        }
+
+        List<Map<String, Object>> nextSteps = new ArrayList<>(steps);
+        Map<String, Object> step = new LinkedHashMap<>();
+        step.put("kind", "argument");
+        step.put("callee", ElementNames.methodKey(declaration));
+        step.put("parameter", parameter.getName().getIdentifier());
+        step.put("argIndex", argIndex);
+        step.put("line", lineOf(callerAst, site));
+        nextSteps.add(step);
+
+        walkFrame(origin, calleeMethod, calleeAst, ElementNames.methodKey(declaration),
+            parameterBinding, depth + 1, nextSteps);
     }
 
     /** Whether the expression carries a tracked value (taint: anywhere in the subtree). */
@@ -335,14 +327,10 @@ final class InterproceduralFlowAnalyzer {
     }
 
     private static CompilationUnit parse(ICompilationUnit cu) {
-        try {
-            ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
-            parser.setSource(cu);
-            parser.setResolveBindings(true);
-            return (CompilationUnit) parser.createAST(Deadline.monitor());
-        } catch (Exception e) {
-            return null;
-        }
+        ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
+        parser.setSource(cu);
+        parser.setResolveBindings(true);
+        return (CompilationUnit) parser.createAST(Deadline.monitor());
     }
 
     private static MethodDeclaration findMethod(CompilationUnit ast, String bindingKey) {

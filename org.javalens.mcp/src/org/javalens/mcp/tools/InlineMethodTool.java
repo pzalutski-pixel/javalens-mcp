@@ -302,34 +302,30 @@ public class InlineMethodTool extends AbstractTool {
         return null;
     }
 
-    private MethodDeclaration findMethodDeclaration(CompilationUnit ast, IMethod method) {
+    private MethodDeclaration findMethodDeclaration(CompilationUnit ast, IMethod method) throws JavaModelException {
         final MethodDeclaration[] result = {null};
         final String methodName = method.getElementName();
 
-        try {
-            ISourceRange nameRange = method.getNameRange();
-            final int nameOffset = nameRange != null ? nameRange.getOffset() : -1;
+        ISourceRange nameRange = method.getNameRange();
+        final int nameOffset = nameRange != null ? nameRange.getOffset() : -1;
 
-            ast.accept(new ASTVisitor() {
-                @Override
-                public boolean visit(MethodDeclaration node) {
-                    if (methodName.equals(node.getName().getIdentifier())) {
-                        // Match by offset if available
-                        if (nameOffset >= 0 && node.getName().getStartPosition() == nameOffset) {
-                            result[0] = node;
-                            return false;
-                        }
-                        // Fallback to first match by name
-                        if (result[0] == null) {
-                            result[0] = node;
-                        }
+        ast.accept(new ASTVisitor() {
+            @Override
+            public boolean visit(MethodDeclaration node) {
+                if (methodName.equals(node.getName().getIdentifier())) {
+                    // Match by offset if available
+                    if (nameOffset >= 0 && node.getName().getStartPosition() == nameOffset) {
+                        result[0] = node;
+                        return false;
                     }
-                    return true;
+                    // Fallback to first match by name
+                    if (result[0] == null) {
+                        result[0] = node;
+                    }
                 }
-            });
-        } catch (JavaModelException e) {
-            log.debug("Error finding method declaration: {}", e.getMessage());
-        }
+                return true;
+            }
+        });
 
         return result[0];
     }

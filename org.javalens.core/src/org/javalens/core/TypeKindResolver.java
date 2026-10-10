@@ -1,5 +1,6 @@
 package org.javalens.core;
 
+import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.JavaModelException;
 
@@ -18,6 +19,7 @@ public final class TypeKindResolver {
 
     private TypeKindResolver() {}
 
+    /** The kind of {@code type}; a type JDT cannot read fails, naming the type. */
     public static String kindOf(IType type) {
         try {
             if (type.isAnnotation()) return "annotation";
@@ -26,7 +28,12 @@ public final class TypeKindResolver {
             if (type.isRecord()) return "record";
             return "class";
         } catch (JavaModelException e) {
-            return "class";
+            throw unreadable(type, e);
         }
+    }
+
+    /** The failure to read the kind of {@code element}: JDT's message, the element named. */
+    static IllegalStateException unreadable(IJavaElement element, JavaModelException e) {
+        return new IllegalStateException("Cannot read the kind of " + element.getElementName() + ": " + e.getMessage(), e);
     }
 }

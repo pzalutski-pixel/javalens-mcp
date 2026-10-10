@@ -181,44 +181,23 @@ public class GetTypeMembersTool extends AbstractTool {
     }
 
     private void collectMethods(IType type, List<Map<String, Object>> methods,
-                                 IJdtService service, String declaredIn) {
-        try {
-            for (IMethod method : type.getMethods()) {
-                Map<String, Object> info = createMethodInfo(method, service, declaredIn);
-                if (info != null) {
-                    methods.add(info);
-                }
-            }
-        } catch (JavaModelException e) {
-            log.debug("Error collecting methods: {}", e.getMessage());
+                                 IJdtService service, String declaredIn) throws JavaModelException {
+        for (IMethod method : type.getMethods()) {
+            methods.add(createMethodInfo(method, service, declaredIn));
         }
     }
 
     private void collectFields(IType type, List<Map<String, Object>> fields,
-                                IJdtService service, String declaredIn) {
-        try {
-            for (IField field : type.getFields()) {
-                Map<String, Object> info = createFieldInfo(field, service, declaredIn);
-                if (info != null) {
-                    fields.add(info);
-                }
-            }
-        } catch (JavaModelException e) {
-            log.debug("Error collecting fields: {}", e.getMessage());
+                                IJdtService service, String declaredIn) throws JavaModelException {
+        for (IField field : type.getFields()) {
+            fields.add(createFieldInfo(field, service, declaredIn));
         }
     }
 
     private void collectNestedTypes(IType type, List<Map<String, Object>> nestedTypes,
-                                     IJdtService service, String declaredIn) {
-        try {
-            for (IType nested : type.getTypes()) {
-                Map<String, Object> info = createNestedTypeInfo(nested, service, declaredIn);
-                if (info != null) {
-                    nestedTypes.add(info);
-                }
-            }
-        } catch (JavaModelException e) {
-            log.debug("Error collecting nested types: {}", e.getMessage());
+                                     IJdtService service, String declaredIn) throws JavaModelException {
+        for (IType nested : type.getTypes()) {
+            nestedTypes.add(createNestedTypeInfo(nested, service, declaredIn));
         }
     }
 
@@ -229,108 +208,90 @@ public class GetTypeMembersTool extends AbstractTool {
 
         info.put("kind", TypeKindResolver.kindOf(type));
 
-        try {
-            ICompilationUnit cu = type.getCompilationUnit();
-            if (cu != null && cu.getResource() != null) {
-                IPath location = cu.getResource().getLocation();
-                if (location != null) {
-                    info.put("filePath", service.getPathUtils().formatPath(location.toOSString()));
-                }
+        // A type of a class file has no file
+        ICompilationUnit cu = type.getCompilationUnit();
+        if (cu != null && cu.getResource() != null) {
+            IPath location = cu.getResource().getLocation();
+            if (location != null) {
+                info.put("filePath", service.getPathUtils().formatPath(location.toOSString()));
             }
-        } catch (Exception e) {
-            // External type
         }
 
         return info;
     }
 
-    private Map<String, Object> createMethodInfo(IMethod method, IJdtService service, String declaredIn) {
-        try {
-            Map<String, Object> info = new LinkedHashMap<>();
-            info.put("name", method.getElementName());
+    private Map<String, Object> createMethodInfo(IMethod method, IJdtService service, String declaredIn)
+            throws JavaModelException {
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("name", method.getElementName());
 
-            info.put("kind", ElementKindResolver.kindOf(method));
+        info.put("kind", ElementKindResolver.kindOf(method));
 
-            int flags = method.getFlags();
-            info.put("modifiers", ModifierFormatter.format(flags));
+        int flags = method.getFlags();
+        info.put("modifiers", ModifierFormatter.format(flags));
 
-            info.put("signature", MethodFormatter.signature(method));
+        info.put("signature", MethodFormatter.signature(method));
 
-            if (declaredIn != null) {
-                info.put("declaredIn", declaredIn);
-            }
-
-            // Get line if source available
-            ICompilationUnit cu = method.getCompilationUnit();
-            if (cu != null) {
-                int offset = method.getSourceRange().getOffset();
-                info.put("line", service.getLineNumber(cu, offset));
-            }
-
-            return info;
-
-        } catch (JavaModelException e) {
-            log.debug("Error creating method info: {}", e.getMessage());
-            return null;
+        if (declaredIn != null) {
+            info.put("declaredIn", declaredIn);
         }
+
+        // Get line if source available
+        ICompilationUnit cu = method.getCompilationUnit();
+        if (cu != null) {
+            int offset = method.getSourceRange().getOffset();
+            info.put("line", service.getLineNumber(cu, offset));
+        }
+
+        return info;
     }
 
-    private Map<String, Object> createFieldInfo(IField field, IJdtService service, String declaredIn) {
-        try {
-            Map<String, Object> info = new LinkedHashMap<>();
-            info.put("name", field.getElementName());
+    private Map<String, Object> createFieldInfo(IField field, IJdtService service, String declaredIn)
+            throws JavaModelException {
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("name", field.getElementName());
 
-            int flags = field.getFlags();
-            info.put("kind", ElementKindResolver.fieldKindOf(field));
+        int flags = field.getFlags();
+        info.put("kind", ElementKindResolver.fieldKindOf(field));
 
-            info.put("modifiers", ModifierFormatter.format(flags));
-            info.put("type", Signature.getSimpleName(Signature.toString(field.getTypeSignature())));
+        info.put("modifiers", ModifierFormatter.format(flags));
+        info.put("type", Signature.getSimpleName(Signature.toString(field.getTypeSignature())));
 
-            if (declaredIn != null) {
-                info.put("declaredIn", declaredIn);
-            }
-
-            ICompilationUnit cu = field.getCompilationUnit();
-            if (cu != null) {
-                int offset = field.getSourceRange().getOffset();
-                info.put("line", service.getLineNumber(cu, offset));
-            }
-
-            return info;
-
-        } catch (JavaModelException e) {
-            log.debug("Error creating field info: {}", e.getMessage());
-            return null;
+        if (declaredIn != null) {
+            info.put("declaredIn", declaredIn);
         }
+
+        ICompilationUnit cu = field.getCompilationUnit();
+        if (cu != null) {
+            int offset = field.getSourceRange().getOffset();
+            info.put("line", service.getLineNumber(cu, offset));
+        }
+
+        return info;
     }
 
-    private Map<String, Object> createNestedTypeInfo(IType type, IJdtService service, String declaredIn) {
-        try {
-            Map<String, Object> info = new LinkedHashMap<>();
-            info.put("name", ElementNames.typeName(type));
-            info.put("qualifiedName", ElementNames.qualifiedName(type));
+    private Map<String, Object> createNestedTypeInfo(IType type, IJdtService service, String declaredIn)
+            throws JavaModelException {
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("name", ElementNames.typeName(type));
+        info.put("qualifiedName", ElementNames.qualifiedName(type));
 
-            info.put("kind", TypeKindResolver.kindOf(type));
+        info.put("kind", TypeKindResolver.kindOf(type));
 
-            int flags = type.getFlags();
-            info.put("modifiers", ModifierFormatter.format(flags));
+        int flags = type.getFlags();
+        info.put("modifiers", ModifierFormatter.format(flags));
 
-            if (declaredIn != null) {
-                info.put("declaredIn", declaredIn);
-            }
-
-            ICompilationUnit cu = type.getCompilationUnit();
-            if (cu != null) {
-                int offset = type.getSourceRange().getOffset();
-                info.put("line", service.getLineNumber(cu, offset));
-            }
-
-            return info;
-
-        } catch (JavaModelException e) {
-            log.debug("Error creating nested type info: {}", e.getMessage());
-            return null;
+        if (declaredIn != null) {
+            info.put("declaredIn", declaredIn);
         }
+
+        ICompilationUnit cu = type.getCompilationUnit();
+        if (cu != null) {
+            int offset = type.getSourceRange().getOffset();
+            info.put("line", service.getLineNumber(cu, offset));
+        }
+
+        return info;
     }
 
 }

@@ -559,48 +559,43 @@ public class RenameSymbolTool extends AbstractTool {
         return ElementKindResolver.kindOf(element);
     }
 
-    private String findBindingKey(IJavaElement element, CompilationUnit ast, String name) {
-        try {
-            ISourceRange range = null;
-            if (element instanceof IMember member) {
-                range = member.getNameRange();
-                if (range == null) {
-                    range = member.getSourceRange();
-                }
-            } else if (element instanceof ILocalVariable local) {
-                range = local.getNameRange();
-            } else if (element instanceof ITypeParameter typeParam) {
-                // Type parameters have no getNameRange(); the source range
-                // covers just the identifier (`T` in `<T>`).
-                range = typeParam.getSourceRange();
+    private String findBindingKey(IJavaElement element, CompilationUnit ast, String name) throws JavaModelException {
+        ISourceRange range = null;
+        if (element instanceof IMember member) {
+            range = member.getNameRange();
+            if (range == null) {
+                range = member.getSourceRange();
             }
+        } else if (element instanceof ILocalVariable local) {
+            range = local.getNameRange();
+        } else if (element instanceof ITypeParameter typeParam) {
+            // Type parameters have no getNameRange(); the source range
+            // covers just the identifier (`T` in `<T>`).
+            range = typeParam.getSourceRange();
+        }
 
-            if (range == null || range.getOffset() < 0) {
-                return null;
-            }
-
-            // Find SimpleName at the element's name location
-            final int offset = range.getOffset();
-            final String[] foundKey = {null};
-
-            ast.accept(new ASTVisitor() {
-                @Override
-                public boolean visit(SimpleName node) {
-                    if (node.getStartPosition() == offset && name.equals(node.getIdentifier())) {
-                        IBinding binding = node.resolveBinding();
-                        if (binding != null) {
-                            foundKey[0] = binding.getKey();
-                        }
-                        return false;  // Stop visiting
-                    }
-                    return true;
-                }
-            });
-
-            return foundKey[0];
-        } catch (JavaModelException e) {
-            log.debug("Error finding binding key: {}", e.getMessage());
+        if (range == null || range.getOffset() < 0) {
             return null;
         }
+
+        // Find SimpleName at the element's name location
+        final int offset = range.getOffset();
+        final String[] foundKey = {null};
+
+        ast.accept(new ASTVisitor() {
+            @Override
+            public boolean visit(SimpleName node) {
+                if (node.getStartPosition() == offset && name.equals(node.getIdentifier())) {
+                    IBinding binding = node.resolveBinding();
+                    if (binding != null) {
+                        foundKey[0] = binding.getKey();
+                    }
+                    return false;  // Stop visiting
+                }
+                return true;
+            }
+        });
+
+        return foundKey[0];
     }
 }

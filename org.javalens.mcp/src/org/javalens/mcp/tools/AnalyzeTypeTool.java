@@ -1,6 +1,7 @@
 package org.javalens.mcp.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.eclipse.core.runtime.CoreException;
 import org.eclipse.jdt.core.Flags;
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IField;
@@ -124,7 +125,7 @@ public class AnalyzeTypeTool extends AbstractTool {
 
             // Diagnostics for this file
             if (cu != null) {
-                data.put("diagnostics", collectDiagnostics(cu));
+                data.put("diagnostics", collectDiagnostics(cu, service));
             }
 
             return ToolResponse.success(data, ResponseMeta.builder()
@@ -270,147 +271,143 @@ public class AnalyzeTypeTool extends AbstractTool {
         return info;
     }
 
-    private Map<String, Object> createHierarchyInfo(IType type, IJdtService service) {
+    private Map<String, Object> createHierarchyInfo(IType type, IJdtService service) throws CoreException {
         Map<String, Object> hierarchy = new LinkedHashMap<>();
 
-        try {
-            // The hierarchy as the Java model holds it, local and anonymous classes included
-            ModelHierarchy typeHierarchy = service.getSearchService().hierarchyOf(type);
+        // The hierarchy as the Java model holds it, local and anonymous classes included
+        ModelHierarchy typeHierarchy = service.getSearchService().hierarchyOf(type);
 
-            // Superclass
-            IType superclass = typeHierarchy.superclass();
-            if (superclass != null && !"java.lang.Object".equals(superclass.getFullyQualifiedName())) {
-                hierarchy.put("superclass", Map.of(
-                    "name", ElementNames.typeName(superclass),
-                    "qualifiedName", ElementNames.qualifiedName(superclass)
+        // Superclass
+        IType superclass = typeHierarchy.superclass();
+        if (superclass != null && !"java.lang.Object".equals(superclass.getFullyQualifiedName())) {
+            hierarchy.put("superclass", Map.of(
+                "name", ElementNames.typeName(superclass),
+                "qualifiedName", ElementNames.qualifiedName(superclass)
+            ));
+        }
+
+        // Interfaces
+        List<IType> interfaces = typeHierarchy.superInterfaces();
+        if (!interfaces.isEmpty()) {
+            List<Map<String, Object>> interfaceList = new ArrayList<>();
+            for (IType iface : interfaces) {
+                interfaceList.add(Map.of(
+                    "name", ElementNames.typeName(iface),
+                    "qualifiedName", ElementNames.qualifiedName(iface)
                 ));
             }
-
-            // Interfaces
-            List<IType> interfaces = typeHierarchy.superInterfaces();
-            if (!interfaces.isEmpty()) {
-                List<Map<String, Object>> interfaceList = new ArrayList<>();
-                for (IType iface : interfaces) {
-                    interfaceList.add(Map.of(
-                        "name", ElementNames.typeName(iface),
-                        "qualifiedName", ElementNames.qualifiedName(iface)
-                    ));
-                }
-                hierarchy.put("interfaces", interfaceList);
-            }
-
-            // Supertypes the compiler cannot resolve, by name, with the type naming each
-            List<Map<String, Object>> unresolved = unresolvedSupertypes(typeHierarchy);
-            if (unresolved != null) {
-                hierarchy.put("unresolvedSupertypes", unresolved);
-            }
-
-            // Subtypes, by file and position
-            List<IType> subtypes = typeHierarchy.allSubtypes();
-            if (!subtypes.isEmpty()) {
-                List<Map<String, Object>> subtypeList = new ArrayList<>();
-                for (IType subtype : subtypes) {
-                    if (subtypeList.size() >= MAX_SUBTYPES) break;
-                    subtypeList.add(Map.of(
-                        "name", ElementNames.typeName(subtype),
-                        "qualifiedName", ElementNames.qualifiedName(subtype)
-                    ));
-                }
-                hierarchy.put("subtypes", subtypeList);
-                hierarchy.put("subtypeCount", subtypes.size());
-            }
-            Map<String, Object> potential = potentialSubtypes(typeHierarchy, MAX_SUBTYPES, service);
-            if (potential != null) {
-                hierarchy.put("potentialMatches", potential);
-            }
-
-        } catch (Exception e) {
-            log.debug("Error getting hierarchy: {}", e.getMessage());
+            hierarchy.put("interfaces", interfaceList);
         }
+
+        // Supertypes the compiler cannot resolve, by name, with the type naming each
+        List<Map<String, Object>> unresolved = unresolvedSupertypes(typeHierarchy);
+        if (unresolved != null) {
+            hierarchy.put("unresolvedSupertypes", unresolved);
+        }
+
+        // Subtypes, by file and position
+        List<IType> subtypes = typeHierarchy.allSubtypes();
+        if (!subtypes.isEmpty()) {
+            List<Map<String, Object>> subtypeList = new ArrayList<>();
+            for (IType subtype : subtypes) {
+                if (subtypeList.size() >= MAX_SUBTYPES) break;
+                subtypeList.add(Map.of(
+                    "name", ElementNames.typeName(subtype),
+                    "qualifiedName", ElementNames.qualifiedName(subtype)
+                ));
+            }
+            hierarchy.put("subtypes", subtypeList);
+            hierarchy.put("subtypeCount", subtypes.size());
+        }
+        Map<String, Object> potential = potentialSubtypes(typeHierarchy, MAX_SUBTYPES, service);
+        if (potential != null) {
+            hierarchy.put("potentialMatches", potential);
+        }
+
 
         return hierarchy;
     }
 
-    private Map<String, Object> createUsageInfo(IType type, IJdtService service, int maxUsages) {
+    private Map<String, Object> createUsageInfo(IType type, IJdtService service, int maxUsages)
+            throws CoreException {
         Map<String, Object> usages = new LinkedHashMap<>();
         int total = 0;
 
-        try {
-            org.javalens.core.search.SearchService search = service.getSearchService();
+        org.javalens.core.search.SearchService search = service.getSearchService();
 
-            // Each category's count is its totalEncountered (pre-clip count), so the aggregate
-            // reflects all uses, not just the maxUsages-clipped sample. Annotation usages count
-            // only for an annotation type, which cannot be instantiated, cast and so on; this
-            // mirrors GetTypeUsageSummaryTool so the two tools surface the same vocabulary.
-            Map<String, org.javalens.core.search.SearchService.ReferenceKind> categories = new LinkedHashMap<>();
-            categories.put("instantiations", org.javalens.core.search.SearchService.ReferenceKind.INSTANTIATION);
-            categories.put("casts", org.javalens.core.search.SearchService.ReferenceKind.CAST);
-            categories.put("instanceofChecks", org.javalens.core.search.SearchService.ReferenceKind.INSTANCEOF);
-            categories.put("typeArguments", org.javalens.core.search.SearchService.ReferenceKind.TYPE_ARGUMENT);
-            if (type.isAnnotation()) {
-                categories.put("annotationUsages", org.javalens.core.search.SearchService.ReferenceKind.ANNOTATION);
-            }
-
-            // The places each category's search could not confirm, the first maxUsages of each
-            List<org.eclipse.jdt.core.search.SearchMatch> potential = new ArrayList<>();
-            int potentialTotal = 0;
-            for (Map.Entry<String, org.javalens.core.search.SearchService.ReferenceKind> category : categories.entrySet()) {
-                org.javalens.core.search.SearchResult result = search.findReferences(type, category.getValue(), maxUsages);
-                usages.put(category.getKey(), result.totalEncountered());
-                total += result.totalEncountered();
-                potential.addAll(result.potentialMatches());
-                potentialTotal += result.potentialTotal();
-            }
-
-            usages.put("total", total);
-            Map<String, Object> potentialMatches = potentialMatches(potential, potentialTotal, service);
-            if (potentialMatches != null) {
-                usages.put("potentialMatches", potentialMatches);
-            }
-
-        } catch (Exception e) {
-            log.debug("Error getting usages: {}", e.getMessage());
+        // Each category's count is its totalEncountered (pre-clip count), so the aggregate
+        // reflects all uses, not just the maxUsages-clipped sample. Annotation usages count
+        // only for an annotation type, which cannot be instantiated, cast and so on; this
+        // mirrors GetTypeUsageSummaryTool so the two tools surface the same vocabulary.
+        Map<String, org.javalens.core.search.SearchService.ReferenceKind> categories = new LinkedHashMap<>();
+        categories.put("instantiations", org.javalens.core.search.SearchService.ReferenceKind.INSTANTIATION);
+        categories.put("casts", org.javalens.core.search.SearchService.ReferenceKind.CAST);
+        categories.put("instanceofChecks", org.javalens.core.search.SearchService.ReferenceKind.INSTANCEOF);
+        categories.put("typeArguments", org.javalens.core.search.SearchService.ReferenceKind.TYPE_ARGUMENT);
+        if (type.isAnnotation()) {
+            categories.put("annotationUsages", org.javalens.core.search.SearchService.ReferenceKind.ANNOTATION);
         }
+
+        // The places each category's search could not confirm, the first maxUsages of each
+        List<org.eclipse.jdt.core.search.SearchMatch> potential = new ArrayList<>();
+        int potentialTotal = 0;
+        for (Map.Entry<String, org.javalens.core.search.SearchService.ReferenceKind> category : categories.entrySet()) {
+            org.javalens.core.search.SearchResult result = search.findReferences(type, category.getValue(), maxUsages);
+            usages.put(category.getKey(), result.totalEncountered());
+            total += result.totalEncountered();
+            potential.addAll(result.potentialMatches());
+            potentialTotal += result.potentialTotal();
+        }
+
+        usages.put("total", total);
+        Map<String, Object> potentialMatches = potentialMatches(potential, potentialTotal, service);
+        if (potentialMatches != null) {
+            usages.put("potentialMatches", potentialMatches);
+        }
+
 
         return usages;
     }
 
-    private Map<String, Object> collectDiagnostics(ICompilationUnit cu) {
+    /**
+     * The error and warning counts of {@code cu}. With no syntax tree the problems cannot be
+     * read; counting none would claim the file has no problem.
+     */
+    private Map<String, Object> collectDiagnostics(ICompilationUnit cu, IJdtService service)
+            throws JavaModelException {
         Map<String, Object> result = new LinkedHashMap<>();
         int errorCount = 0;
         int warningCount = 0;
 
+        // FORCE_PROBLEM_DETECTION requires the CU to be in working-copy mode.
+        boolean wasWorkingCopy = cu.isWorkingCopy();
+        CompilationUnit ast;
         try {
-            // FORCE_PROBLEM_DETECTION requires the CU to be in working-copy mode.
-            boolean wasWorkingCopy = cu.isWorkingCopy();
-            CompilationUnit ast;
-            try {
-                // Inside the try: JDT registers the working copy before its first cancellation
-                // check (BecomeWorkingCopyOperation :45, Openable :240), so a cancelled call
-                // still leaves one, which the finally discards.
-                if (!wasWorkingCopy) {
-                    cu.becomeWorkingCopy(Deadline.monitor());
-                }
-                ast = (CompilationUnit) cu.reconcile(
-                    AST.getJLSLatest(),
-                    ICompilationUnit.FORCE_PROBLEM_DETECTION,
-                    null,
-                    Deadline.monitor()
-                );
-            } finally {
-                if (!wasWorkingCopy) {
-                    cu.discardWorkingCopy();
-                }
+            // Inside the try: JDT registers the working copy before its first cancellation
+            // check (BecomeWorkingCopyOperation :45, Openable :240), so a cancelled call
+            // still leaves one, which the finally discards.
+            if (!wasWorkingCopy) {
+                cu.becomeWorkingCopy(Deadline.monitor());
             }
+            ast = (CompilationUnit) cu.reconcile(
+                AST.getJLSLatest(),
+                ICompilationUnit.FORCE_PROBLEM_DETECTION,
+                null,
+                Deadline.monitor()
+            );
+        } finally {
+            if (!wasWorkingCopy) {
+                cu.discardWorkingCopy();
+            }
+        }
 
-            if (ast != null) {
-                for (IProblem problem : ast.getProblems()) {
-                    if (problem.isError()) errorCount++;
-                    else if (problem.isWarning()) warningCount++;
-                }
-            }
-        } catch (JavaModelException e) {
-            log.debug("Error collecting diagnostics: {}", e.getMessage());
+        if (ast == null) {
+            throw new IllegalStateException("JDT produced no syntax tree for "
+                + service.getPathUtils().formatPath(cu.getResource().getLocation().toOSString()));
+        }
+        for (IProblem problem : ast.getProblems()) {
+            if (problem.isError()) errorCount++;
+            else if (problem.isWarning()) warningCount++;
         }
 
         result.put("errorCount", errorCount);

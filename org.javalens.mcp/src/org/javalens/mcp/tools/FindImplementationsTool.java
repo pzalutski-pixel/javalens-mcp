@@ -144,27 +144,21 @@ public class FindImplementationsTool extends AbstractTool {
                 eligibleCount = overriders.size();
                 for (IMethod overrider : overriders) {
                     if (implementations.size() >= maxResults) break;
-                    Map<String, Object> implInfo = createMethodImplementationInfo(overrider.getDeclaringType(), overrider, service);
-                    if (implInfo != null) implementations.add(implInfo);
+                    implementations.add(createMethodImplementationInfo(overrider.getDeclaringType(), overrider, service));
                 }
             } else {
                 List<IType> subtypes = hierarchy.allSubtypes();
                 eligibleCount = subtypes.size();
                 for (IType subtype : subtypes) {
                     if (implementations.size() >= maxResults) break;
-                    Map<String, Object> implInfo = createTypeImplementationInfo(subtype, service);
-                    if (implInfo != null) implementations.add(implInfo);
+                    implementations.add(createTypeImplementationInfo(subtype, service));
                 }
             }
 
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("symbol", ElementNames.typeName(targetType));
 
-            try {
-                data.put("isInterface", targetType.isInterface());
-            } catch (JavaModelException e) {
-                // Ignore
-            }
+            data.put("isInterface", targetType.isInterface());
 
             if (targetMethod != null) {
                 data.put("method", targetMethod.getElementName());
@@ -194,33 +188,25 @@ public class FindImplementationsTool extends AbstractTool {
         }
     }
 
-    private Map<String, Object> createTypeImplementationInfo(IType type, IJdtService service) {
-        try {
-            Map<String, Object> info = new LinkedHashMap<>();
-            info.put("name", ElementNames.typeName(type));
-            info.put("qualifiedName", ElementNames.qualifiedName(type));
-            info.put("kind", TypeKindResolver.kindOf(type));
-            populateLocation(type, info, service, type.getNameRange());
-            return info;
-        } catch (Exception e) {
-            log.debug("Error creating type implementation info: {}", e.getMessage());
-            return null;
-        }
+    private Map<String, Object> createTypeImplementationInfo(IType type, IJdtService service)
+            throws JavaModelException {
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("name", ElementNames.typeName(type));
+        info.put("qualifiedName", ElementNames.qualifiedName(type));
+        info.put("kind", TypeKindResolver.kindOf(type));
+        populateLocation(type, info, service, type.getNameRange());
+        return info;
     }
 
-    private Map<String, Object> createMethodImplementationInfo(IType type, IMethod method, IJdtService service) {
-        try {
-            Map<String, Object> info = new LinkedHashMap<>();
-            info.put("name", ElementNames.typeName(type));
-            info.put("qualifiedName", ElementNames.qualifiedName(type));
-            info.put("kind", TypeKindResolver.kindOf(type));
-            info.put("method", method.getElementName());
-            populateLocation(method, info, service, method.getNameRange());
-            return info;
-        } catch (Exception e) {
-            log.debug("Error creating method implementation info: {}", e.getMessage());
-            return null;
-        }
+    private Map<String, Object> createMethodImplementationInfo(IType type, IMethod method, IJdtService service)
+            throws JavaModelException {
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("name", ElementNames.typeName(type));
+        info.put("qualifiedName", ElementNames.qualifiedName(type));
+        info.put("kind", TypeKindResolver.kindOf(type));
+        info.put("method", method.getElementName());
+        populateLocation(method, info, service, method.getNameRange());
+        return info;
     }
 
     private void populateLocation(IJavaElement element, Map<String, Object> info,

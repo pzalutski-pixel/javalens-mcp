@@ -95,47 +95,13 @@ public class SuggestImportsTool extends AbstractTool {
 
             SearchEngine engine = new SearchEngine();
 
-            // Collect every matching type: the most relevant can come last in search order
+            // Collect every matching type: the most relevant can come last in search order. Each
+            // is read once the search is done, so a type JDT cannot read fails the answer.
+            List<IType> matched = new ArrayList<>();
             TypeNameMatchRequestor requestor = new TypeNameMatchRequestor() {
                 @Override
                 public void acceptTypeNameMatch(TypeNameMatch match) {
-                    try {
-                        IType type = match.getType();
-                        String fqn = type.getFullyQualifiedName();
-                        String packageName = type.getPackageFragment().getElementName();
-
-                        // An import names a type by its package (JLS 7.5): a type in the
-                        // default package cannot be imported.
-                        if (packageName.isEmpty()) {
-                            return;
-                        }
-
-                        // Skip internal/impl packages
-                        if (packageName.contains(".internal.") ||
-                            packageName.contains(".impl.") ||
-                            packageName.startsWith("sun.") ||
-                            packageName.startsWith("com.sun.")) {
-                            return;
-                        }
-
-                        int relevance = calculateRelevance(fqn, packageName);
-
-                        Map<String, Object> candidate = new LinkedHashMap<>();
-                        candidate.put("fullyQualifiedName", fqn);
-                        candidate.put("packageName", packageName);
-                        candidate.put("simpleName", ElementNames.typeName(type));
-                        candidate.put("relevance", relevance);
-                        candidate.put("isInterface", type.isInterface());
-                        candidate.put("isClass", type.isClass());
-                        candidate.put("isEnum", type.isEnum());
-                        // An import names a member type by its canonical name, dots between
-                        // the enclosing type and the member type (JLS 6.7, 7.5.1).
-                        candidate.put("fixId", "add_import:" + type.getFullyQualifiedName('.'));
-
-                        candidates.add(candidate);
-                    } catch (Exception e) {
-                        log.trace("Error processing type match: {}", e.getMessage());
-                    }
+                    matched.add(match.getType());
                 }
             };
 
@@ -151,6 +117,41 @@ public class SuggestImportsTool extends AbstractTool {
                 IJavaSearchConstants.WAIT_UNTIL_READY_TO_SEARCH,
                 Deadline.monitor()
             );
+
+            for (IType type : matched) {
+                String fqn = type.getFullyQualifiedName();
+                String packageName = type.getPackageFragment().getElementName();
+
+                // An import names a type by its package (JLS 7.5): a type in the
+                // default package cannot be imported.
+                if (packageName.isEmpty()) {
+                    continue;
+                }
+
+                // Skip internal/impl packages
+                if (packageName.contains(".internal.") ||
+                    packageName.contains(".impl.") ||
+                    packageName.startsWith("sun.") ||
+                    packageName.startsWith("com.sun.")) {
+                    continue;
+                }
+
+                int relevance = calculateRelevance(fqn, packageName);
+
+                Map<String, Object> candidate = new LinkedHashMap<>();
+                candidate.put("fullyQualifiedName", fqn);
+                candidate.put("packageName", packageName);
+                candidate.put("simpleName", ElementNames.typeName(type));
+                candidate.put("relevance", relevance);
+                candidate.put("isInterface", type.isInterface());
+                candidate.put("isClass", type.isClass());
+                candidate.put("isEnum", type.isEnum());
+                // An import names a member type by its canonical name, dots between
+                // the enclosing type and the member type (JLS 6.7, 7.5.1).
+                candidate.put("fixId", "add_import:" + type.getFullyQualifiedName('.'));
+
+                candidates.add(candidate);
+            }
 
             // Rank every candidate: by relevance (descending), then by fully qualified name
             candidates.sort(Comparator.comparingInt((Map<String, Object> c) -> (int) c.get("relevance"))

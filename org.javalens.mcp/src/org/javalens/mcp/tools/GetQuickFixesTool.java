@@ -1,6 +1,7 @@
 package org.javalens.mcp.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.eclipse.core.runtime.CoreException;
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IType;
@@ -216,115 +217,110 @@ public class GetQuickFixesTool extends AbstractTool {
      * only its most relevant import candidates.
      */
     private Fixes generateFixes(IProblem problem, CompilationUnit ast,
-                                ICompilationUnit cu, IJdtService service) {
+                                ICompilationUnit cu, IJdtService service) throws CoreException {
         List<Map<String, Object>> fixes = new ArrayList<>();
         int unlisted = 0;
         int problemId = problem.getID();
 
-        try {
-            if (problemId == UNDEFINED_TYPE || problemId == UNDEFINED_NAME) {
-                // Extract the unresolved type name from the problem arguments
-                String[] args = problem.getArguments();
-                String unresolvedName = null;
+        if (problemId == UNDEFINED_TYPE || problemId == UNDEFINED_NAME) {
+            // Extract the unresolved type name from the problem arguments
+            String[] args = problem.getArguments();
+            String unresolvedName = null;
 
-                if (args != null && args.length > 0) {
-                    unresolvedName = args[0];
-                } else {
-                    // Try to extract from source
-                    int start = problem.getSourceStart();
-                    int end = problem.getSourceEnd();
-                    if (start >= 0 && end >= start) {
-                        unresolvedName = cu.getSource().substring(start, end + 1);
-                    }
-                }
-
-                if (unresolvedName != null) {
-                    List<Map<String, Object>> importFixes = suggestImportFixes(
-                        unresolvedName, service, problem);
-                    int listed = Math.min(MAX_IMPORT_CANDIDATES, importFixes.size());
-                    fixes.addAll(importFixes.subList(0, listed));
-                    unlisted += importFixes.size() - listed;
+            if (args != null && args.length > 0) {
+                unresolvedName = args[0];
+            } else {
+                // Try to extract from source
+                int start = problem.getSourceStart();
+                int end = problem.getSourceEnd();
+                if (start >= 0 && end >= start) {
+                    unresolvedName = cu.getSource().substring(start, end + 1);
                 }
             }
 
-            if (problemId == UNUSED_IMPORT) {
-                // Find the import index
-                @SuppressWarnings("unchecked")
-                List<ImportDeclaration> imports = ast.imports();
-                int importIndex = -1;
+            if (unresolvedName != null) {
+                List<Map<String, Object>> importFixes = suggestImportFixes(
+                    unresolvedName, service, problem);
+                int listed = Math.min(MAX_IMPORT_CANDIDATES, importFixes.size());
+                fixes.addAll(importFixes.subList(0, listed));
+                unlisted += importFixes.size() - listed;
+            }
+        }
 
-                for (int i = 0; i < imports.size(); i++) {
-                    ImportDeclaration imp = imports.get(i);
-                    if (imp.getStartPosition() <= problem.getSourceStart() &&
-                        imp.getStartPosition() + imp.getLength() >= problem.getSourceEnd()) {
-                        importIndex = i;
-                        break;
-                    }
-                }
+        if (problemId == UNUSED_IMPORT) {
+            // Find the import index
+            @SuppressWarnings("unchecked")
+            List<ImportDeclaration> imports = ast.imports();
+            int importIndex = -1;
 
-                if (importIndex >= 0) {
-                    Map<String, Object> fix = new LinkedHashMap<>();
-                    fix.put("fixId", "remove_import:" + importIndex);
-                    fix.put("label", "Remove unused import");
-                    fix.put("category", "IMPORT");
-                    fix.put("relevance", 90);
-                    fix.put("problemId", problemId);
-                    fixes.add(fix);
+            for (int i = 0; i < imports.size(); i++) {
+                ImportDeclaration imp = imports.get(i);
+                if (imp.getStartPosition() <= problem.getSourceStart() &&
+                    imp.getStartPosition() + imp.getLength() >= problem.getSourceEnd()) {
+                    importIndex = i;
+                    break;
                 }
             }
 
-            if (problemId == UNHANDLED_EXCEPTION) {
-                // Extract exception type from problem arguments
-                String[] args = problem.getArguments();
-                String exceptionType = args != null && args.length > 0 ? args[0] : "Exception";
+            if (importIndex >= 0) {
+                Map<String, Object> fix = new LinkedHashMap<>();
+                fix.put("fixId", "remove_import:" + importIndex);
+                fix.put("label", "Remove unused import");
+                fix.put("category", "IMPORT");
+                fix.put("relevance", 90);
+                fix.put("problemId", problemId);
+                fixes.add(fix);
+            }
+        }
 
-                // Fix 1: Add throws declaration
-                Map<String, Object> addThrowsFix = new LinkedHashMap<>();
-                addThrowsFix.put("fixId", "add_throws:" + exceptionType);
-                addThrowsFix.put("label", "Add throws declaration for " + exceptionType);
-                addThrowsFix.put("category", "EXCEPTION");
-                addThrowsFix.put("relevance", 80);
-                addThrowsFix.put("problemId", problemId);
-                fixes.add(addThrowsFix);
+        if (problemId == UNHANDLED_EXCEPTION) {
+            // Extract exception type from problem arguments
+            String[] args = problem.getArguments();
+            String exceptionType = args != null && args.length > 0 ? args[0] : "Exception";
 
-                // Fix 2: Surround with try-catch
-                Map<String, Object> tryCatchFix = new LinkedHashMap<>();
-                tryCatchFix.put("fixId", "surround_try_catch:" + exceptionType);
-                tryCatchFix.put("label", "Surround with try-catch for " + exceptionType);
-                tryCatchFix.put("category", "EXCEPTION");
-                tryCatchFix.put("relevance", 75);
-                tryCatchFix.put("problemId", problemId);
-                fixes.add(tryCatchFix);
+            // Fix 1: Add throws declaration
+            Map<String, Object> addThrowsFix = new LinkedHashMap<>();
+            addThrowsFix.put("fixId", "add_throws:" + exceptionType);
+            addThrowsFix.put("label", "Add throws declaration for " + exceptionType);
+            addThrowsFix.put("category", "EXCEPTION");
+            addThrowsFix.put("relevance", 80);
+            addThrowsFix.put("problemId", problemId);
+            fixes.add(addThrowsFix);
+
+            // Fix 2: Surround with try-catch
+            Map<String, Object> tryCatchFix = new LinkedHashMap<>();
+            tryCatchFix.put("fixId", "surround_try_catch:" + exceptionType);
+            tryCatchFix.put("label", "Surround with try-catch for " + exceptionType);
+            tryCatchFix.put("category", "EXCEPTION");
+            tryCatchFix.put("relevance", 75);
+            tryCatchFix.put("problemId", problemId);
+            fixes.add(tryCatchFix);
+        }
+
+        if (problemId == IMPORT_NOT_FOUND) {
+            // Suggest removing the bad import
+            @SuppressWarnings("unchecked")
+            List<ImportDeclaration> imports = ast.imports();
+            int importIndex = -1;
+
+            for (int i = 0; i < imports.size(); i++) {
+                ImportDeclaration imp = imports.get(i);
+                if (imp.getStartPosition() <= problem.getSourceStart() &&
+                    imp.getStartPosition() + imp.getLength() >= problem.getSourceEnd()) {
+                    importIndex = i;
+                    break;
+                }
             }
 
-            if (problemId == IMPORT_NOT_FOUND) {
-                // Suggest removing the bad import
-                @SuppressWarnings("unchecked")
-                List<ImportDeclaration> imports = ast.imports();
-                int importIndex = -1;
-
-                for (int i = 0; i < imports.size(); i++) {
-                    ImportDeclaration imp = imports.get(i);
-                    if (imp.getStartPosition() <= problem.getSourceStart() &&
-                        imp.getStartPosition() + imp.getLength() >= problem.getSourceEnd()) {
-                        importIndex = i;
-                        break;
-                    }
-                }
-
-                if (importIndex >= 0) {
-                    Map<String, Object> fix = new LinkedHashMap<>();
-                    fix.put("fixId", "remove_import:" + importIndex);
-                    fix.put("label", "Remove unresolved import");
-                    fix.put("category", "IMPORT");
-                    fix.put("relevance", 85);
-                    fix.put("problemId", problemId);
-                    fixes.add(fix);
-                }
+            if (importIndex >= 0) {
+                Map<String, Object> fix = new LinkedHashMap<>();
+                fix.put("fixId", "remove_import:" + importIndex);
+                fix.put("label", "Remove unresolved import");
+                fix.put("category", "IMPORT");
+                fix.put("relevance", 85);
+                fix.put("problemId", problemId);
+                fixes.add(fix);
             }
-
-        } catch (Exception e) {
-            log.debug("Error generating fixes for problem {}: {}", problemId, e.getMessage());
         }
 
         return new Fixes(fixes, fixes.size() + unlisted);
@@ -335,87 +331,78 @@ public class GetQuickFixesTool extends AbstractTool {
      * name the import gives.
      */
     private List<Map<String, Object>> suggestImportFixes(String typeName, IJdtService service,
-                                                          IProblem problem) {
+                                                          IProblem problem) throws CoreException {
         List<Map<String, Object>> fixes = new ArrayList<>();
 
-        try {
-            IJavaSearchScope scope = SearchEngine.createJavaSearchScope(
-                new IJavaElement[] { service.getJavaProject() },
-                IJavaSearchScope.SOURCES |
-                IJavaSearchScope.APPLICATION_LIBRARIES |
-                IJavaSearchScope.SYSTEM_LIBRARIES
-            );
+        IJavaSearchScope scope = SearchEngine.createJavaSearchScope(
+            new IJavaElement[] { service.getJavaProject() },
+            IJavaSearchScope.SOURCES |
+            IJavaSearchScope.APPLICATION_LIBRARIES |
+            IJavaSearchScope.SYSTEM_LIBRARIES
+        );
 
-            SearchEngine engine = new SearchEngine();
-            List<Map<String, Object>> candidates = new ArrayList<>();
+        SearchEngine engine = new SearchEngine();
+        List<Map<String, Object>> candidates = new ArrayList<>();
 
-            TypeNameMatchRequestor requestor = new TypeNameMatchRequestor() {
-                @Override
-                public void acceptTypeNameMatch(TypeNameMatch match) {
-                    try {
-                        IType type = match.getType();
-                        String packageName = type.getPackageFragment().getElementName();
+        TypeNameMatchRequestor requestor = new TypeNameMatchRequestor() {
+            @Override
+            public void acceptTypeNameMatch(TypeNameMatch match) {
+                IType type = match.getType();
+                String packageName = type.getPackageFragment().getElementName();
 
-                        // An import names a type by its package (JLS 7.5): a type in the
-                        // default package cannot be imported.
-                        if (packageName.isEmpty()) {
-                            return;
-                        }
-
-                        // Skip internal packages
-                        if (packageName.contains(".internal.") ||
-                            packageName.startsWith("sun.") ||
-                            packageName.startsWith("com.sun.")) {
-                            return;
-                        }
-
-                        int relevance = calculateRelevance(packageName);
-
-                        Map<String, Object> candidate = new LinkedHashMap<>();
-                        // An import names a member type by its canonical name, dots between
-                        // the enclosing type and the member type (JLS 6.7, 7.5.1).
-                        candidate.put("importName", type.getFullyQualifiedName('.'));
-                        candidate.put("packageName", packageName);
-                        candidate.put("relevance", relevance);
-                        candidates.add(candidate);
-                    } catch (Exception e) {
-                        // Skip this match
-                    }
+                // An import names a type by its package (JLS 7.5): a type in the
+                // default package cannot be imported.
+                if (packageName.isEmpty()) {
+                    return;
                 }
-            };
 
-            engine.searchAllTypeNames(
-                null,
-                SearchPattern.R_EXACT_MATCH,
-                typeName.toCharArray(),
-                SearchPattern.R_EXACT_MATCH | SearchPattern.R_CASE_SENSITIVE,
-                IJavaSearchConstants.TYPE,
-                scope,
-                requestor,
-                IJavaSearchConstants.WAIT_UNTIL_READY_TO_SEARCH,
-                Deadline.monitor()
-            );
+                // Skip internal packages
+                if (packageName.contains(".internal.") ||
+                    packageName.startsWith("sun.") ||
+                    packageName.startsWith("com.sun.")) {
+                    return;
+                }
 
-            // Rank every candidate: by relevance (descending), then by import name
-            candidates.sort(Comparator.comparingInt((Map<String, Object> c) -> (int) c.get("relevance"))
-                .reversed()
-                .thenComparing(c -> (String) c.get("importName")));
+                int relevance = calculateRelevance(packageName);
 
-            // Create fixes
-            for (Map<String, Object> candidate : candidates) {
-                int relevance = (int) candidate.get("relevance");
-
-                Map<String, Object> fix = new LinkedHashMap<>();
-                fix.put("fixId", "add_import:" + candidate.get("importName"));
-                fix.put("label", "Import '" + typeName + "' (" + candidate.get("packageName") + ")");
-                fix.put("category", "IMPORT");
-                fix.put("relevance", relevance);
-                fix.put("problemId", problem.getID());
-                fixes.add(fix);
+                Map<String, Object> candidate = new LinkedHashMap<>();
+                // An import names a member type by its canonical name, dots between
+                // the enclosing type and the member type (JLS 6.7, 7.5.1).
+                candidate.put("importName", type.getFullyQualifiedName('.'));
+                candidate.put("packageName", packageName);
+                candidate.put("relevance", relevance);
+                candidates.add(candidate);
             }
+        };
 
-        } catch (Exception e) {
-            log.debug("Error suggesting imports for '{}': {}", typeName, e.getMessage());
+        engine.searchAllTypeNames(
+            null,
+            SearchPattern.R_EXACT_MATCH,
+            typeName.toCharArray(),
+            SearchPattern.R_EXACT_MATCH | SearchPattern.R_CASE_SENSITIVE,
+            IJavaSearchConstants.TYPE,
+            scope,
+            requestor,
+            IJavaSearchConstants.WAIT_UNTIL_READY_TO_SEARCH,
+            Deadline.monitor()
+        );
+
+        // Rank every candidate: by relevance (descending), then by import name
+        candidates.sort(Comparator.comparingInt((Map<String, Object> c) -> (int) c.get("relevance"))
+            .reversed()
+            .thenComparing(c -> (String) c.get("importName")));
+
+        // Create fixes
+        for (Map<String, Object> candidate : candidates) {
+            int relevance = (int) candidate.get("relevance");
+
+            Map<String, Object> fix = new LinkedHashMap<>();
+            fix.put("fixId", "add_import:" + candidate.get("importName"));
+            fix.put("label", "Import '" + typeName + "' (" + candidate.get("packageName") + ")");
+            fix.put("category", "IMPORT");
+            fix.put("relevance", relevance);
+            fix.put("problemId", problem.getID());
+            fixes.add(fix);
         }
 
         return fixes;

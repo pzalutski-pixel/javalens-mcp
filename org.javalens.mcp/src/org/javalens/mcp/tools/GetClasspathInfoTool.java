@@ -3,6 +3,7 @@ package org.javalens.mcp.tools;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.eclipse.core.resources.IResource;
 import org.eclipse.core.resources.ResourcesPlugin;
+import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.Path;
 import org.eclipse.jdt.core.IClasspathAttribute;
 import org.eclipse.jdt.core.IClasspathContainer;
@@ -23,6 +24,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -134,11 +136,7 @@ public class GetClasspathInfoTool extends AbstractTool {
             }
 
             // Output folder
-            try {
-                data.put("outputLocation", project.getOutputLocation().toString());
-            } catch (JavaModelException e) {
-                log.debug("Could not get output location: {}", e.getMessage());
-            }
+            data.put("outputLocation", project.getOutputLocation().toString());
 
             int totalEntries = sourceFolders.size() + libraries.size() + containers.size() +
                               projects.size() + variables.size();
@@ -243,36 +241,32 @@ public class GetClasspathInfoTool extends AbstractTool {
      * with an explicit {@code IClasspathAttribute.MODULE} also surface that value so
      * consumers can tell modulepath placement from classpath placement.
      */
-    private List<Map<String, Object>> buildResolvedSection(IJavaProject project) {
+    private List<Map<String, Object>> buildResolvedSection(IJavaProject project) throws JavaModelException {
         List<Map<String, Object>> resolved = new ArrayList<>();
-        try {
-            IClasspathEntry[] entries = project.getResolvedClasspath(true);
-            for (IClasspathEntry entry : entries) {
-                Map<String, Object> info = new LinkedHashMap<>();
-                String kind = switch (entry.getEntryKind()) {
-                    case IClasspathEntry.CPE_SOURCE -> "source";
-                    case IClasspathEntry.CPE_LIBRARY -> "library";
-                    case IClasspathEntry.CPE_CONTAINER -> "container";
-                    case IClasspathEntry.CPE_PROJECT -> "project";
-                    case IClasspathEntry.CPE_VARIABLE -> "variable";
-                    default -> "unknown";
-                };
-                info.put("kind", kind);
-                String path = entry.getPath().toString();
-                info.put("path", path);
-                info.put("exists", entryExists(entry));
+        IClasspathEntry[] entries = project.getResolvedClasspath(true);
+        for (IClasspathEntry entry : entries) {
+            Map<String, Object> info = new LinkedHashMap<>();
+            String kind = switch (entry.getEntryKind()) {
+                case IClasspathEntry.CPE_SOURCE -> "source";
+                case IClasspathEntry.CPE_LIBRARY -> "library";
+                case IClasspathEntry.CPE_CONTAINER -> "container";
+                case IClasspathEntry.CPE_PROJECT -> "project";
+                case IClasspathEntry.CPE_VARIABLE -> "variable";
+                default -> "unknown";
+            };
+            info.put("kind", kind);
+            String path = entry.getPath().toString();
+            info.put("path", path);
+            info.put("exists", entryExists(entry));
 
-                // Surface the MODULE classpath attribute when explicitly set — the
-                // value controls whether the entry is treated as modulepath (named
-                // or automatic module) vs classpath (unnamed module). Absent means
-                // JDT's default (classpath/unnamed for libraries).
-                String moduleAttr = readModuleAttribute(entry);
-                if (moduleAttr != null) info.put("module", moduleAttr);
+            // Surface the MODULE classpath attribute when explicitly set: the
+            // value controls whether the entry is treated as modulepath (named
+            // or automatic module) vs classpath (unnamed module). Absent means
+            // JDT's default (classpath/unnamed for libraries).
+            String moduleAttr = readModuleAttribute(entry);
+            if (moduleAttr != null) info.put("module", moduleAttr);
 
-                resolved.add(info);
-            }
-        } catch (JavaModelException e) {
-            log.warn("Failed to resolve classpath: {}", e.getMessage());
+            resolved.add(info);
         }
         return resolved;
     }
@@ -303,7 +297,8 @@ public class GetClasspathInfoTool extends AbstractTool {
                 if (path.startsWith("jrt:") || path.startsWith("jrt-fs:")) return true;
                 try {
                     return Files.exists(new File(path).toPath());
-                } catch (Exception e) {
+                } catch (InvalidPathException e) {
+                    // No file of this file system can carry the name, so none exists there.
                     return false;
                 }
         }
@@ -327,40 +322,35 @@ public class GetClasspathInfoTool extends AbstractTool {
      * Returns null if no JRE container is on the raw classpath — projects without a
      * JRE container don't get a jre section in the response.
      */
-    private Map<String, Object> buildJreSection(IJavaProject project) {
-        try {
-            IClasspathEntry jreContainerEntry = findJreContainerEntry(project);
-            if (jreContainerEntry == null) return null;
+    private Map<String, Object> buildJreSection(IJavaProject project) throws CoreException {
+        IClasspathEntry jreContainerEntry = findJreContainerEntry(project);
+        if (jreContainerEntry == null) return null;
 
-            Map<String, Object> jre = new LinkedHashMap<>();
+        Map<String, Object> jre = new LinkedHashMap<>();
 
-            IVMInstall vm = JavaRuntime.getVMInstall(project);
-            if (vm != null) {
-                jre.put("name", vm.getName());
-                if (vm.getInstallLocation() != null) {
-                    jre.put("installLocation", vm.getInstallLocation().getAbsolutePath());
-                }
-                jre.put("id", vm.getId());
-                jre.put("typeId", vm.getVMInstallType().getId());
-                if (vm instanceof IVMInstall2 vm2) {
-                    String javaVersion = vm2.getJavaVersion();
-                    if (javaVersion != null) jre.put("javaVersion", javaVersion);
-                }
+        IVMInstall vm = JavaRuntime.getVMInstall(project);
+        if (vm != null) {
+            jre.put("name", vm.getName());
+            if (vm.getInstallLocation() != null) {
+                jre.put("installLocation", vm.getInstallLocation().getAbsolutePath());
             }
-
-            // System modules: the names visible inside the resolved entries of the
-            // JRE container. Under JDK 9+ each system module surfaces as its own
-            // resolved library entry whose path includes the module name as the
-            // last segment.
-            jre.put("systemModules", extractSystemModuleNames(project, jreContainerEntry));
-
-            jre.put("containerPath", jreContainerEntry.getPath().toString());
-
-            return jre;
-        } catch (Exception e) {
-            log.warn("Failed to build JRE section: {}", e.getMessage());
-            return null;
+            jre.put("id", vm.getId());
+            jre.put("typeId", vm.getVMInstallType().getId());
+            if (vm instanceof IVMInstall2 vm2) {
+                String javaVersion = vm2.getJavaVersion();
+                if (javaVersion != null) jre.put("javaVersion", javaVersion);
+            }
         }
+
+        // System modules: the names visible inside the resolved entries of the
+        // JRE container. Under JDK 9+ each system module surfaces as its own
+        // resolved library entry whose path includes the module name as the
+        // last segment.
+        jre.put("systemModules", extractSystemModuleNames(project, jreContainerEntry));
+
+        jre.put("containerPath", jreContainerEntry.getPath().toString());
+
+        return jre;
     }
 
     private IClasspathEntry findJreContainerEntry(IJavaProject project) throws JavaModelException {
@@ -373,25 +363,22 @@ public class GetClasspathInfoTool extends AbstractTool {
         return null;
     }
 
-    private List<String> extractSystemModuleNames(IJavaProject project, IClasspathEntry jreContainerEntry) {
+    private List<String> extractSystemModuleNames(IJavaProject project, IClasspathEntry jreContainerEntry)
+            throws JavaModelException {
         List<String> modules = new ArrayList<>();
-        try {
-            // Use the JDT model authoritatively: each system module exposed by the
-            // JRE container surfaces as an IPackageFragmentRoot whose raw classpath
-            // entry is the JRE container itself and whose getModuleDescription() is
-            // non-null. The IModuleDescription's element name IS the module name —
-            // no path-string parsing required, no JDT-internal heuristics.
-            for (IPackageFragmentRoot root : project.getAllPackageFragmentRoots()) {
-                IClasspathEntry raw = root.getRawClasspathEntry();
-                if (raw == null) continue;
-                if (raw.getEntryKind() != IClasspathEntry.CPE_CONTAINER) continue;
-                if (!raw.getPath().equals(jreContainerEntry.getPath())) continue;
-                IModuleDescription module = root.getModuleDescription();
-                if (module == null) continue;
-                modules.add(module.getElementName());
-            }
-        } catch (JavaModelException e) {
-            log.warn("Failed to extract system module names: {}", e.getMessage());
+        // Use the JDT model authoritatively: each system module exposed by the
+        // JRE container surfaces as an IPackageFragmentRoot whose raw classpath
+        // entry is the JRE container itself and whose getModuleDescription() is
+        // non-null. The IModuleDescription's element name IS the module name:
+        // no path-string parsing required, no JDT-internal heuristics.
+        for (IPackageFragmentRoot root : project.getAllPackageFragmentRoots()) {
+            IClasspathEntry raw = root.getRawClasspathEntry();
+            if (raw == null) continue;
+            if (raw.getEntryKind() != IClasspathEntry.CPE_CONTAINER) continue;
+            if (!raw.getPath().equals(jreContainerEntry.getPath())) continue;
+            IModuleDescription module = root.getModuleDescription();
+            if (module == null) continue;
+            modules.add(module.getElementName());
         }
         return modules;
     }

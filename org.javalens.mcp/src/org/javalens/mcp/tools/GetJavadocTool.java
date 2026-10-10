@@ -136,35 +136,30 @@ public class GetJavadocTool extends AbstractTool {
         }
     }
 
-    private String getJavadocSource(IMember member) {
-        try {
-            ISourceRange javadocRange = member.getJavadocRange();
-            if (javadocRange == null) {
-                return null;
-            }
-
-            ICompilationUnit cu = member.getCompilationUnit();
-            if (cu == null) {
-                return null;
-            }
-
-            String source = cu.getSource();
-            if (source == null) {
-                return null;
-            }
-
-            int start = javadocRange.getOffset();
-            int end = start + javadocRange.getLength();
-
-            if (start >= 0 && end <= source.length()) {
-                return source.substring(start, end);
-            }
-
-            return null;
-        } catch (JavaModelException e) {
-            log.debug("Error getting javadoc source: {}", e.getMessage());
+    private String getJavadocSource(IMember member) throws JavaModelException {
+        ISourceRange javadocRange = member.getJavadocRange();
+        if (javadocRange == null) {
             return null;
         }
+
+        ICompilationUnit cu = member.getCompilationUnit();
+        if (cu == null) {
+            return null;
+        }
+
+        String source = cu.getSource();
+        if (source == null) {
+            return null;
+        }
+
+        int start = javadocRange.getOffset();
+        int end = start + javadocRange.getLength();
+
+        if (start >= 0 && end <= source.length()) {
+            return source.substring(start, end);
+        }
+
+        return null;
     }
 
     private void parseJavadoc(String javadoc, Map<String, Object> data, IJavaElement element) {

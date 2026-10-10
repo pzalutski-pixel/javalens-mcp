@@ -147,16 +147,12 @@ public class GoToDefinitionTool extends AbstractTool {
     }
 
     private String getFilePath(IJavaElement element, IJdtService service) {
-        try {
-            ICompilationUnit cu = (ICompilationUnit) element.getAncestor(IJavaElement.COMPILATION_UNIT);
-            if (cu != null && cu.getResource() != null) {
-                IPath location = cu.getResource().getLocation();
-                if (location != null) {
-                    return service.getPathUtils().formatPath(location.toOSString());
-                }
+        ICompilationUnit cu = (ICompilationUnit) element.getAncestor(IJavaElement.COMPILATION_UNIT);
+        if (cu != null && cu.getResource() != null) {
+            IPath location = cu.getResource().getLocation();
+            if (location != null) {
+                return service.getPathUtils().formatPath(location.toOSString());
             }
-        } catch (Exception e) {
-            log.debug("Error getting file path: {}", e.getMessage());
         }
         return "";
     }

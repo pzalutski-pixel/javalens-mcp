@@ -4,21 +4,22 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.eclipse.jdt.core.Flags;
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IMethod;
+import org.eclipse.jdt.core.ISourceRange;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTParser;
-import org.eclipse.jdt.core.dom.ASTVisitor;
 import org.eclipse.jdt.core.dom.AbstractTypeDeclaration;
 import org.eclipse.jdt.core.dom.Annotation;
 import org.eclipse.jdt.core.dom.ArrayInitializer;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.Expression;
-import org.eclipse.jdt.core.dom.IMethodBinding;
 import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.MemberValuePair;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
+import org.eclipse.jdt.core.dom.NodeFinder;
 import org.eclipse.jdt.core.dom.NormalAnnotation;
+import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.SingleMemberAnnotation;
 import org.eclipse.jdt.core.dom.StringLiteral;
 import org.eclipse.jdt.core.search.SearchMatch;
@@ -101,7 +102,9 @@ public class GetHttpEndpointsTool extends AbstractTool {
             Handlers are listed where a framework can register them: in a named
             top-level or static member class, interface, record or enum. A
             verb-annotated method of an anonymous class, a local class or a
-            non-static inner class is no route and is not listed.
+            non-static inner class, or an element of an annotation type, is no
+            route and is not listed. A handler whose signature names a type that
+            does not resolve is listed like any other.
 
             Projects without these frameworks return an empty table.
 
@@ -216,44 +219,24 @@ public class GetHttpEndpointsTool extends AbstractTool {
             if (!seenHandlers.add(dedupeKey)) {
                 continue;
             }
-            Map<String, Object> endpoint =
-                assembleEndpoint(service, handler, annotationFqn, httpMethod, framework, astCache);
-            if (endpoint != null) {
-                endpoints.add(endpoint);
-            }
+            endpoints.add(assembleEndpoint(service, handler, annotationFqn, httpMethod, framework, astCache));
         }
     }
 
+    /**
+     * The route of {@code handler}, a method of a project source file (the annotation search
+     * reads the project's sources only), read from its declaration.
+     */
     private Map<String, Object> assembleEndpoint(IJdtService service, IMethod handler,
                                                  String verbAnnotationFqn, String httpMethod,
                                                  String framework,
                                                  Map<String, CompilationUnit> astCache) throws Exception {
         ICompilationUnit cu = handler.getCompilationUnit();
         if (cu == null) {
-            return null;
+            throw new IllegalStateException("The handler " + handler.getElementName() + " has no source file");
         }
         CompilationUnit ast = astCache.computeIfAbsent(cu.getHandleIdentifier(), k -> parse(cu));
-        if (ast == null) {
-            return null;
-        }
-
-        MethodDeclaration[] found = {null};
-        String handlerHandle = handler.getHandleIdentifier();
-        ast.accept(new ASTVisitor() {
-            @Override
-            public boolean visit(MethodDeclaration node) {
-                IMethodBinding binding = node.resolveBinding();
-                if (binding != null && binding.getJavaElement() != null
-                    && handlerHandle.equals(binding.getJavaElement().getHandleIdentifier())) {
-                    found[0] = node;
-                }
-                return found[0] == null;
-            }
-        });
-        if (found[0] == null) {
-            return null;
-        }
-        MethodDeclaration method = found[0];
+        MethodDeclaration method = declarationOf(ast, handler);
 
         String methodPath;
         String classPrefix;
@@ -286,6 +269,10 @@ public class GetHttpEndpointsTool extends AbstractTool {
      * class need an enclosing method context or instance, and no framework registers them.
      */
     private static boolean registrable(IType type) throws JavaModelException {
+        if (type.isAnnotation()) {
+            // An annotation type is no bean: an element of it handles no request.
+            return false;
+        }
         if (type.isMember() && type.isClass() && !Flags.isStatic(type.getFlags())) {
             return false;
         }
@@ -363,14 +350,32 @@ public class GetHttpEndpointsTool extends AbstractTool {
         return value instanceof StringLiteral literal ? literal.getLiteralValue() : "";
     }
 
+    /**
+     * {@code cu} parsed with bindings, recovered where a type does not resolve: a method whose
+     * signature names a missing type has a binding only then
+     * (DefaultBindingResolver.getMethodOrLambdaBinding :232-234), and the handler key is read
+     * from it, as the project graph reads its method keys.
+     */
     private static CompilationUnit parse(ICompilationUnit cu) {
-        try {
-            ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
-            parser.setSource(cu);
-            parser.setResolveBindings(true);
-            return (CompilationUnit) parser.createAST(Deadline.monitor());
-        } catch (Exception e) {
-            return null;
+        ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
+        parser.setSource(cu);
+        parser.setResolveBindings(true);
+        parser.setBindingsRecovery(true);
+        return (CompilationUnit) parser.createAST(Deadline.monitor());
+    }
+
+    /**
+     * The declaration of {@code handler} in {@code ast}, its compilation unit: the method declared
+     * at the handler's name. Found by position, never by binding, so a handler whose signature
+     * names a type that does not resolve is found too.
+     */
+    private static MethodDeclaration declarationOf(CompilationUnit ast, IMethod handler) throws JavaModelException {
+        ISourceRange name = handler.getNameRange();
+        if (NodeFinder.perform(ast, name.getOffset(), name.getLength()) instanceof SimpleName simpleName
+                && simpleName.getParent() instanceof MethodDeclaration declaration
+                && declaration.getName() == simpleName) {
+            return declaration;
         }
+        throw new IllegalStateException("No method is declared at the name of " + handler.getElementName());
     }
 }

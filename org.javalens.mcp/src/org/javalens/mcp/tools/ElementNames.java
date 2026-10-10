@@ -195,7 +195,8 @@ final class ElementNames {
      * {@code type} as the Java model holds it. A handle that a search creates for an anonymous
      * class carries no number of its own, so its qualified name would read {@code $1} whatever
      * its place; the model's instance, found among its parent's children, carries the right one.
-     * A handle the model does not hold names itself.
+     * A handle the model does not hold names itself. A parent whose members JDT cannot read
+     * fails, naming the parent: the handle's own number may not be the model's.
      */
     private static IType modelType(IType type) {
         if (type.isBinary() || !(type.getParent() instanceof IParent parent)) {
@@ -208,7 +209,8 @@ final class ElementNames {
                 }
             }
         } catch (JavaModelException e) {
-            // The parent is gone from the model: the handle is all there is to name.
+            throw new IllegalStateException("Cannot read the members of "
+                + ((IJavaElement) parent).getElementName() + ": " + e.getMessage(), e);
         }
         return type;
     }

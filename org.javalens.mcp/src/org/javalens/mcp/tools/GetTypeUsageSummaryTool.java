@@ -2,6 +2,7 @@ package org.javalens.mcp.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import org.eclipse.jdt.core.IType;
+import org.eclipse.jdt.core.JavaModelException;
 import org.javalens.core.IJdtService;
 import org.javalens.core.TypeKindResolver;
 import org.javalens.core.search.SearchResult;
@@ -162,32 +163,28 @@ public class GetTypeUsageSummaryTool extends AbstractTool {
         return category;
     }
 
-    private List<String> generateInsights(IType type, int instantiations, int casts, int instanceofChecks) {
+    private List<String> generateInsights(IType type, int instantiations, int casts, int instanceofChecks)
+            throws JavaModelException {
         List<String> insights = new java.util.ArrayList<>();
 
-        try {
-            // Check for excessive casts
-            if (casts > 5) {
-                insights.add("High cast count (" + casts + ") - consider using polymorphism or generics");
-            }
+        // Check for excessive casts
+        if (casts > 5) {
+            insights.add("High cast count (" + casts + ") - consider using polymorphism or generics");
+        }
 
-            // Check for instanceof pattern
-            if (instanceofChecks > 3) {
-                insights.add("Multiple instanceof checks (" + instanceofChecks + ") - consider visitor pattern or sealed classes");
-            }
+        // Check for instanceof pattern
+        if (instanceofChecks > 3) {
+            insights.add("Multiple instanceof checks (" + instanceofChecks + ") - consider visitor pattern or sealed classes");
+        }
 
-            // Check if abstract/interface is being instantiated (shouldn't happen, but good to flag)
-            if ((type.isInterface() || org.eclipse.jdt.core.Flags.isAbstract(type.getFlags())) && instantiations > 0) {
-                insights.add("Interface/abstract type has instantiation references - likely anonymous class usage");
-            }
+        // Check if abstract/interface is being instantiated (shouldn't happen, but good to flag)
+        if ((type.isInterface() || org.eclipse.jdt.core.Flags.isAbstract(type.getFlags())) && instantiations > 0) {
+            insights.add("Interface/abstract type has instantiation references - likely anonymous class usage");
+        }
 
-            // Zero usage warning
-            if (instantiations == 0 && casts == 0 && instanceofChecks == 0) {
-                insights.add("Type has no direct usage in project source - may be used only via libraries or unused");
-            }
-
-        } catch (Exception e) {
-            log.debug("Error generating insights: {}", e.getMessage());
+        // Zero usage warning
+        if (instantiations == 0 && casts == 0 && instanceofChecks == 0) {
+            insights.add("Type has no direct usage in project source - may be used only via libraries or unused");
         }
 
         return insights;

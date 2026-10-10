@@ -240,20 +240,12 @@ public class SearchService {
         // Supplement the result with an AST scan so those call sites are reported by
         // every reference-based tool (find_references, change_method_signature, rename,
         // call hierarchy) the same as a first-statement delegation.
-        if (element instanceof IMethod m && isConstructor(m)
+        if (element instanceof IMethod m && m.isConstructor()
                 && (limitTo == IJavaSearchConstants.REFERENCES
                     || limitTo == IJavaSearchConstants.ALL_OCCURRENCES)) {
             return supplementConstructorDelegations(m, result, maxResults);
         }
         return result;
-    }
-
-    private static boolean isConstructor(IMethod method) {
-        try {
-            return method.isConstructor();
-        } catch (CoreException e) {
-            return false;
-        }
     }
 
     /** Whether {@code element} belongs to a class file: it lies in a binary package fragment root. */
@@ -272,108 +264,100 @@ public class SearchService {
      * Add explicit {@code super(...)} / {@code this(...)} delegations that bind to
      * {@code constructor} but were not returned by the indexed search (JDT misses
      * the ones that are not the first statement of a flexible constructor body).
-     * Delegations already present in {@code base} are not duplicated.
+     * Delegations already present in {@code base} are not duplicated. A unit that cannot be
+     * listed or read fails the search: the references would be short of its delegations.
      */
-    private SearchResult supplementConstructorDelegations(IMethod constructor, SearchResult base, int maxResults) {
-        try {
-            ICompilationUnit[] units = collectSourceCompilationUnits();
-            if (units.length == 0) {
-                return base;
-            }
-
-            // Offsets the indexed search already reported, grouped by resource path, so
-            // a delegation found by both routes is not counted twice. JDT's match offset
-            // for a delegation falls inside the call node, so containment is the test.
-            Map<String, List<Integer>> seen = new HashMap<>();
-            for (SearchMatch existing : base.matches()) {
-                if (existing.getResource() != null && existing.getResource().getLocation() != null) {
-                    seen.computeIfAbsent(existing.getResource().getLocation().toOSString(),
-                        k -> new ArrayList<>()).add(existing.getOffset());
-                }
-            }
-
-            String targetHandle = constructor.getHandleIdentifier();
-            SearchParticipant participant = SearchEngine.getDefaultSearchParticipant();
-            List<SearchMatch> added = new ArrayList<>();
-
-            ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
-            parser.setResolveBindings(true);
-            parser.setProject(project);
-            parser.createASTs(units, new String[0], new ASTRequestor() {
-                @Override
-                public void acceptAST(ICompilationUnit source, CompilationUnit ast) {
-                    ast.accept(new ASTVisitor() {
-                        @Override
-                        public boolean visit(SuperConstructorInvocation node) {
-                            consider(source, node, node.resolveConstructorBinding());
-                            return true;
-                        }
-                        @Override
-                        public boolean visit(ConstructorInvocation node) {
-                            consider(source, node, node.resolveConstructorBinding());
-                            return true;
-                        }
-                        private void consider(ICompilationUnit source, ASTNode node, IMethodBinding binding) {
-                            if (binding == null) {
-                                return;
-                            }
-                            IJavaElement bound = binding.getJavaElement();
-                            if (bound == null || !targetHandle.equals(bound.getHandleIdentifier())) {
-                                return;
-                            }
-                            int start = node.getStartPosition();
-                            int length = node.getLength();
-                            if (alreadySeen(source, start, length)) {
-                                return;
-                            }
-                            try {
-                                added.add(new MethodReferenceMatch(
-                                    enclosingElement(source, node),
-                                    SearchMatch.A_ACCURATE, start, length,
-                                    false, participant, source.getResource()));
-                            } catch (Exception e) {
-                                log.debug("Could not synthesize delegation match: {}", e.getMessage());
-                            }
-                        }
-                        private boolean alreadySeen(ICompilationUnit source, int start, int length) {
-                            if (source.getResource() == null || source.getResource().getLocation() == null) {
-                                return false;
-                            }
-                            List<Integer> offsets = seen.get(source.getResource().getLocation().toOSString());
-                            if (offsets == null) {
-                                return false;
-                            }
-                            for (int off : offsets) {
-                                if (off >= start && off <= start + length) {
-                                    return true;
-                                }
-                            }
-                            return false;
-                        }
-                    });
-                }
-            }, Deadline.monitor());
-
-            if (added.isEmpty()) {
-                return base;
-            }
-
-            List<SearchMatch> merged = new ArrayList<>(base.matches());
-            for (SearchMatch m : added) {
-                if (merged.size() >= maxResults) {
-                    break;
-                }
-                merged.add(m);
-            }
-            log.debug("Supplemented constructor {} with {} flexible-body delegation match(es)",
-                constructor.getElementName(), added.size());
-            return new SearchResult(merged, base.totalEncountered() + added.size(),
-                base.potentialMatches(), base.potentialTotal());
-        } catch (Exception e) {
-            log.warn("Could not supplement constructor delegations for {}: {}",
-                constructor.getElementName(), e.getMessage());
+    private SearchResult supplementConstructorDelegations(IMethod constructor, SearchResult base, int maxResults)
+            throws CoreException {
+        ICompilationUnit[] units = collectSourceCompilationUnits();
+        if (units.length == 0) {
             return base;
         }
+
+        // Offsets the indexed search already reported, grouped by resource path, so
+        // a delegation found by both routes is not counted twice. JDT's match offset
+        // for a delegation falls inside the call node, so containment is the test.
+        Map<String, List<Integer>> seen = new HashMap<>();
+        for (SearchMatch existing : base.matches()) {
+            if (existing.getResource() != null && existing.getResource().getLocation() != null) {
+                seen.computeIfAbsent(existing.getResource().getLocation().toOSString(),
+                    k -> new ArrayList<>()).add(existing.getOffset());
+            }
+        }
+
+        String targetHandle = constructor.getHandleIdentifier();
+        SearchParticipant participant = SearchEngine.getDefaultSearchParticipant();
+        List<SearchMatch> added = new ArrayList<>();
+
+        ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
+        parser.setResolveBindings(true);
+        parser.setProject(project);
+        parser.createASTs(units, new String[0], new ASTRequestor() {
+            @Override
+            public void acceptAST(ICompilationUnit source, CompilationUnit ast) {
+                ast.accept(new ASTVisitor() {
+                    @Override
+                    public boolean visit(SuperConstructorInvocation node) {
+                        consider(source, node, node.resolveConstructorBinding());
+                        return true;
+                    }
+                    @Override
+                    public boolean visit(ConstructorInvocation node) {
+                        consider(source, node, node.resolveConstructorBinding());
+                        return true;
+                    }
+                    private void consider(ICompilationUnit source, ASTNode node, IMethodBinding binding) {
+                        if (binding == null) {
+                            return;
+                        }
+                        IJavaElement bound = binding.getJavaElement();
+                        if (bound == null || !targetHandle.equals(bound.getHandleIdentifier())) {
+                            return;
+                        }
+                        int start = node.getStartPosition();
+                        int length = node.getLength();
+                        if (alreadySeen(source, start, length)) {
+                            return;
+                        }
+                        added.add(new MethodReferenceMatch(
+                            enclosingElement(source, node),
+                            SearchMatch.A_ACCURATE, start, length,
+                            false, participant, source.getResource()));
+                    }
+                    private boolean alreadySeen(ICompilationUnit source, int start, int length) {
+                        if (source.getResource() == null || source.getResource().getLocation() == null) {
+                            return false;
+                        }
+                        List<Integer> offsets = seen.get(source.getResource().getLocation().toOSString());
+                        if (offsets == null) {
+                            return false;
+                        }
+                        for (int off : offsets) {
+                            if (off >= start && off <= start + length) {
+                                return true;
+                            }
+                        }
+                        return false;
+                    }
+                });
+            }
+        }, Deadline.monitor());
+
+        if (added.isEmpty()) {
+            return base;
+        }
+
+        List<SearchMatch> merged = new ArrayList<>(base.matches());
+        for (SearchMatch m : added) {
+            if (merged.size() >= maxResults) {
+                break;
+            }
+            merged.add(m);
+        }
+        log.debug("Supplemented constructor {} with {} flexible-body delegation match(es)",
+            constructor.getElementName(), added.size());
+        return new SearchResult(merged, base.totalEncountered() + added.size(),
+            base.potentialMatches(), base.potentialTotal());
     }
 
     /** The enclosing method/type element of a node, for the synthesized match's element. */
@@ -391,7 +375,8 @@ public class SearchService {
         return source;
     }
 
-    private ICompilationUnit[] collectSourceCompilationUnits() throws CoreException {
+    /** The compilation units of the project's source folders; a test seam overrides it. */
+    ICompilationUnit[] collectSourceCompilationUnits() throws CoreException {
         List<ICompilationUnit> units = new ArrayList<>();
         for (IPackageFragmentRoot root : project.getPackageFragmentRoots()) {
             if (root.getKind() != IPackageFragmentRoot.K_SOURCE) {
@@ -447,7 +432,7 @@ public class SearchService {
         SearchResult result = requestor.toResult();
         log.debug("Source-scoped reference search for {} found {} (.java total={}, potential={})",
             element.getElementName(), result.matches().size(), result.totalEncountered(), result.potentialTotal());
-        if (element instanceof IMethod m && isConstructor(m)) {
+        if (element instanceof IMethod m && m.isConstructor()) {
             return supplementConstructorDelegations(m, result, maxResults);
         }
         return result;
@@ -723,7 +708,8 @@ public class SearchService {
                 match.setElement(model);
             }
         } catch (JavaModelException e) {
-            log.debug("No model element at {} for {}: {}", match.getOffset(), element, e.getMessage());
+            throw new IllegalStateException("Cannot read the element at offset " + match.getOffset() + " of "
+                + unit.getElementName() + ": " + e.getMessage(), e);
         }
         return match;
     }
@@ -745,7 +731,7 @@ public class SearchService {
         try {
             return type.isLocal() || type.isAnonymous();
         } catch (JavaModelException e) {
-            return false;
+            throw new IllegalStateException("Cannot read the kind of " + type.getElementName() + ": " + e.getMessage(), e);
         }
     }
 
