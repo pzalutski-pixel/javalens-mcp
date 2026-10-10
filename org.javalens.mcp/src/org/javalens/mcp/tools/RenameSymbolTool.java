@@ -1,8 +1,10 @@
 package org.javalens.mcp.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IPath;
 import org.eclipse.jdt.core.ICompilationUnit;
+import org.eclipse.jdt.core.IField;
 import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IJavaProject;
 import org.eclipse.jdt.core.ILocalVariable;
@@ -21,6 +23,15 @@ import org.eclipse.jdt.core.dom.IBinding;
 import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.formatter.DefaultCodeFormatterConstants;
 import org.eclipse.jdt.core.search.SearchMatch;
+import org.eclipse.jdt.internal.corext.refactoring.rename.JavaRenameProcessor;
+import org.eclipse.jdt.internal.corext.refactoring.rename.MethodChecks;
+import org.eclipse.jdt.internal.corext.refactoring.rename.RenameEnumConstProcessor;
+import org.eclipse.jdt.internal.corext.refactoring.rename.RenameFieldProcessor;
+import org.eclipse.jdt.internal.corext.refactoring.rename.RenameLocalVariableProcessor;
+import org.eclipse.jdt.internal.corext.refactoring.rename.RenameNonVirtualMethodProcessor;
+import org.eclipse.jdt.internal.corext.refactoring.rename.RenameTypeParameterProcessor;
+import org.eclipse.jdt.internal.corext.refactoring.rename.RenameTypeProcessor;
+import org.eclipse.ltk.core.refactoring.participants.RenameRefactoring;
 import org.javalens.core.ElementKindResolver;
 import org.javalens.core.Deadline;
 import org.javalens.core.IJdtService;
@@ -28,6 +39,7 @@ import org.javalens.core.search.SearchResult;
 import org.javalens.core.search.SearchService;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
+import org.javalens.mcp.rewrite.RefactoringInvoker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -98,6 +110,21 @@ public class RenameSymbolTool extends AbstractTool {
             with it, in and after lambda bodies included, and every call of them.
             A method of a class file, or a method renamed together with one, is
             refused, naming that method: it cannot be renamed.
+
+            A rename JDT's rename refactoring finds a conflict for is refused:
+            INVALID_PARAMETER for newName, naming every conflict in JDT's words, by
+            the place each names (a name another declaration in scope already has,
+            a reference the renamed element would take over or lose, a unit with
+            syntax errors, a native method, a static import of the new name). The
+            conflicts of a type, a field, a local variable, a type parameter and a
+            private, static or constructor method are those JDT's rename processors
+            find; those of any other method are the conditions of JDT's method
+            rename (RenameMethodProcessor, RenameVirtualMethodProcessor) checked on
+            the Java model's own hierarchy, local and anonymous classes in lambda
+            bodies included. JDT's warnings on a rename that goes ahead (such as a
+            discouraged name, a constructor's name, or a method of the hierarchy
+            with the new name and other parameter types) are listed in warnings,
+            by place; warnings is present only when there is one.
 
             A place JDT's search reports but cannot confirm as a reference, where a
             type or name does not resolve, is never edited: potentialMatches lists
@@ -185,7 +212,15 @@ public class RenameSymbolTool extends AbstractTool {
                 if (binary != null) {
                     return ToolResponse.invalidParameter("position", position + ", cannot be renamed: " + binary);
                 }
-                return renameViaSearch(method, ripple, oldName, newName, symbolKind, service);
+                Collected collected = collect(ripple, oldName, newName, service);
+                RefactoringInvoker.Findings findings = MethodChecks.isVirtual(method)
+                    ? RefactoringInvoker.findings(VirtualMethodRenameConditions.check(
+                        method, ripple, newName, collected.occurrences(), service), service)
+                    : jdtFindings(method, newName, service);
+                if (!findings.conflicts().isEmpty()) {
+                    return ToolResponse.invalidParameter("newName", String.join("; ", findings.conflicts()));
+                }
+                return respond(method, collected, oldName, newName, symbolKind, findings.warnings(), service);
             }
 
             // A top-level type cannot take the name of a file its folder already holds
@@ -201,15 +236,21 @@ public class RenameSymbolTool extends AbstractTool {
                 }
             }
 
-            // Dispatch: IMember (IType, IField, IMethod) uses SearchEngine, which is
+            RefactoringInvoker.Findings findings = jdtFindings(element, newName, service);
+            if (!findings.conflicts().isEmpty()) {
+                return ToolResponse.invalidParameter("newName", String.join("; ", findings.conflicts()));
+            }
+
+            // Dispatch: IMember (IType, IField) uses SearchEngine, which is
             // index-driven and resilient to per-call binding-resolution failures that
             // emerged at scale. ILocalVariable and ITypeParameter are not indexed by
             // SearchEngine in a useful way; they stay on the AST-binding path whose
             // file scope is the declaring CU only (locals/type-params don't cross files).
             if (element instanceof IMember member) {
-                return renameViaSearch(member, List.of(member), oldName, newName, symbolKind, service);
+                return respond(member, collect(List.of(member), oldName, newName, service),
+                    oldName, newName, symbolKind, findings.warnings(), service);
             }
-            return renameViaAstBinding(element, oldName, newName, symbolKind, service);
+            return renameViaAstBinding(element, oldName, newName, symbolKind, findings.warnings(), service);
 
         } catch (Exception e) {
             log.error("Error renaming symbol: {}", e.getMessage(), e);
@@ -218,20 +259,78 @@ public class RenameSymbolTool extends AbstractTool {
     }
 
     /**
-     * SearchEngine-based rename for {@link IMember} targets. Closes issue #13's failure
-     * mode where the AST-binding path lost references at scale: visiting every project
-     * file with full binding resolution intermittently produced null bindings under JDT
-     * index pressure on multi-thousand-file projects. SearchEngine is index-driven —
-     * it doesn't re-resolve bindings per file — so it stays correct at scale.
+     * What JDT's rename refactoring of {@code element} to {@code newName} finds, updating
+     * references as rename_symbol does and nothing else. The processors are JDT's own:
+     * RenameTypeProcessor, RenameFieldProcessor and RenameEnumConstProcessor,
+     * RenameNonVirtualMethodProcessor (for a method MethodChecks.isVirtual rejects: its related
+     * methods are the method alone, RippleMethodFinder2.getRelatedMethods :175-184),
+     * RenameLocalVariableProcessor and RenameTypeParameterProcessor.
      */
-    private ToolResponse renameViaSearch(IMember target, List<? extends IMember> members, String oldName,
-                                          String newName, String symbolKind, IJdtService service) throws Exception {
-        // members: the target, and for a method every method renamed with it.
+    private static RefactoringInvoker.Findings jdtFindings(IJavaElement element, String newName,
+                                                           IJdtService service) throws CoreException {
+        JavaRenameProcessor processor;
+        if (element instanceof IType type) {
+            RenameTypeProcessor typeProcessor = new RenameTypeProcessor(type);
+            typeProcessor.setUpdateReferences(true);
+            processor = typeProcessor;
+        } else if (element instanceof IField field) {
+            RenameFieldProcessor fieldProcessor = field.isEnumConstant()
+                ? new RenameEnumConstProcessor(field) : new RenameFieldProcessor(field);
+            fieldProcessor.setUpdateReferences(true);
+            fieldProcessor.setRenameGetter(false);
+            fieldProcessor.setRenameSetter(false);
+            processor = fieldProcessor;
+        } else if (element instanceof IMethod method && !MethodChecks.isVirtual(method)) {
+            RenameNonVirtualMethodProcessor methodProcessor = new RenameNonVirtualMethodProcessor(method);
+            methodProcessor.setUpdateReferences(true);
+            processor = methodProcessor;
+        } else if (element instanceof ILocalVariable local) {
+            RenameLocalVariableProcessor localProcessor = new RenameLocalVariableProcessor(local);
+            localProcessor.setUpdateReferences(true);
+            processor = localProcessor;
+        } else if (element instanceof ITypeParameter parameter) {
+            RenameTypeParameterProcessor parameterProcessor = new RenameTypeParameterProcessor(parameter);
+            parameterProcessor.setUpdateReferences(true);
+            processor = parameterProcessor;
+        } else {
+            throw new IllegalStateException("No JDT rename processor for " + element.getElementName());
+        }
+        JavaRenameProcessor renaming = processor;
+        return RefactoringInvoker.findings(new RenameRefactoring(renaming),
+            () -> renaming.setNewElementName(newName), service);
+    }
+
+    /**
+     * A place a rename edits: {@code length} characters at {@code offset} of {@code unit} become
+     * {@code newText}, the name of a declaration when {@code declaration}, else of a reference.
+     */
+    record Occurrence(ICompilationUnit unit, int offset, int length, String newText, boolean declaration) {
+    }
+
+    /**
+     * The edits of a rename by file, as the response lists them, their count, the places the
+     * search could not confirm, and every edit as an {@link Occurrence}.
+     */
+    record Collected(Map<String, List<Map<String, Object>>> editsByFile, int totalEdits,
+                     List<SearchMatch> potential, List<Occurrence> occurrences) {
+    }
+
+    /**
+     * The edits renaming {@code members} (a type or a field, or a method and every method renamed
+     * with it) from {@code oldName} to {@code newName}, found by SearchEngine. Closes issue #13's
+     * failure mode where the AST-binding path lost references at scale: visiting every project
+     * file with full binding resolution intermittently produced null bindings under JDT index
+     * pressure on multi-thousand-file projects. SearchEngine is index-driven, it doesn't
+     * re-resolve bindings per file, so it stays correct at scale.
+     */
+    private Collected collect(List<? extends IMember> members, String oldName, String newName,
+                              IJdtService service) throws Exception {
         Map<String, List<Map<String, Object>>> editsByFile = new LinkedHashMap<>();
         Set<String> emittedKeys = new LinkedHashSet<>();
         int totalEdits = 0;
         List<SearchMatch> potential = new ArrayList<>();
         Set<String> potentialKeys = new HashSet<>();
+        List<Occurrence> occurrences = new ArrayList<>();
 
         for (IMember member : members) {
             // Declaration sites (SearchEngine REFERENCES omits the declarations themselves): the
@@ -258,6 +357,8 @@ public class RenameSymbolTool extends AbstractTool {
                     if (filePath != null && emittedKeys.add(dedupKey)) {
                         editsByFile.computeIfAbsent(filePath, k -> new ArrayList<>()).add(buildEdit(
                             memberCu, nameRange.getOffset(), nameRange.getLength(), oldName, newName, service));
+                        occurrences.add(new Occurrence(memberCu, nameRange.getOffset(), nameRange.getLength(),
+                            newName, true));
                         totalEdits++;
                     }
                 }
@@ -289,8 +390,11 @@ public class RenameSymbolTool extends AbstractTool {
                 // offset in JDT's index when the call resolves through dynamic dispatch.
                 // Dedup so each occurrence emits exactly one edit.
                 if (!emittedKeys.add(dedupKey)) continue;
-                editsByFile.computeIfAbsent(filePath, k -> new ArrayList<>())
-                    .add(referenceEdit(member, match, matchCu, oldName, newName, service));
+                Map<String, Object> edit = referenceEdit(member, match, matchCu, oldName, newName, service);
+                editsByFile.computeIfAbsent(filePath, k -> new ArrayList<>()).add(edit);
+                int start = (int) edit.get("startOffset");
+                occurrences.add(new Occurrence(matchCu, start, (int) edit.get("endOffset") - start,
+                    (String) edit.get("newText"), false));
                 totalEdits++;
             }
         }
@@ -307,7 +411,18 @@ public class RenameSymbolTool extends AbstractTool {
                 return Integer.compare(colB, colA);
             });
         }
+        return new Collected(editsByFile, totalEdits, potential, occurrences);
+    }
 
+    /**
+     * The answer renaming {@code target} with the edits {@code collected} holds, listing
+     * {@code warnings} when there is one.
+     */
+    private ToolResponse respond(IMember target, Collected collected, String oldName, String newName,
+                                 String symbolKind, List<String> warnings, IJdtService service) {
+        Map<String, List<Map<String, Object>>> editsByFile = collected.editsByFile();
+        int totalEdits = collected.totalEdits();
+        List<SearchMatch> potential = collected.potential();
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("oldName", oldName);
         data.put("newName", newName);
@@ -328,6 +443,9 @@ public class RenameSymbolTool extends AbstractTool {
                     file.resolveSibling(renamedUnitName(unit, newName))));
                 data.put("renamedFiles", List.of(renamed));
             }
+        }
+        if (!warnings.isEmpty()) {
+            data.put("warnings", warnings);
         }
         Map<String, Object> potentialMatches = potentialMatches(potential, potential.size(), service);
         if (potentialMatches != null) {
@@ -352,7 +470,8 @@ public class RenameSymbolTool extends AbstractTool {
      * resolution failures of the project-wide AST scan.
      */
     private ToolResponse renameViaAstBinding(IJavaElement element, String oldName, String newName,
-                                              String symbolKind, IJdtService service) throws Exception {
+                                              String symbolKind, List<String> warnings,
+                                              IJdtService service) throws Exception {
         ICompilationUnit cu = (ICompilationUnit) element.getAncestor(IJavaElement.COMPILATION_UNIT);
         if (cu == null) {
             return ToolResponse.symbolNotFound("Cannot find compilation unit for element");
@@ -390,6 +509,9 @@ public class RenameSymbolTool extends AbstractTool {
         data.put("totalEdits", totalEdits);
         data.put("filesAffected", editsByFile.size());
         data.put("editsByFile", editsByFile);
+        if (!warnings.isEmpty()) {
+            data.put("warnings", warnings);
+        }
 
         return ToolResponse.success(data, ResponseMeta.builder()
             .totalCount(totalEdits)

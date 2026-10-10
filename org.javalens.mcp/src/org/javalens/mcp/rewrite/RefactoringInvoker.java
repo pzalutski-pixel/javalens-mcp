@@ -1,5 +1,8 @@
 package org.javalens.mcp.rewrite;
 
+import org.eclipse.core.resources.IResource;
+import org.eclipse.core.resources.ResourcesPlugin;
+import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IJavaElement;
@@ -7,6 +10,7 @@ import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTParser;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.refactoring.descriptors.JavaRefactoringDescriptor;
+import org.eclipse.jdt.internal.corext.refactoring.RefactoringCoreMessages;
 import org.eclipse.jdt.internal.corext.refactoring.util.JavaStatusContext;
 import org.eclipse.ltk.core.refactoring.Change;
 import org.eclipse.ltk.core.refactoring.CompositeChange;
@@ -108,6 +112,93 @@ public final class RefactoringInvoker {
 
     private static List<String> messagesOf(RefactoringStatus status, int minSeverity) {
         return entriesOf(status, minSeverity).stream().map(RefactoringStatusEntry::getMessage).toList();
+    }
+
+    /**
+     * What a rename's conditions find: {@code conflicts}, the FATAL and ERROR entries, where JDT
+     * judges the refactoring would leave the code not compiling or not meaning what it meant, and
+     * {@code warnings}, the WARNING and INFO entries. Each list runs by the place its entries name,
+     * as {@link WarningOrder#BY_PLACE} orders, and names a file JDT names by its workspace path as
+     * every tool names it ({@link #withProjectPaths}). JDT's note that its search found places it
+     * could not confirm (RefactoringSearchEngine.addStatusErrors :219-224) names no conflict: the
+     * tools list those places as potentialMatches.
+     */
+    public record Findings(List<String> conflicts, List<String> warnings) {
+    }
+
+    /**
+     * The findings of {@code refactoring}'s initial conditions and, when those leave it possible,
+     * its final conditions; the refactoring is never performed. {@code beforeFinalConditions} runs
+     * between the two, as JDT's wizards set a refactoring's input once its initial conditions have
+     * chosen its element (a rename of a method renames from the method it overrides, and resets the
+     * new name to that method's own: RenameVirtualMethodProcessor.checkInitialConditions :113-140,
+     * RenameMethodProcessor.initialize :147-155).
+     */
+    public static Findings findings(Refactoring refactoring, Runnable beforeFinalConditions, IJdtService service)
+            throws CoreException {
+        HeadlessJdtEnvironment.ensure();
+        RefactoringStatus conditions = refactoring.checkInitialConditions(Deadline.monitor());
+        if (!conditions.hasFatalError()) {
+            beforeFinalConditions.run();
+            conditions.merge(refactoring.checkFinalConditions(Deadline.monitor()));
+        }
+        return findings(conditions, service);
+    }
+
+    /** The findings {@code status} holds, as {@link Findings} lists them. */
+    public static Findings findings(RefactoringStatus status, IJdtService service) {
+        List<RefactoringStatusEntry> conflicts = new ArrayList<>();
+        List<RefactoringStatusEntry> warnings = new ArrayList<>();
+        for (RefactoringStatusEntry entry : status.getEntries()) {
+            if (entry.getSeverity() < RefactoringStatus.ERROR) {
+                warnings.add(entry);
+            } else if (!RefactoringCoreMessages.RefactoringSearchEngine_potential_matches.equals(entry.getMessage())) {
+                conflicts.add(entry);
+            }
+        }
+        return new Findings(byPlace(conflicts, service), byPlace(warnings, service));
+    }
+
+    /**
+     * The messages of {@code entries} by the place each names, its file then its offset, each with
+     * the files it names as every tool names them: a stable sort, so entries naming one place, and
+     * after all of them those naming none, keep JDT's order.
+     */
+    private static List<String> byPlace(List<RefactoringStatusEntry> entries, IJdtService service) {
+        List<RefactoringStatusEntry> sorted = new ArrayList<>(entries);
+        sorted.sort(Comparator.comparing((RefactoringStatusEntry entry) -> placeOf(entry, service),
+            Comparator.nullsLast(Comparator.comparing(Place::file).thenComparingInt(Place::offset))));
+        return sorted.stream().map(entry -> withProjectPaths(entry.getMessage(), service)).toList();
+    }
+
+    /**
+     * {@code message} with each workspace path of a file of the loaded project, as JDT's messages
+     * write it ({@code /project/src-0-.../Foo.java}, its leading slash optional), replaced by the
+     * file's path as every tool names it: the linked folders and the workspace project are
+     * JavaLens's own, never the user's.
+     */
+    static String withProjectPaths(String message, IJdtService service) {
+        String project = service.getJavaProject().getElementName() + "/";
+        StringBuilder result = new StringBuilder();
+        int from = 0;
+        int at;
+        while ((at = message.indexOf(project, from)) >= 0) {
+            int start = at > 0 && message.charAt(at - 1) == '/' ? at - 1 : at;
+            int end = at;
+            while (end < message.length() && !Character.isWhitespace(message.charAt(end))
+                    && "'\"".indexOf(message.charAt(end)) < 0) {
+                end++;
+            }
+            IResource resource = ResourcesPlugin.getWorkspace().getRoot()
+                .findMember(new org.eclipse.core.runtime.Path(message.substring(at, end)));
+            if (resource == null || resource.getLocation() == null) {
+                throw new IllegalStateException("JDT names a file the workspace does not hold: " + message);
+            }
+            result.append(message, from, start)
+                .append(service.getPathUtils().formatPath(Path.of(resource.getLocation().toOSString())));
+            from = end;
+        }
+        return result.append(message.substring(from)).toString();
     }
 
     private static List<RefactoringStatusEntry> entriesOf(RefactoringStatus status, int minSeverity) {
