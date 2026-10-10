@@ -35,6 +35,9 @@ public class AnalyzeChangeImpactTool extends AbstractTool {
 
     private static final Logger log = LoggerFactory.getLogger(AnalyzeChangeImpactTool.class);
 
+    /** The largest {@code depth} accepted. */
+    private static final int MAX_DEPTH = 3;
+
     public AnalyzeChangeImpactTool(Supplier<IJdtService> serviceSupplier) {
         super(serviceSupplier);
     }
@@ -56,7 +59,8 @@ public class AnalyzeChangeImpactTool extends AbstractTool {
             the member holding it is followed no further.
 
             Options:
-            - depth: How many levels of callers to follow (default 1, max 3)
+            - depth: How many levels of callers to follow, 1 to 3 (default 1);
+              any other depth is INVALID_PARAMETER
               depth=1: direct references only
               depth=2: references + callers of those references
               depth=3: three levels deep
@@ -79,7 +83,7 @@ public class AnalyzeChangeImpactTool extends AbstractTool {
             .required("filePath", "string", "File containing the symbol")
             .required("line", "integer", "Zero-based line number")
             .required("column", "integer", "Zero-based column number")
-            .optional("depth", "integer", "Levels of transitive callers to follow (default 1, max 3)")
+            .optional("depth", "integer", "Levels of transitive callers to follow, 1 to 3 (default 1)")
             .optional("transitive", "boolean", "Full reverse closure over the project graph, no depth ceiling (default false)")
             .optional("maxResults", "integer", "Cap on affectedMethods in transitive mode (default 200)")
             .build();
@@ -93,7 +97,11 @@ public class AnalyzeChangeImpactTool extends AbstractTool {
         String filePathStr = getStringParam(arguments, "filePath");
         int line = getIntParam(arguments, "line", 0);
         int column = getIntParam(arguments, "column", 0);
-        int depth = Math.min(getIntParam(arguments, "depth", 1), 3);
+        int depth = getIntParam(arguments, "depth", 1);
+        if (depth < 1 || depth > MAX_DEPTH) {
+            return ToolResponse.invalidParameter("depth",
+                "Must be between 1 and " + MAX_DEPTH + "; got: " + depth);
+        }
 
         try {
             Path filePath = service.getPathUtils().resolve(filePathStr);

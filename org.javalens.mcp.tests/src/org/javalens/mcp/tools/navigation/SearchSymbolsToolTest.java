@@ -184,10 +184,10 @@ class SearchSymbolsToolTest {
     }
 
     @Test
-    @DisplayName("Negative maxResults returns INVALID_PARAMETER naming maxResults")
+    @DisplayName("Negative maxResults returns INVALID_PARAMETER naming maxResults and its range")
     void negativeMaxResults_returnsInvalidParameter() {
         assertPayload(args("Calculator", null, -1, null),
-            error("Invalid parameter 'maxResults': Must be >= 0; got: -1"));
+            error("Invalid parameter 'maxResults': Must be between 0 and 1000; got: -1"));
     }
 
     @Test

@@ -7,6 +7,7 @@ import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTParser;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.refactoring.descriptors.JavaRefactoringDescriptor;
+import org.eclipse.jdt.internal.corext.refactoring.util.JavaStatusContext;
 import org.eclipse.ltk.core.refactoring.Change;
 import org.eclipse.ltk.core.refactoring.CompositeChange;
 import org.eclipse.ltk.core.refactoring.Refactoring;
@@ -20,6 +21,7 @@ import org.slf4j.LoggerFactory;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -56,7 +58,26 @@ public final class RefactoringInvoker {
         }
     }
 
+    /** The order of an outcome's warnings. */
+    public enum WarningOrder {
+        /** As JDT reports them. */
+        AS_REPORTED,
+        /**
+         * By the place each names in source, its file then its offset; those naming one place,
+         * and after all of them those naming none, as JDT reports them. Where JDT reports in the
+         * order of a hash set of Java elements, whose hashes follow the project's name, this
+         * order is the same for every load.
+         */
+        BY_PLACE
+    }
+
+    /** {@link #run(JavaRefactoringDescriptor, IJdtService, WarningOrder)}, warnings as JDT reports them. */
     public static Outcome run(JavaRefactoringDescriptor descriptor, IJdtService service)
+            throws Exception {
+        return run(descriptor, service, WarningOrder.AS_REPORTED);
+    }
+
+    public static Outcome run(JavaRefactoringDescriptor descriptor, IJdtService service, WarningOrder order)
             throws Exception {
         HeadlessJdtEnvironment.ensure();
 
@@ -70,8 +91,14 @@ public final class RefactoringInvoker {
         if (conditions.hasFatalError()) {
             return Outcome.refusal(messagesOf(conditions, RefactoringStatus.FATAL));
         }
-        List<String> warnings = new ArrayList<>(messagesOf(createStatus, RefactoringStatus.INFO));
-        warnings.addAll(messagesOf(conditions, RefactoringStatus.INFO));
+        List<RefactoringStatusEntry> entries = new ArrayList<>(entriesOf(createStatus, RefactoringStatus.INFO));
+        entries.addAll(entriesOf(conditions, RefactoringStatus.INFO));
+        if (order == WarningOrder.BY_PLACE) {
+            // A stable sort: entries naming one place keep JDT's order
+            entries.sort(Comparator.comparing((RefactoringStatusEntry entry) -> placeOf(entry, service),
+                Comparator.nullsLast(Comparator.comparing(Place::file).thenComparingInt(Place::offset))));
+        }
+        List<String> warnings = entries.stream().map(RefactoringStatusEntry::getMessage).toList();
 
         Change change = refactoring.createChange(Deadline.monitor());
 
@@ -84,13 +111,34 @@ public final class RefactoringInvoker {
     }
 
     private static List<String> messagesOf(RefactoringStatus status, int minSeverity) {
-        List<String> messages = new ArrayList<>();
+        return entriesOf(status, minSeverity).stream().map(RefactoringStatusEntry::getMessage).toList();
+    }
+
+    private static List<RefactoringStatusEntry> entriesOf(RefactoringStatus status, int minSeverity) {
+        List<RefactoringStatusEntry> entries = new ArrayList<>();
         for (RefactoringStatusEntry entry : status.getEntries()) {
             if (entry.getSeverity() >= minSeverity) {
-                messages.add(entry.getMessage());
+                entries.add(entry);
             }
         }
-        return messages;
+        return entries;
+    }
+
+    /** A place in source: a file as tools name it and an offset in it. */
+    private record Place(String file, int offset) {
+    }
+
+    /**
+     * The place {@code entry} names: the source range of its context in a compilation unit
+     * (JavaStatusContext, the context JDT's refactorings give a member, an import or a node), or
+     * null when it names none.
+     */
+    private static Place placeOf(RefactoringStatusEntry entry, IJdtService service) {
+        if (entry.getContext() instanceof JavaStatusContext context && !context.isBinary()
+                && context.getCompilationUnit() != null && context.getSourceRange() != null) {
+            return new Place(formatCuPath(context.getCompilationUnit(), service), context.getSourceRange().getOffset());
+        }
+        return null;
     }
 
     private static void convert(Change change, IJdtService service,

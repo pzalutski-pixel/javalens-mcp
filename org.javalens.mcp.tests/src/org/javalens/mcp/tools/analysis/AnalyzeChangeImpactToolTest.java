@@ -73,9 +73,13 @@ class AnalyzeChangeImpactToolTest {
     }
 
     @Test
-    @DisplayName("depth=10 is capped at 3")
-    void capsDepthAtThree() {
-        assertPayload(at(5, 15, 10), typeImpact(3));
+    @DisplayName("depth=3, the largest, is echoed; depth=10 is INVALID_PARAMETER naming the range 1 to 3")
+    void depthAboveThreeIsRefused() {
+        assertAll(
+            () -> assertPayload(at(5, 15, 3), typeImpact(3)),
+            () -> assertPayload(at(5, 15, 10), Map.of("success", false, "error", Map.of(
+                "code", "INVALID_PARAMETER",
+                "message", "Invalid parameter 'depth': Must be between 1 and 3; got: 10"))));
     }
 
     // ========== Error Handling Tests ==========

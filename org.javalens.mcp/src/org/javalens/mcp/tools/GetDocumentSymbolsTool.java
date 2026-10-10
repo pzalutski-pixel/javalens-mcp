@@ -43,6 +43,9 @@ public class GetDocumentSymbolsTool extends AbstractTool {
 
     private static final Logger log = LoggerFactory.getLogger(GetDocumentSymbolsTool.class);
 
+    /** The largest {@code maxResults} accepted. */
+    private static final int MAX_RESULTS = 2000;
+
     public GetDocumentSymbolsTool(Supplier<IJdtService> serviceSupplier) {
         super(serviceSupplier);
     }
@@ -67,6 +70,8 @@ public class GetDocumentSymbolsTool extends AbstractTool {
             types. Local and anonymous classes, those declared in method, field
             or initializer bodies, are not listed.
 
+            maxResults outside 0 to 2000 is INVALID_PARAMETER.
+
             Requires load_project to be called first.
             """;
     }
@@ -76,7 +81,7 @@ public class GetDocumentSymbolsTool extends AbstractTool {
         return SchemaBuilder.object()
             .required("filePath", "string", "Path to source file")
             .optional("includePrivate", "boolean", "Include private members (default true)")
-            .optional("maxResults", "integer", "Maximum symbols to return (default 500)")
+            .optional("maxResults", "integer", "Maximum symbols to return, 0 to 2000 (default 500)")
             .build();
     }
 
@@ -89,12 +94,11 @@ public class GetDocumentSymbolsTool extends AbstractTool {
 
         boolean includePrivate = getBooleanParam(arguments, "includePrivate", true);
         int maxResults = getIntParam(arguments, "maxResults", 500);
-        if (maxResults < 0) {
+        // maxResults=0 is honored literally (zero symbols); the documented maximum bounds the list
+        if (maxResults < 0 || maxResults > MAX_RESULTS) {
             return ToolResponse.invalidParameter("maxResults",
-                "Must be >= 0; got: " + maxResults);
+                "Must be between 0 and " + MAX_RESULTS + "; got: " + maxResults);
         }
-        // Honor maxResults=0 literally; upper bound is a safety cap.
-        maxResults = Math.min(maxResults, 2000);
 
         try {
             Path path = Path.of(filePath);

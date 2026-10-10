@@ -53,7 +53,9 @@ public class PullUpTool extends AbstractTool {
 
             USAGE: Position on the member name in the subclass.
             OUTPUT: editsByFile covering the superclass (member added) and the
-            subclass (member removed); warnings from JDT's condition checking.
+            subclass (member removed); warnings from JDT's condition checking,
+            by the place each names (file, then position; those naming one place
+            in JDT's order, those naming none last).
             Edits are returned as text - apply them yourself.
 
             The superclass is the Java model's, for local and anonymous classes
@@ -183,7 +185,11 @@ public class PullUpTool extends AbstractTool {
                 descriptorArguments,
                 RefactoringDescriptor.STRUCTURAL_CHANGE | RefactoringDescriptor.MULTI_CHANGE);
 
-            RefactoringInvoker.Outcome outcome = RefactoringInvoker.run(descriptor, service);
+            // JDT reports the members a pulled-up member uses in the order of hash sets of Java
+            // elements (ReferenceFinderUtil.extractElements :173-180), which follows the hash of
+            // the project's name: the warnings are listed by the place each names instead.
+            RefactoringInvoker.Outcome outcome = RefactoringInvoker.run(descriptor, service,
+                RefactoringInvoker.WarningOrder.BY_PLACE);
             if (outcome.refused()) {
                 return ToolResponse.invalidParameter("member",
                     String.join("; ", outcome.reasons()));

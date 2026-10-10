@@ -7,8 +7,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
-import java.util.List;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
@@ -36,28 +34,9 @@ class RefactoringTimeLimitTest {
     @Test
     @DisplayName("pull_up: cancelled at any of its checks, it answers TIMEOUT, leaves no working copy, and the next call answers exactly as a fresh load")
     void pullUp_cancelledAtAnyCheck_nextCallIsFresh() throws Exception {
-        // JDT lists the fields width() reads in hash order, which differs between loads, so the
-        // warnings are compared as a sorted list.
-        JsonNode fresh = calls.assertEachCancellationLeavesTheFreshAnswer("pull_up", calls.position("Ring.java", 8, 15),
-            RefactoringTimeLimitTest::warningsSorted);
+        // pull_up lists its warnings by the place each names, so they compare as listed.
+        JsonNode fresh = calls.assertEachCancellationLeavesTheFreshAnswer("pull_up", calls.position("Ring.java", 8, 15));
         assertEquals(2, fresh.at("/data/filesAffected").asInt(), () -> "Ring.java and Figure.java: " + fresh);
-    }
-
-    /** The answer with its data.warnings sorted. */
-    private static JsonNode warningsSorted(JsonNode answer) {
-        JsonNode copy = answer.deepCopy();
-        if (copy.at("/data/warnings") instanceof com.fasterxml.jackson.databind.node.ArrayNode warnings) {
-            List<String> sorted = textsOf(warnings).stream().sorted().toList();
-            warnings.removeAll();
-            sorted.forEach(warnings::add);
-        }
-        return copy;
-    }
-
-    private static List<String> textsOf(JsonNode array) {
-        List<String> texts = new java.util.ArrayList<>();
-        array.forEach(element -> texts.add(element.asText()));
-        return texts;
     }
 
     @Test

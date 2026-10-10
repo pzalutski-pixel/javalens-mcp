@@ -30,6 +30,9 @@ public class GetTypeHierarchyTool extends AbstractTool {
 
     private static final Logger log = LoggerFactory.getLogger(GetTypeHierarchyTool.class);
 
+    /** The largest {@code maxDepth} accepted. */
+    private static final int MAX_DEPTH = 50;
+
     public GetTypeHierarchyTool(Supplier<IJdtService> serviceSupplier) {
         super(serviceSupplier);
     }
@@ -61,6 +64,8 @@ public class GetTypeHierarchyTool extends AbstractTool {
             places naming the type, or a subtype, as a supertype that JDT could not
             confirm.
 
+            maxDepth outside 1 to 50 is INVALID_PARAMETER.
+
             """ + POTENTIAL_MATCHES + """
             Requires load_project to be called first.
             """;
@@ -73,7 +78,7 @@ public class GetTypeHierarchyTool extends AbstractTool {
             .optional("line", "integer", "Zero-based line number")
             .optional("column", "integer", "Zero-based column number")
             .optional("typeName", "string", "Fully qualified type name (alternative to position)")
-            .optional("maxDepth", "integer", "Maximum depth of hierarchy to return (default 10)")
+            .optional("maxDepth", "integer", "Maximum depth of hierarchy to return, 1 to 50 (default 10)")
             .build();
     }
 
@@ -84,8 +89,10 @@ public class GetTypeHierarchyTool extends AbstractTool {
         int line = getIntParam(arguments, "line", -1);
         int column = getIntParam(arguments, "column", -1);
         int maxDepth = getIntParam(arguments, "maxDepth", 10);
-
-        maxDepth = Math.min(Math.max(maxDepth, 1), 50);
+        if (maxDepth < 1 || maxDepth > MAX_DEPTH) {
+            return ToolResponse.invalidParameter("maxDepth",
+                "Must be between 1 and " + MAX_DEPTH + "; got: " + maxDepth);
+        }
 
         try {
             IType targetType = null;

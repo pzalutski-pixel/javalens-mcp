@@ -211,40 +211,32 @@ class GetProjectStructureToolTest {
     }
 
     @Test
-    @DisplayName("maxDepth is clamped to [1, 20]")
+    @DisplayName("maxDepth 20, the largest accepted, lists every package of simple-maven's main source root, those of depth 4 included")
     @SuppressWarnings("unchecked")
-    void maxDepth_clampedToRange() {
-        // maxDepth=0 is clamped UP to 1 → depth-1 packages (single-segment names like
-        // "com" alone) would survive. simple-maven's packages all start with "com" but
-        // the segments are "com.example..." which is depth >= 2 → none survive at 1.
-        ObjectNode argsZero = objectMapper.createObjectNode();
-        argsZero.put("maxDepth", 0);
-        ToolResponse r1 = tool.execute(argsZero);
-        assertTrue(r1.isSuccess(),
-            "maxDepth=0 must not crash; clamped to 1. Got error: " +
-                (r1.getError() != null ? r1.getError().getMessage() : "n/a"));
-
-        // maxDepth=50 is clamped DOWN to 20 — no exception, all packages within depth 20
-        // survive (simple-maven has nothing deeper than ~4).
-        ObjectNode argsHuge = objectMapper.createObjectNode();
-        argsHuge.put("maxDepth", 50);
-        ToolResponse r2 = tool.execute(argsHuge);
-        assertTrue(r2.isSuccess(),
-            "maxDepth=50 must not crash; clamped to 20.");
+    void maxDepth_largestAcceptedListsEveryPackage() {
+        // The main source root holds the default package (empty, with subpackages), com,
+        // com.example and its subpackages cycledemo (a, b), genericunused, service and
+        // staticcycle (x, y); the deepest have 4 segments. 0 and 21 are refused
+        // (ParameterRangeTest). The names are compared sorted.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("maxDepth", 20);
+        ToolResponse response = tool.execute(args);
+        assertTrue(response.isSuccess(), () -> "maxDepth=20 must succeed; got: " + response.getError());
 
         List<Map<String, Object>> sourceRoots =
-            (List<Map<String, Object>>) getData(r2).get("sourceRoots");
+            (List<Map<String, Object>>) getData(response).get("sourceRoots");
         Map<String, Object> mainRoot = sourceRoots.stream()
             .filter(rt -> ((String) rt.get("path")).replace('\\', '/').endsWith("src-main-java"))
             .findFirst()
             .orElseThrow();
-        List<Map<String, Object>> packages = (List<Map<String, Object>>) mainRoot.get("packages");
-        // simple-maven's deepest packages (cycledemo.a, cycledemo.b) are depth 4 — must
-        // all be present under maxDepth=20.
-        boolean hasDeep = packages.stream()
-            .anyMatch(p -> "com.example.cycledemo.a".equals(p.get("name")));
-        assertTrue(hasDeep,
-            "Deeper packages must survive maxDepth=50 (clamped to 20); got: " + packages);
+        List<String> names = ((List<Map<String, Object>>) mainRoot.get("packages")).stream()
+            .map(p -> (String) p.get("name"))
+            .sorted()
+            .toList();
+        assertEquals(List.of("(default package)", "com", "com.example", "com.example.cycledemo",
+            "com.example.cycledemo.a", "com.example.cycledemo.b", "com.example.genericunused",
+            "com.example.service", "com.example.staticcycle", "com.example.staticcycle.x",
+            "com.example.staticcycle.y"), names);
     }
 
     @Test

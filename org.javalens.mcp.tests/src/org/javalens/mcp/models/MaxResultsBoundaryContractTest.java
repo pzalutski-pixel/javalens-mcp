@@ -41,27 +41,25 @@ import java.nio.file.Path;
 import java.util.function.Function;
 import java.util.stream.Stream;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Pins {@code maxResults} boundary behavior for every tool that declares
  * the parameter. Asserts:
- *  - {@code maxResults=0} succeeds (no crash, no error) and returns 0 results,
- *    unless the tool documents a minimum cap.
+ *  - {@code maxResults=0} succeeds (no crash, no error) and returns 0 results.
  *  - {@code maxResults=1} returns at most 1 result.
- *  - {@code maxResults=Integer.MAX_VALUE} succeeds (no overflow/crash) and
- *    yields a response whose {@code returnedCount} equals {@code totalCount}
- *    (i.e., no truncation when the cap is effectively infinite).
+ *  - {@code maxResults} at the tool's documented maximum ({@code Integer.MAX_VALUE} for a
+ *    tool documenting none) succeeds (no overflow/crash) and yields a response whose
+ *    {@code returnedCount} equals {@code totalCount}.
+ *  - one above a documented maximum is INVALID_PARAMETER naming the range, never clamped.
  *
  * <p>Per-tool quirks encoded explicitly:
  * <ul>
- *   <li>{@code minResultsAtZero}: some tools clamp {@code maxResults} to
- *       {@code [1, N]} silently. {@code SearchSymbolsTool} does this at
- *       {@code [1, 1000]}; 5 others (find_implementations, find_references,
- *       find_field_writes, get_call_hierarchy_incoming, get_document_symbols)
- *       do {@code [1, N]} too. At {@code maxResults=0} they return up to 1.
- *       Captured as B-11 in the plan; this test pins the current behavior.</li>
+ *   <li>{@code maximum}: search_symbols, find_implementations, find_references and
+ *       find_field_writes document 1000, get_call_hierarchy_incoming 500 and
+ *       get_document_symbols 2000; the other tools document none.</li>
  *   <li>{@code scale}: {@code find_reflection_usage} caps PER reflection method
  *       (per label), so {@code maxResults=1} can yield up to
  *       {@code REFLECTION_METHODS.length} results in aggregate. This test
@@ -84,86 +82,90 @@ class MaxResultsBoundaryContractTest {
         objectMapper = new ObjectMapper();
     }
 
+    /** The maximum of a tool documenting none. */
+    private static final int UNLIMITED = Integer.MAX_VALUE;
+
     static Stream<Arguments> provideToolArgs() {
-        // row(name, argsBuilder, toolBuilder, minResultsAtZero, scale)
+        // row(name, argsBuilder, toolBuilder, minResultsAtZero, scale, maximum)
         // minResultsAtZero: how many results the tool returns when maxResults=0
-        //   — post-B-11 fix all tools honor maxResults=0 literally and return 0.
-        // scale: per-maxResults multiplier — most tools: 1; per-category tools higher
+        //   (all tools honor maxResults=0 literally and return 0).
+        // scale: per-maxResults multiplier: most tools 1, per-category tools higher
         //   (find_reflection_usage caps per reflection method, 18 methods → scale 18)
+        // maximum: the largest maxResults the tool documents, UNLIMITED when it documents none
         return Stream.of(
             row("search_symbols",
                 ctx -> ctx.args().put("query", "Calculator"),
-                ctx -> new SearchSymbolsTool(() -> ctx.service),  0, 1),
+                ctx -> new SearchSymbolsTool(() -> ctx.service),  0, 1, 1000),
             row("find_implementations",
                 ctx -> argsAt(ctx, "src/main/java/com/example/IShape.java", 2, 17),
-                ctx -> new FindImplementationsTool(() -> ctx.service),  0, 1),
+                ctx -> new FindImplementationsTool(() -> ctx.service),  0, 1, 1000),
             row("get_document_symbols",
                 ctx -> ctx.args().put("filePath",
                     ctx.projectPath.resolve("src/main/java/com/example/Calculator.java").toString()),
-                ctx -> new GetDocumentSymbolsTool(() -> ctx.service),  0, 1),
+                ctx -> new GetDocumentSymbolsTool(() -> ctx.service),  0, 1, 2000),
             row("get_diagnostics",
                 ctx -> ctx.args().put("filePath",
                     ctx.projectPath.resolve("src/main/java/com/example/Calculator.java").toString()),
-                ctx -> new GetDiagnosticsTool(() -> ctx.service),  0, 1),
+                ctx -> new GetDiagnosticsTool(() -> ctx.service),  0, 1, UNLIMITED),
             row("find_references",
                 ctx -> argsAt(ctx, "src/main/java/com/example/Calculator.java", 5, 13),
-                ctx -> new FindReferencesTool(() -> ctx.service),  0, 1),
+                ctx -> new FindReferencesTool(() -> ctx.service),  0, 1, 1000),
             row("find_field_writes",
                 ctx -> argsAt(ctx, "src/main/java/com/example/Calculator.java", 6, 16),
-                ctx -> new FindFieldWritesTool(() -> ctx.service),  0, 1),
+                ctx -> new FindFieldWritesTool(() -> ctx.service),  0, 1, 1000),
             row("get_call_hierarchy_incoming",
                 ctx -> argsAt(ctx, "src/main/java/com/example/Calculator.java", 14, 15),
-                ctx -> new GetCallHierarchyIncomingTool(() -> ctx.service),  0, 1),
+                ctx -> new GetCallHierarchyIncomingTool(() -> ctx.service),  0, 1, 500),
             row("find_method_references",
                 ctx -> argsAt(ctx, "src/main/java/com/example/Calculator.java", 14, 15),
-                ctx -> new FindMethodReferencesTool(() -> ctx.service),  0, 1),
+                ctx -> new FindMethodReferencesTool(() -> ctx.service),  0, 1, UNLIMITED),
             row("find_casts",
                 ctx -> ctx.args().put("typeName", "com.example.Calculator"),
-                ctx -> new FindCastsTool(() -> ctx.service),  0, 1),
+                ctx -> new FindCastsTool(() -> ctx.service),  0, 1, UNLIMITED),
             row("find_instanceof_checks",
                 ctx -> ctx.args().put("typeName", "com.example.Calculator"),
-                ctx -> new FindInstanceofChecksTool(() -> ctx.service),  0, 1),
+                ctx -> new FindInstanceofChecksTool(() -> ctx.service),  0, 1, UNLIMITED),
             row("find_type_instantiations",
                 ctx -> ctx.args().put("typeName", "com.example.Calculator"),
-                ctx -> new FindTypeInstantiationsTool(() -> ctx.service),  0, 1),
+                ctx -> new FindTypeInstantiationsTool(() -> ctx.service),  0, 1, UNLIMITED),
             row("find_throws_declarations",
                 ctx -> ctx.args().put("typeName", "java.io.IOException"),
-                ctx -> new FindThrowsDeclarationsTool(() -> ctx.service),  0, 1),
+                ctx -> new FindThrowsDeclarationsTool(() -> ctx.service),  0, 1, UNLIMITED),
             row("find_catch_blocks",
                 ctx -> ctx.args().put("typeName", "java.lang.Exception"),
-                ctx -> new FindCatchBlocksTool(() -> ctx.service),  0, 1),
+                ctx -> new FindCatchBlocksTool(() -> ctx.service),  0, 1, UNLIMITED),
             row("find_type_arguments",
                 ctx -> ctx.args().put("typeName", "com.example.Calculator"),
-                ctx -> new FindTypeArgumentsTool(() -> ctx.service),  0, 1),
+                ctx -> new FindTypeArgumentsTool(() -> ctx.service),  0, 1, UNLIMITED),
             row("find_annotation_usages",
                 ctx -> ctx.args().put("typeName", "com.example.Marker"),
-                ctx -> new FindAnnotationUsagesTool(() -> ctx.service),  0, 1),
+                ctx -> new FindAnnotationUsagesTool(() -> ctx.service),  0, 1, UNLIMITED),
             row("find_reflection_usage",
                 ctx -> ctx.args(),
-                ctx -> new FindReflectionUsageTool(() -> ctx.service),  0, 18),
+                ctx -> new FindReflectionUsageTool(() -> ctx.service),  0, 18, UNLIMITED),
             row("get_di_registrations",
                 ctx -> ctx.args(),
-                ctx -> new GetDiRegistrationsTool(() -> ctx.service),  0, 1),
+                ctx -> new GetDiRegistrationsTool(() -> ctx.service),  0, 1, UNLIMITED),
             row("suggest_imports",
                 ctx -> ctx.args().put("typeName", "List"),
-                ctx -> new SuggestImportsTool(() -> ctx.service),  0, 1),
+                ctx -> new SuggestImportsTool(() -> ctx.service),  0, 1, UNLIMITED),
             // 1.4.2 additions (the #29 audit found these missing from the registry)
             row("analyze_change_impact",
                 ctx -> argsAt(ctx, "src/main/java/com/example/Calculator.java", 14, 15)
                     .put("transitive", true),
-                ctx -> new AnalyzeChangeImpactTool(() -> ctx.service),  0, 1),
+                ctx -> new AnalyzeChangeImpactTool(() -> ctx.service),  0, 1, UNLIMITED),
             row("find_unreachable_code",
                 ctx -> ctx.args(),
-                ctx -> new FindUnreachableCodeTool(() -> ctx.service),  0, 1),
+                ctx -> new FindUnreachableCodeTool(() -> ctx.service),  0, 1, UNLIMITED),
             row("find_affected_tests",
                 ctx -> argsAt(ctx, "src/main/java/com/example/Calculator.java", 14, 15),
-                ctx -> new FindAffectedTestsTool(() -> ctx.service),  0, 1),
+                ctx -> new FindAffectedTestsTool(() -> ctx.service),  0, 1, UNLIMITED),
             row("get_jpa_model",
                 ctx -> ctx.args(),
-                ctx -> new GetJpaModelTool(() -> ctx.service),  0, 1),
+                ctx -> new GetJpaModelTool(() -> ctx.service),  0, 1, UNLIMITED),
             row("get_http_endpoints",
                 ctx -> ctx.args(),
-                ctx -> new GetHttpEndpointsTool(() -> ctx.service),  0, 1)
+                ctx -> new GetHttpEndpointsTool(() -> ctx.service),  0, 1, UNLIMITED)
         );
     }
 
@@ -181,11 +183,11 @@ class MaxResultsBoundaryContractTest {
     void totalBoundaries_exact(String toolName,
                                Function<TestContext, ObjectNode> argsBuilder,
                                Function<TestContext, Tool> toolBuilder,
-                               int minResultsAtZero, int scale) {
+                               int minResultsAtZero, int scale, int maximum) {
         TestContext ctx = new TestContext(service, projectPath, objectMapper);
 
         var reference = toolBuilder.apply(ctx)
-            .execute(argsBuilder.apply(ctx).put("maxResults", Integer.MAX_VALUE));
+            .execute(argsBuilder.apply(ctx).put("maxResults", maximum));
         assertTrue(reference.isSuccess(),
             toolName + ": reference call must succeed; got: " + describe(reference));
         int total = reference.getMeta().getTotalCount();
@@ -231,7 +233,7 @@ class MaxResultsBoundaryContractTest {
     void zero_returnsAtMostMinCap(String toolName,
                                   Function<TestContext, ObjectNode> argsBuilder,
                                   Function<TestContext, Tool> toolBuilder,
-                                  int minResultsAtZero, int scale) {
+                                  int minResultsAtZero, int scale, int maximum) {
         TestContext ctx = new TestContext(service, projectPath, objectMapper);
         ObjectNode args = argsBuilder.apply(ctx).put("maxResults", 0);
         Tool tool = toolBuilder.apply(ctx);
@@ -251,7 +253,7 @@ class MaxResultsBoundaryContractTest {
     void negative_isRejected(String toolName,
                               Function<TestContext, ObjectNode> argsBuilder,
                               Function<TestContext, Tool> toolBuilder,
-                              int minResultsAtZero, int scale) {
+                              int minResultsAtZero, int scale, int maximum) {
         TestContext ctx = new TestContext(service, projectPath, objectMapper);
         ObjectNode args = argsBuilder.apply(ctx).put("maxResults", -1);
         Tool tool = toolBuilder.apply(ctx);
@@ -271,7 +273,7 @@ class MaxResultsBoundaryContractTest {
     void one_returnsAtMostScale(String toolName,
                                  Function<TestContext, ObjectNode> argsBuilder,
                                  Function<TestContext, Tool> toolBuilder,
-                                 int minResultsAtZero, int scale) {
+                                 int minResultsAtZero, int scale, int maximum) {
         TestContext ctx = new TestContext(service, projectPath, objectMapper);
         ObjectNode args = argsBuilder.apply(ctx).put("maxResults", 1);
         Tool tool = toolBuilder.apply(ctx);
@@ -285,19 +287,19 @@ class MaxResultsBoundaryContractTest {
                 + " (scale=" + scale + "); got returnedCount=" + returned);
     }
 
-    @ParameterizedTest(name = "{0}: maxResults=MAX_VALUE → no truncation, returnedCount == totalCount")
+    @ParameterizedTest(name = "{0}: maxResults at its maximum {5} → no truncation, returnedCount == totalCount")
     @MethodSource("provideToolArgs")
-    @DisplayName("maxResults=Integer.MAX_VALUE succeeds, returnedCount equals totalCount, truncated=false")
-    void maxValue_doesNotCrash(String toolName,
-                               Function<TestContext, ObjectNode> argsBuilder,
-                               Function<TestContext, Tool> toolBuilder,
-                               int minResultsAtZero, int scale) {
+    @DisplayName("maxResults at the documented maximum (Integer.MAX_VALUE where none is documented) succeeds, returnedCount equals totalCount, truncated=false")
+    void maximum_returnsEverything(String toolName,
+                                   Function<TestContext, ObjectNode> argsBuilder,
+                                   Function<TestContext, Tool> toolBuilder,
+                                   int minResultsAtZero, int scale, int maximum) {
         TestContext ctx = new TestContext(service, projectPath, objectMapper);
-        ObjectNode args = argsBuilder.apply(ctx).put("maxResults", Integer.MAX_VALUE);
+        ObjectNode args = argsBuilder.apply(ctx).put("maxResults", maximum);
         Tool tool = toolBuilder.apply(ctx);
         var response = tool.execute(args);
         assertTrue(response.isSuccess(),
-            toolName + " must succeed at maxResults=MAX_VALUE without overflow; got: "
+            toolName + " must succeed at maxResults=" + maximum + " without overflow; got: "
                 + describe(response));
         Integer returned = response.getMeta().getReturnedCount();
         Integer total = response.getMeta().getTotalCount();
@@ -305,16 +307,37 @@ class MaxResultsBoundaryContractTest {
         assertNotNull(total, toolName + ": totalCount must be populated");
         assertTrue(returned >= 0,
             toolName + ": returnedCount must be non-negative; got " + returned);
-        // The class Javadoc promises: at MAX_VALUE the cap is effectively infinite, so
-        // returnedCount equals totalCount (no truncation). Previously only the >= 0
-        // sanity-check was enforced — the contract claim was untested. Pin it now.
+        // The fixture holds fewer results than any maximum, so at the maximum nothing is cut.
         assertTrue(returned.equals(total),
-            toolName + ": at maxResults=MAX_VALUE the cap must not truncate; "
+            toolName + ": at maxResults=" + maximum + " the cap must not truncate; "
                 + "returnedCount=" + returned + " totalCount=" + total);
         Boolean truncated = response.getMeta().getTruncated();
         assertNotNull(truncated, toolName + ": truncated must be populated");
         assertTrue(!truncated,
-            toolName + ": at maxResults=MAX_VALUE truncated must be false; got " + truncated);
+            toolName + ": at maxResults=" + maximum + " truncated must be false; got " + truncated);
+    }
+
+    /** The rows of the tools documenting a maximum. */
+    static Stream<Arguments> provideCappedToolArgs() {
+        return provideToolArgs().filter(row -> (int) row.get()[5] != UNLIMITED);
+    }
+
+    @ParameterizedTest(name = "{0}: maxResults one above its maximum {5} → INVALID_PARAMETER naming the range")
+    @MethodSource("provideCappedToolArgs")
+    @DisplayName("maxResults one above the documented maximum is exactly INVALID_PARAMETER naming the range, never clamped")
+    void aboveMaximum_isRefused(String toolName,
+                                Function<TestContext, ObjectNode> argsBuilder,
+                                Function<TestContext, Tool> toolBuilder,
+                                int minResultsAtZero, int scale, int maximum) throws Exception {
+        TestContext ctx = new TestContext(service, projectPath, objectMapper);
+        ObjectNode args = argsBuilder.apply(ctx).put("maxResults", maximum + 1);
+        JsonNode payload = objectMapper.readTree(
+            objectMapper.writeValueAsString(toolBuilder.apply(ctx).execute(args)));
+        assertEquals(objectMapper.valueToTree(java.util.Map.of("success", false, "error", java.util.Map.of(
+                "code", "INVALID_PARAMETER",
+                "message", "Invalid parameter 'maxResults': Must be between 0 and " + maximum + "; got: "
+                    + (maximum + 1)))),
+            payload, toolName);
     }
 
     private static String describe(org.javalens.mcp.models.ToolResponse r) {
@@ -327,8 +350,8 @@ class MaxResultsBoundaryContractTest {
     private static Arguments row(String name,
                                   Function<TestContext, ObjectNode> argsBuilder,
                                   Function<TestContext, Tool> toolBuilder,
-                                  int minResultsAtZero, int scale) {
-        return Arguments.of(name, argsBuilder, toolBuilder, minResultsAtZero, scale);
+                                  int minResultsAtZero, int scale, int maximum) {
+        return Arguments.of(name, argsBuilder, toolBuilder, minResultsAtZero, scale, maximum);
     }
 
     private static ObjectNode argsAt(TestContext ctx, String relativePath, int line, int column) {

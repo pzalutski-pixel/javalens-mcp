@@ -36,6 +36,9 @@ public class SearchSymbolsTool extends AbstractTool {
 
     private static final Logger log = LoggerFactory.getLogger(SearchSymbolsTool.class);
 
+    /** The largest {@code maxResults} accepted. */
+    private static final int MAX_RESULTS = 1000;
+
     /** The accepted {@code kind} values, compared case-insensitively. */
     private static final List<String> KINDS =
         List.of("class", "interface", "enum", "record", "annotation", "method", "field");
@@ -83,7 +86,8 @@ public class SearchSymbolsTool extends AbstractTool {
             PAGINATION: the kind and pattern filters apply first, then offset and
             maxResults select the page. meta.totalCount counts every matching declaration;
             pagination.hasMore (and meta.truncated) is true when more follow this page,
-            so request offset + returned next.
+            so request offset + returned next. maxResults outside 0 to 1000 is
+            INVALID_PARAMETER.
 
             A query naming the declaring type (Type.member) makes JDT resolve each
             declaration of the name and keep those of that type and its subtypes;
@@ -102,7 +106,7 @@ public class SearchSymbolsTool extends AbstractTool {
             .optional("kind", "string", "Optional, case-insensitive: class, interface, enum, record, "
                 + "annotation, method or field. Omit to search every type. field includes static "
                 + "final constants and enum constants.")
-            .optional("maxResults", "integer", "Max results to return (default 50, at most 1000)")
+            .optional("maxResults", "integer", "Max results to return, 0 to 1000 (default 50)")
             .optional("offset", "integer", "Skip the first N matching declarations (default 0)")
             .build();
     }
@@ -118,9 +122,10 @@ public class SearchSymbolsTool extends AbstractTool {
         int maxResults = getIntParam(arguments, "maxResults", 50);
         int offset = getIntParam(arguments, "offset", 0);
 
-        if (maxResults < 0) {
+        // maxResults=0 is honored literally (zero results); the documented maximum bounds the page
+        if (maxResults < 0 || maxResults > MAX_RESULTS) {
             return ToolResponse.invalidParameter("maxResults",
-                "Must be >= 0; got: " + maxResults);
+                "Must be between 0 and " + MAX_RESULTS + "; got: " + maxResults);
         }
         if (offset < 0) {
             return ToolResponse.invalidParameter("offset",
@@ -131,9 +136,6 @@ public class SearchSymbolsTool extends AbstractTool {
             return ToolResponse.invalidParameter("kind",
                 "Must be one of " + String.join(", ", KINDS) + " (case-insensitive); got: " + kind);
         }
-        // Honor maxResults=0 literally; upper bound is a safety cap.
-        maxResults = Math.min(maxResults, 1000);
-
         try {
             SearchResult searchResult = service.getSearchService().searchSymbols(
                 query, searchFor(normalizedKind), accepts(normalizedKind), offset, maxResults);

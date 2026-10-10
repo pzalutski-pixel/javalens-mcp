@@ -26,6 +26,9 @@ public class GetProjectStructureTool extends AbstractTool {
 
     private static final Logger log = LoggerFactory.getLogger(GetProjectStructureTool.class);
 
+    /** The largest {@code maxDepth} accepted. */
+    private static final int MAX_DEPTH = 20;
+
     public GetProjectStructureTool(Supplier<IJdtService> serviceSupplier) {
         super(serviceSupplier);
     }
@@ -43,6 +46,8 @@ public class GetProjectStructureTool extends AbstractTool {
             USAGE: Call to see the package tree of the loaded project
             OUTPUT: Source roots with packages and file counts
 
+            maxDepth outside 1 to 20 is INVALID_PARAMETER.
+
             Requires load_project to be called first.
             """;
     }
@@ -51,7 +56,7 @@ public class GetProjectStructureTool extends AbstractTool {
     public Map<String, Object> getInputSchema() {
         return SchemaBuilder.object()
             .optional("includeFiles", "boolean", "Include file names in each package (default false)")
-            .optional("maxDepth", "integer", "Maximum package depth to show (default 10)")
+            .optional("maxDepth", "integer", "Maximum package depth to show, 1 to 20 (default 10)")
             .build();
     }
 
@@ -59,7 +64,10 @@ public class GetProjectStructureTool extends AbstractTool {
     protected ToolResponse executeWithService(IJdtService service, JsonNode arguments) {
         boolean includeFiles = getBooleanParam(arguments, "includeFiles", false);
         int maxDepth = getIntParam(arguments, "maxDepth", 10);
-        maxDepth = Math.min(Math.max(maxDepth, 1), 20);
+        if (maxDepth < 1 || maxDepth > MAX_DEPTH) {
+            return ToolResponse.invalidParameter("maxDepth",
+                "Must be between 1 and " + MAX_DEPTH + "; got: " + maxDepth);
+        }
 
         try {
             IJavaProject project = service.getJavaProject();

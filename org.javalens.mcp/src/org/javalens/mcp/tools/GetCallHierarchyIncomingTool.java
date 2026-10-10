@@ -34,6 +34,9 @@ public class GetCallHierarchyIncomingTool extends AbstractTool {
 
     private static final Logger log = LoggerFactory.getLogger(GetCallHierarchyIncomingTool.class);
 
+    /** The largest {@code maxResults} accepted. */
+    private static final int MAX_RESULTS = 500;
+
     public GetCallHierarchyIncomingTool(Supplier<IJdtService> serviceSupplier) {
         super(serviceSupplier);
     }
@@ -56,7 +59,8 @@ public class GetCallHierarchyIncomingTool extends AbstractTool {
             Useful for understanding who depends on a method before changing it.
 
             The callers of a method of a class file, such as a JDK method, are those
-            in the project's source files.
+            in the project's source files. maxResults outside 0 to 500 is
+            INVALID_PARAMETER.
 
             """ + POTENTIAL_MATCHES + """
             Requires load_project to be called first.
@@ -69,7 +73,7 @@ public class GetCallHierarchyIncomingTool extends AbstractTool {
             .required("filePath", "string", "Path to source file")
             .required("line", "integer", "Zero-based line number")
             .required("column", "integer", "Zero-based column number")
-            .optional("maxResults", "integer", "Max callers to return (default 50)")
+            .optional("maxResults", "integer", "Max callers to return, 0 to 500 (default 50)")
             .build();
     }
 
@@ -90,12 +94,11 @@ public class GetCallHierarchyIncomingTool extends AbstractTool {
         if (column < 0) {
             return ToolResponse.invalidParameter("column", "Must be >= 0 (zero-based)");
         }
-        if (maxResults < 0) {
+        // maxResults=0 is honored literally (zero results); the documented maximum bounds the list
+        if (maxResults < 0 || maxResults > MAX_RESULTS) {
             return ToolResponse.invalidParameter("maxResults",
-                "Must be >= 0; got: " + maxResults);
+                "Must be between 0 and " + MAX_RESULTS + "; got: " + maxResults);
         }
-        // Honor maxResults=0 literally; upper bound is a safety cap.
-        maxResults = Math.min(maxResults, 500);
 
         try {
             Path path = Path.of(filePath);
