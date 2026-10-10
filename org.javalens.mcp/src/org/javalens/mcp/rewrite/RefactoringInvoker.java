@@ -34,10 +34,12 @@ import java.util.Map;
  * tools return. The change is NEVER performed: JavaLens analyzes and returns
  * edits as text; the caller is the only writer.
  *
- * <p>Status policy: a FATAL condition (or a failure to construct the
- * refactoring) is a refusal carrying JDT's own messages; ERROR and below are
+ * <p>Status policy of {@link #run}: a FATAL condition (or a failure to construct
+ * the refactoring) is a refusal carrying JDT's own messages; ERROR and below are
  * surfaced as warnings alongside the computed edits, matching how the IDE lets
- * a user proceed past non-fatal findings.
+ * a user proceed past non-fatal findings. {@link #findings}, which rename_symbol
+ * uses, counts ERROR with FATAL as a conflict: a rename JDT marks ERROR leaves
+ * the code not compiling or not meaning what it meant.
  */
 public final class RefactoringInvoker {
 

@@ -46,6 +46,7 @@ public final class ElementKindResolver {
             case IJavaElement.COMPILATION_UNIT -> "compilationUnit";
             case IJavaElement.INITIALIZER -> "initializer";
             case IJavaElement.IMPORT_DECLARATION -> "import";
+            case IJavaElement.JAVA_MODULE -> "module";
             default -> "unknown";
         };
     }

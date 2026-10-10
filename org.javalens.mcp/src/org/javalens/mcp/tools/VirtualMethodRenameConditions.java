@@ -11,6 +11,7 @@ import org.eclipse.jdt.core.ISourceRange;
 import org.eclipse.jdt.core.ISourceReference;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.JavaCore;
+import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.Signature;
 import org.eclipse.jdt.core.SourceRange;
 import org.eclipse.jdt.core.WorkingCopyOwner;
@@ -21,7 +22,6 @@ import org.eclipse.jdt.core.dom.ASTVisitor;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.IBinding;
 import org.eclipse.jdt.core.dom.IMethodBinding;
-import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.NodeFinder;
 import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.search.IJavaSearchConstants;
@@ -46,6 +46,7 @@ import org.javalens.core.search.ModelHierarchy;
 import org.javalens.core.search.SearchService;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -74,7 +75,16 @@ import java.util.Set;
  * finds a reference in a class file only through its attached source (MatchLocator.process
  * :1997-2011 reports a class file without source by its declarations alone), JavaLens attaches
  * no source to a library (ProjectImporter:507), and a class of the JDK, whose source it may hold,
- * cannot reference a method of the project.
+ * cannot reference a method of the project. For the same reasons JDT's note of matches in class
+ * files (RefactoringSearchEngine.addStatusErrors :225-229) has no case: the places renamed are
+ * searched in the project's sources, where every match has its compilation unit.
+ *
+ * <p>Nor do the checks LTK adds to every processor's (ProcessorBasedRefactoring.checkFinalConditions)
+ * find anything here: rename participants (no bundle of JavaLens contributes to
+ * org.eclipse.ltk.core.refactoring.renameParticipants); the ResourceChangeChecker, which hands the
+ * changed files to the workspace's model providers (JavaLens holds only org.eclipse.core.resources'
+ * own, which accepts every change); and the ValidateEditChecker, to which a method's rename adds no
+ * file (RenameModifications.buildValidateEdits :182-192 adds renamed compilation units only).
  */
 final class VirtualMethodRenameConditions {
 
@@ -95,14 +105,20 @@ final class VirtualMethodRenameConditions {
     /**
      * What renaming {@code method}, with every method of {@code ripple}, to {@code newName}, by the
      * edits {@code occurrences}, finds: the entries JDT's method rename would report, with the
-     * contexts JDT gives them.
+     * contexts JDT gives them. {@code potential} are the places the search reports but cannot
+     * confirm, which JDT's occurrences hold too (RefactoringSearchEngine.search keeps them).
      */
     static RefactoringStatus check(IMethod method, List<IMethod> ripple, String newName,
-                                   List<RenameSymbolTool.Occurrence> occurrences, IJdtService service)
-            throws CoreException {
+                                   List<RenameSymbolTool.Occurrence> occurrences, List<SearchMatch> potential,
+                                   IJdtService service) throws CoreException {
         SearchService search = service.getSearchService();
 
         // Initial conditions, of the method at the position (RenameMethodProcessor :323-337).
+        if (!method.exists()) {
+            return RefactoringStatus.createFatalErrorStatus(Messages.format(
+                RefactoringCoreMessages.RenameMethodRefactoring_deleted,
+                BasicElementLabels.getFileName(method.getCompilationUnit())));
+        }
         RefactoringStatus result = Checks.checkAvailability(method);
         if (result.hasFatalError()) {
             return result;
@@ -129,7 +145,7 @@ final class VirtualMethodRenameConditions {
         }
         boolean mustAnalyzeShadowing = declaresClashingMethod(topmost, newName, service);
         result.merge(checkRelatedMethods(ripple, newName));
-        Set<ICompilationUnit> kept = analyzeCompilationUnits(occurrences, result);
+        Set<ICompilationUnit> kept = analyzeCompilationUnits(occurrences, potential, result);
         if (result.hasFatalError()) {
             return result;
         }
@@ -296,14 +312,24 @@ final class VirtualMethodRenameConditions {
      * RenameMethodProcessor.analyzeCompilationUnits :533-545: a unit the rename edits whose
      * structure JDT could not read for syntax errors is an error and is not analyzed further
      * (Checks.excludeCompilationUnits :586-607); a unit with compile errors, a warning
-     * (Checks.checkCompileErrorsInAffectedFiles :609-615). The units kept, each once.
+     * (Checks.checkCompileErrorsInAffectedFiles :609-615). The units are those of the edits and of
+     * the places the search could not confirm, as JDT's occurrences hold both; a match outside a
+     * compilation unit is passed over, as Checks.excludeCompilationUnits :592-594 passes it. The
+     * units kept, each once.
      */
     private static Set<ICompilationUnit> analyzeCompilationUnits(List<RenameSymbolTool.Occurrence> occurrences,
+                                                                 List<SearchMatch> potential,
                                                                  RefactoringStatus result) throws CoreException {
         Map<ICompilationUnit, SearchResultGroup> groups = new LinkedHashMap<>();
         for (RenameSymbolTool.Occurrence occurrence : occurrences) {
             groups.computeIfAbsent(occurrence.unit().getPrimary(),
                 unit -> new SearchResultGroup(unit.getResource(), new SearchMatch[0]));
+        }
+        for (SearchMatch match : potential) {
+            if (match.getResource() != null && JavaCore.create(match.getResource()) instanceof ICompilationUnit unit) {
+                groups.computeIfAbsent(unit.getPrimary(),
+                    primary -> new SearchResultGroup(primary.getResource(), new SearchMatch[0]));
+            }
         }
         SearchResultGroup[] kept = Checks.excludeCompilationUnits(groups.values().toArray(new SearchResultGroup[0]), result);
         result.merge(Checks.checkCompileErrorsInAffectedFiles(kept));
@@ -361,7 +387,8 @@ final class VirtualMethodRenameConditions {
                 }
             }, Deadline.monitor());
 
-            // The renamed methods, by the bindings of their renamed declarations.
+            // The renamed methods, by the bindings of their renamed declarations: a method's, or an
+            // annotation type member's
             Set<String> renamed = new HashSet<>();
             for (Map.Entry<ICompilationUnit, List<RenameSymbolTool.Occurrence>> edited : byUnit.entrySet()) {
                 CompilationUnit tree = tree(trees, edited.getKey());
@@ -369,9 +396,8 @@ final class VirtualMethodRenameConditions {
                     if (occurrence.declaration()
                             && NodeFinder.perform(tree, updatedOffset(occurrence, edited.getValue()), newName.length())
                                 instanceof SimpleName name
-                            && name.getParent() instanceof MethodDeclaration declaration
-                            && declaration.resolveBinding() != null) {
-                        renamed.add(declaration.resolveBinding().getKey());
+                            && name.resolveBinding() instanceof IMethodBinding method) {
+                        renamed.add(method.getMethodDeclaration().getKey());
                     }
                 }
             }
@@ -396,8 +422,11 @@ final class VirtualMethodRenameConditions {
                 List<Integer> taken = reaching.stream().filter(offset -> !renamedReferences.contains(offset))
                     .sorted(Comparator.naturalOrder()).toList();
                 for (int offset : taken) {
+                    // The member enclosing the reference, as the unit on disk holds it: none when the
+                    // member is one the rename creates (RenameAnalyzeUtil.getOldSourceRange :362-375)
                     IJavaElement enclosing = copies.getOrDefault(unit, unit).getElementAt(offset);
-                    ISourceRange range = enclosing != null && enclosing.getPrimaryElement() instanceof ISourceReference source
+                    IJavaElement primary = enclosing == null ? null : enclosing.getPrimaryElement();
+                    ISourceRange range = primary != null && primary.exists() && primary instanceof ISourceReference source
                         ? source.getSourceRange() : null;
                     result.addError(Messages.format(RefactoringCoreMessages.RenameAnalyzeUtil_reference_shadowed,
                             new String[] {BasicElementLabels.getFileName(unit), BasicElementLabels.getJavaElementName(newName)}),
@@ -405,11 +434,31 @@ final class VirtualMethodRenameConditions {
                 }
             }
         } finally {
-            for (ICompilationUnit copy : copies.values()) {
-                copy.discardWorkingCopy();
-            }
+            discardAll(copies.values());
         }
         return result;
+    }
+
+    /**
+     * Discards each of {@code copies}, every one even when discarding another fails; the first
+     * failure is thrown once all are tried, the others suppressed in it.
+     */
+    private static void discardAll(Collection<ICompilationUnit> copies) throws JavaModelException {
+        JavaModelException first = null;
+        for (ICompilationUnit copy : copies) {
+            try {
+                copy.discardWorkingCopy();
+            } catch (JavaModelException e) {
+                if (first == null) {
+                    first = e;
+                } else {
+                    first.addSuppressed(e);
+                }
+            }
+        }
+        if (first != null) {
+            throw first;
+        }
     }
 
     /** The tree parsed for {@code unit}, which the parser gives for every unit it is handed. */

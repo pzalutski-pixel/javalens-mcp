@@ -74,7 +74,21 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 3:9) and uses(), which calls Fine.call(); in com.example.lambdas, Hosts with the interface Mark
  * declaring tag() (Hosts.java 4:15), the class Base declaring a() (8:13) and marks(), whose lambda
  * body creates an anonymous Mark declaring tag() (15:30) and label(), calls its tag() (23:17)
- * and declares the local class Sub, a subclass of Base declaring b().
+ * and declares the local class Sub (24:18), a subclass of Base declaring the field count (25:20),
+ * b() and the private twice() (30:28), which reads count (31:27), then assigns sub.twice() to
+ * sub.count (line 35, count at 16, twice at 28) of a Sub it creates (line 34, Sub at 12 and 26).
+ *
+ * <p>Further: in com.example.annotations, the annotation type Tag with the member text()
+ * (Tag.java 3:11) and Noted with note() and a method annotated @Tag(text = "x") (text at Noted.java
+ * 7:9); in com.example.shadowmethods, Callee with k() (Callee.java 3:9) and Caller with m() and its
+ * member class Inner, a subclass of Callee, whose k() calls m(); in com.example.methods, Typed with
+ * the private put(int) (Typed.java 3:17) and set(String), Upper with the private hidden() and its
+ * subclass Lower with shown() (Lower.java 3:9); in com.example.broken, Fixer, a subclass of Broken,
+ * overriding fix() (Fixer.java 3:9), Lone with solo() (Lone.java 3:9) and LoneUser, with a syntax
+ * error in bad(), calling solo() on a parameter of the missing type Missing. Beta.java's package
+ * declaration starts at 0:0, its last segment, types, at 0:20, and its import java.util.List at 2:0. The fixture
+ * modular-maven declares the module com.example.modular (module-info.java, the keyword module at
+ * 0:0, the name at 0:7).
  */
 class RenameConflictTest {
 
@@ -180,6 +194,12 @@ class RenameConflictTest {
                     "line", 3, "column", 8, "endColumn", 13, "oldText", "count", "newText", "amount")))),
                 map("totalCount", 1, "returnedCount", 1, "suggestedNextTools", NEXT_TOOLS)),
             NestedTypes.unixFiles());
+    }
+
+    @Test
+    @DisplayName("Fields.count renamed to amount, its edit applied, compiles")
+    void field_withoutConflictCompiles() throws Exception {
+        assertCompiles(applied("fields/Fields.java", 3, 8, "amount"), ROOT + "fields/Fields.java");
     }
 
     // ========== methods ==========
@@ -370,6 +390,192 @@ class RenameConflictTest {
     @DisplayName("Mark.tag renamed to a, its edits applied, compiles")
     void virtual_callInLambdaCompiles() throws Exception {
         assertCompiles(applied("lambdas/Hosts.java", 4, 15, "a"), ROOT + "lambdas/Hosts.java");
+    }
+
+    @Test
+    @DisplayName("an annotation member renamed to the name of another method goes ahead, its use in an annotation still reaching it")
+    void virtual_annotationMemberStillReached() {
+        assertPayload(mapper, new RenameSymbolTool(() -> service), envelope, at("annotations/Tag.java", 3, 11, "note"),
+            success(map(
+                "oldName", "text",
+                "newName", "note",
+                "symbolKind", "method",
+                "totalEdits", 2,
+                "filesAffected", 2,
+                "editsByFile", map(
+                    ROOT + "annotations/Tag.java", List.of(
+                        map("line", 3, "column", 11, "endColumn", 15, "oldText", "text", "newText", "note")),
+                    ROOT + "annotations/Noted.java", List.of(
+                        map("line", 7, "column", 9, "endColumn", 13, "oldText", "text", "newText", "note")))),
+                map("totalCount", 2, "returnedCount", 2, "suggestedNextTools", NEXT_TOOLS)),
+            NestedTypes.unixFiles());
+    }
+
+    @Test
+    @DisplayName("Tag.text renamed to note, its edits applied, compiles")
+    void virtual_annotationMemberCompiles() throws Exception {
+        assertCompiles(applied("annotations/Tag.java", 3, 11, "note"),
+            ROOT + "annotations/Tag.java", ROOT + "annotations/Noted.java");
+    }
+
+    @Test
+    @DisplayName("a method whose renamed overrider would call itself in place of an enclosing method is refused, naming no place")
+    void virtual_referenceTakenOverInsideRenamedMethod() {
+        assertRefused("shadowmethods/Callee.java", 3, 9, "m",
+            "Problem in 'Caller.java'. The reference to 'm' will be shadowed by a renamed declaration");
+    }
+
+    @Test
+    @DisplayName("a method renamed to the name of a superclass's private method goes ahead: the private method is not inherited")
+    void virtual_superclassPrivateMethodNotReported() {
+        assertPayload(mapper, new RenameSymbolTool(() -> service), envelope, at("methods/Lower.java", 3, 9, "hidden"),
+            success(map(
+                "oldName", "shown",
+                "newName", "hidden",
+                "symbolKind", "method",
+                "totalEdits", 1,
+                "filesAffected", 1,
+                "editsByFile", map(ROOT + "methods/Lower.java", List.of(
+                    map("line", 3, "column", 9, "endColumn", 14, "oldText", "shown", "newText", "hidden")))),
+                map("totalCount", 1, "returnedCount", 1, "suggestedNextTools", NEXT_TOOLS)),
+            NestedTypes.unixFiles());
+    }
+
+    @Test
+    @DisplayName("a method overriding a method of a unit with syntax errors is refused, checked from the method it overrides")
+    void virtual_overriddenMethodInBrokenUnit() {
+        assertRefused("broken/Fixer.java", 3, 9, "mend",
+            "This refactoring cannot be performed correctly due to syntax errors in the compilation unit."
+                + " To perform this operation you will need to fix the errors.");
+    }
+
+    @Test
+    @DisplayName("a method whose only potential match lies in a unit with syntax errors is refused, naming the unit")
+    void virtual_potentialMatchInBrokenUnit() {
+        assertRefused("broken/Lone.java", 3, 9, "alone",
+            "'" + ROOT + "broken/LoneUser.java' has syntax errors. Content of that file will not be updated.");
+    }
+
+    @Test
+    @DisplayName("a private method renamed to the name of a method of its class with other parameter types goes ahead with JDT's warning")
+    void method_privateOtherParameterTypesWarned() {
+        assertPayload(mapper, new RenameSymbolTool(() -> service), envelope, at("methods/Typed.java", 3, 17, "set"),
+            success(map(
+                "oldName", "put",
+                "newName", "set",
+                "symbolKind", "method",
+                "totalEdits", 1,
+                "filesAffected", 1,
+                "editsByFile", map(ROOT + "methods/Typed.java", List.of(
+                    map("line", 3, "column", 17, "endColumn", 20, "oldText", "put", "newText", "set"))),
+                "warnings", List.of("'com.example.methods.Typed' or a type in its hierarchy defines a method 'set'"
+                    + " with the same number of parameters, but different parameter type names.")),
+                map("totalCount", 1, "returnedCount", 1, "suggestedNextTools", NEXT_TOOLS)),
+            NestedTypes.unixFiles());
+    }
+
+    // ========== warnings of the other kinds ==========
+
+    @Test
+    @DisplayName("a member type renamed to a lowercase name goes ahead with JDT's naming warning")
+    void type_lowercaseNameWarned() {
+        assertPayload(mapper, new RenameSymbolTool(() -> service), envelope, at("types/Delta.java", 4, 17, "first"),
+            success(map(
+                "oldName", "First",
+                "newName", "first",
+                "symbolKind", "class",
+                "totalEdits", 1,
+                "filesAffected", 1,
+                "editsByFile", map(ROOT + "types/Delta.java", List.of(
+                    map("line", 4, "column", 17, "endColumn", 22, "oldText", "First", "newText", "first"))),
+                "warnings", List.of("By convention, Java type names usually start with an uppercase letter")),
+                map("totalCount", 1, "returnedCount", 1, "suggestedNextTools", NEXT_TOOLS)),
+            NestedTypes.unixFiles());
+    }
+
+    @Test
+    @DisplayName("a field renamed to an uppercase name goes ahead with JDT's naming warning")
+    void field_uppercaseNameWarned() {
+        assertPayload(mapper, new RenameSymbolTool(() -> service), envelope, at("fields/Fields.java", 3, 8, "Count"),
+            success(map(
+                "oldName", "count",
+                "newName", "Count",
+                "symbolKind", "field",
+                "totalEdits", 1,
+                "filesAffected", 1,
+                "editsByFile", map(ROOT + "fields/Fields.java", List.of(
+                    map("line", 3, "column", 8, "endColumn", 13, "oldText", "count", "newText", "Count"))),
+                "warnings", List.of("The field name is discouraged. According to convention, field names should"
+                    + " start with a lowercase letter.")),
+                map("totalCount", 1, "returnedCount", 1, "suggestedNextTools", NEXT_TOOLS)),
+            NestedTypes.unixFiles());
+    }
+
+    @Test
+    @DisplayName("a local renamed to an uppercase name goes ahead with JDT's naming warning")
+    void local_uppercaseNameWarned() {
+        assertPayload(mapper, new RenameSymbolTool(() -> service), envelope, at("locals/Locals.java", 4, 12, "A"),
+            success(map(
+                "oldName", "a",
+                "newName", "A",
+                "symbolKind", "variable",
+                "totalEdits", 2,
+                "filesAffected", 1,
+                "editsByFile", map(ROOT + "locals/Locals.java", List.of(
+                    map("line", 6, "column", 15, "endColumn", 16, "oldText", "a", "newText", "A"),
+                    map("line", 4, "column", 12, "endColumn", 13, "oldText", "a", "newText", "A"))),
+                "warnings", List.of("This name is discouraged. According to convention, names of local variables"
+                    + " should start with a lowercase letter.")),
+                map("totalCount", 2, "returnedCount", 2, "suggestedNextTools", NEXT_TOOLS)),
+            NestedTypes.unixFiles());
+    }
+
+    // ========== elements rename_symbol does not rename, and modules ==========
+
+    @Test
+    @DisplayName("a package name, at its last segment, is refused, naming the package")
+    void package_refused() {
+        assertPayload(mapper, new RenameSymbolTool(() -> service), envelope, at("types/Beta.java", 0, 20, "kinds"),
+            invalidParameter("Invalid parameter 'position': Symbol at position is the package com.example.types,"
+                + " which rename_symbol does not rename"));
+    }
+
+    @Test
+    @DisplayName("a package declaration is refused, naming it")
+    void packageDeclaration_refused() {
+        assertPayload(mapper, new RenameSymbolTool(() -> service), envelope, at("types/Beta.java", 0, 0, "kinds"),
+            invalidParameter("Invalid parameter 'position': Symbol at position is the package declaration"
+                + " com.example.types, which rename_symbol does not rename"));
+    }
+
+    @Test
+    @DisplayName("an import declaration is refused, naming it")
+    void importDeclaration_refused() {
+        assertPayload(mapper, new RenameSymbolTool(() -> service), envelope, at("types/Beta.java", 2, 0, "Lists"),
+            invalidParameter("Invalid parameter 'position': Symbol at position is the import declaration"
+                + " java.util.List, which rename_symbol does not rename"));
+    }
+
+    @Test
+    @DisplayName("a module, at its declaration's keyword, is renamed in its declaration, as JDT's module rename finds no conflict")
+    void module_renamed() throws Exception {
+        JdtServiceImpl modular = helper.loadProject("modular-maven");
+        ObjectNode args = mapper.createObjectNode();
+        args.put("filePath", helper.getFixturePath("modular-maven").resolve("src/main/java/module-info.java").toString());
+        args.put("line", 0);
+        args.put("column", 0);
+        args.put("newName", "renamed");
+        assertPayload(mapper, new RenameSymbolTool(() -> modular), new EnvelopeHarness(modular), args,
+            success(map(
+                "oldName", "com.example.modular",
+                "newName", "renamed",
+                "symbolKind", "module",
+                "totalEdits", 1,
+                "filesAffected", 1,
+                "editsByFile", map("src/main/java/module-info.java", List.of(
+                    map("line", 0, "column", 7, "endColumn", 26, "oldText", "com.example.modular", "newText", "renamed")))),
+                map("totalCount", 1, "returnedCount", 1, "suggestedNextTools", NEXT_TOOLS)),
+            NestedTypes.unixFiles());
     }
 
     // ========== locals and type parameters ==========

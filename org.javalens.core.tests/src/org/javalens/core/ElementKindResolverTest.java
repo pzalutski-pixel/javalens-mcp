@@ -2,6 +2,7 @@ package org.javalens.core;
 
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IImportDeclaration;
+import org.eclipse.jdt.core.IModuleDescription;
 import org.eclipse.jdt.core.IInitializer;
 import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IJavaProject;
@@ -225,6 +226,16 @@ class ElementKindResolverTest {
         IImportDeclaration first = imports[0];
         assertEquals(IJavaElement.IMPORT_DECLARATION, first.getElementType());
         assertEquals("import", ElementKindResolver.kindOf(first));
+    }
+
+    @Test
+    @DisplayName("A module resolves to 'module' (JAVA_MODULE branch)")
+    void module_branch() throws Exception {
+        // modular-maven's module-info.java declares the module com.example.modular.
+        JdtServiceImpl modular = helper.loadProject("modular-maven");
+        IModuleDescription module = modular.getJavaProject().getModuleDescription();
+        assertEquals("com.example.modular", module.getElementName());
+        assertEquals("module", ElementKindResolver.kindOf(module));
     }
 
     @Test

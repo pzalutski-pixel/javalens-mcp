@@ -5,11 +5,15 @@ import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IPath;
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IField;
+import org.eclipse.jdt.core.IImportDeclaration;
 import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IJavaProject;
 import org.eclipse.jdt.core.ILocalVariable;
 import org.eclipse.jdt.core.IMember;
 import org.eclipse.jdt.core.IMethod;
+import org.eclipse.jdt.core.IModuleDescription;
+import org.eclipse.jdt.core.IPackageDeclaration;
+import org.eclipse.jdt.core.IPackageFragment;
 import org.eclipse.jdt.core.ISourceRange;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.ITypeParameter;
@@ -28,6 +32,7 @@ import org.eclipse.jdt.internal.corext.refactoring.rename.MethodChecks;
 import org.eclipse.jdt.internal.corext.refactoring.rename.RenameEnumConstProcessor;
 import org.eclipse.jdt.internal.corext.refactoring.rename.RenameFieldProcessor;
 import org.eclipse.jdt.internal.corext.refactoring.rename.RenameLocalVariableProcessor;
+import org.eclipse.jdt.internal.corext.refactoring.rename.RenameModuleProcessor;
 import org.eclipse.jdt.internal.corext.refactoring.rename.RenameNonVirtualMethodProcessor;
 import org.eclipse.jdt.internal.corext.refactoring.rename.RenameTypeParameterProcessor;
 import org.eclipse.jdt.internal.corext.refactoring.rename.RenameTypeProcessor;
@@ -134,6 +139,11 @@ public class RenameSymbolTool extends AbstractTool {
             IMPORTANT: Uses ZERO-BASED coordinates.
 
             """ + POTENTIAL_MATCHES + """
+            A module is renamed in its declaration and its references. A package
+            (renamed with its folder, which no text edit does), a package
+            declaration or an import declaration is refused: INVALID_PARAMETER
+            for position, naming it.
+
             Requires load_project to be called first.
             """;
     }
@@ -190,6 +200,15 @@ public class RenameSymbolTool extends AbstractTool {
                     "Symbol at position is the anonymous class " + ElementNames.qualifiedName(type)
                         + ", which has no name to rename");
             }
+            // A package is renamed with its folder, which no edit of a file's text can do; a package
+            // or import declaration is no symbol of its own
+            String unrenamed = element instanceof IPackageFragment ? "package"
+                : element instanceof IPackageDeclaration ? "package declaration"
+                : element instanceof IImportDeclaration ? "import declaration" : null;
+            if (unrenamed != null) {
+                return ToolResponse.invalidParameter("position", "Symbol at position is the " + unrenamed + " "
+                    + element.getElementName() + ", which rename_symbol does not rename");
+            }
 
             String oldName = element.getElementName();
             String symbolKind = getElementKind(element);
@@ -215,7 +234,7 @@ public class RenameSymbolTool extends AbstractTool {
                 Collected collected = collect(ripple, oldName, newName, service);
                 RefactoringInvoker.Findings findings = MethodChecks.isVirtual(method)
                     ? RefactoringInvoker.findings(VirtualMethodRenameConditions.check(
-                        method, ripple, newName, collected.occurrences(), service), service)
+                        method, ripple, newName, collected.occurrences(), collected.potential(), service), service)
                     : jdtFindings(method, newName, service);
                 if (!findings.conflicts().isEmpty()) {
                     return ToolResponse.invalidParameter("newName", String.join("; ", findings.conflicts()));
@@ -264,7 +283,7 @@ public class RenameSymbolTool extends AbstractTool {
      * RenameTypeProcessor, RenameFieldProcessor and RenameEnumConstProcessor,
      * RenameNonVirtualMethodProcessor (for a method MethodChecks.isVirtual rejects: its related
      * methods are the method alone, RippleMethodFinder2.getRelatedMethods :175-184),
-     * RenameLocalVariableProcessor and RenameTypeParameterProcessor.
+     * RenameLocalVariableProcessor, RenameTypeParameterProcessor and RenameModuleProcessor.
      */
     private static RefactoringInvoker.Findings jdtFindings(IJavaElement element, String newName,
                                                            IJdtService service) throws CoreException {
@@ -292,6 +311,10 @@ public class RenameSymbolTool extends AbstractTool {
             RenameTypeParameterProcessor parameterProcessor = new RenameTypeParameterProcessor(parameter);
             parameterProcessor.setUpdateReferences(true);
             processor = parameterProcessor;
+        } else if (element instanceof IModuleDescription module) {
+            RenameModuleProcessor moduleProcessor = new RenameModuleProcessor(module);
+            moduleProcessor.setUpdateReferences(true);
+            processor = moduleProcessor;
         } else {
             throw new IllegalStateException("No JDT rename processor for " + element.getElementName());
         }
@@ -317,11 +340,9 @@ public class RenameSymbolTool extends AbstractTool {
 
     /**
      * The edits renaming {@code members} (a type or a field, or a method and every method renamed
-     * with it) from {@code oldName} to {@code newName}, found by SearchEngine. Closes issue #13's
-     * failure mode where the AST-binding path lost references at scale: visiting every project
-     * file with full binding resolution intermittently produced null bindings under JDT index
-     * pressure on multi-thousand-file projects. SearchEngine is index-driven, it doesn't
-     * re-resolve bindings per file, so it stays correct at scale.
+     * with it, or a module) from {@code oldName} to {@code newName}, found by SearchEngine, which is
+     * index-driven and resolves no bindings per file, so the references it finds do not depend on
+     * how many files the project has.
      */
     private Collected collect(List<? extends IMember> members, String oldName, String newName,
                               IJdtService service) throws Exception {

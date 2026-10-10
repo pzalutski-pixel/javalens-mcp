@@ -23,9 +23,17 @@ public class Hosts {
             };
             mark.tag();
             class Sub extends Base {
+                int count;
+
                 void b() {
                 }
+
+                private int twice() {
+                    return count * 2;
+                }
             }
+            Sub sub = new Sub();
+            sub.count = sub.twice();
         };
     }
 }

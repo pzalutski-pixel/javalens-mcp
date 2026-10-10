@@ -65,7 +65,12 @@ class RenameConflictParityTest {
         "shadowmethods/Base.java, 3, 9, m",
         "shadowmethods/Host.java, 3, 9, m",
         "broken/Fine.java, 3, 9, ring",
-        "broken/Broken.java, 3, 9, mend"
+        "broken/Broken.java, 3, 9, mend",
+        "annotations/Tag.java, 3, 11, note",
+        "shadowmethods/Callee.java, 3, 9, m",
+        "methods/Lower.java, 3, 9, hidden",
+        "broken/Fixer.java, 3, 9, mend",
+        "broken/Lone.java, 3, 9, alone"
     })
     @SuppressWarnings("unchecked")
     void findingsEqualJdts(String file, int line, int column, String newName) throws Exception {
@@ -84,13 +89,13 @@ class RenameConflictParityTest {
         args.put("newName", newName);
         ToolResponse response = new RenameSymbolTool(() -> service).execute(args);
 
-        if (jdt.conflicts().isEmpty()) {
-            assertEquals(true, response.isSuccess(), () -> "rename_symbol refused: " + response.getError().getMessage());
-            Object warnings = ((Map<String, Object>) response.getData()).getOrDefault("warnings", List.of());
-            assertEquals(jdt.warnings(), warnings);
-        } else {
-            assertEquals("Invalid parameter 'newName': " + String.join("; ", jdt.conflicts()),
-                response.getError().getMessage());
-        }
+        // Each outcome as one text: a refusal's message, or a success's warnings
+        String expected = jdt.conflicts().isEmpty()
+            ? "goes ahead, warnings " + jdt.warnings()
+            : "refused: Invalid parameter 'newName': " + String.join("; ", jdt.conflicts());
+        String actual = response.isSuccess()
+            ? "goes ahead, warnings " + ((Map<String, Object>) response.getData()).getOrDefault("warnings", List.of())
+            : "refused: " + response.getError().getMessage();
+        assertEquals(expected, actual);
     }
 }
