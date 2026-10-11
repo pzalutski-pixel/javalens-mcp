@@ -75,7 +75,7 @@ class PotentialRefactoringTest {
     }
 
     @Test
-    @DisplayName("change_method_signature renaming Store.fill to pour edits the declaration and Client's 2 calls, reports store::fill, and never edits Stray's 2 potential matches")
+    @DisplayName("change_method_signature renaming Store.fill to pour edits the declaration and Client's 2 calls, reports store::fill with the compile error it gets, and never edits Stray's 2 potential matches")
     void changeSignature() {
         Map<String, Object> data = map(
             "oldName", "fill",
@@ -94,6 +94,8 @@ class PotentialRefactoringTest {
                 CLIENT, List.of(
                     callEdit(14, 8, 21, "store.fill(1)", "store.pour(1)"),
                     callEdit(25, 12, 30, "all.get(0).fill(6)", "all.get(0).pour(6)"))),
+            "introducedProblems", List.of(map("filePath", CLIENT, "line", 16, "column", 29, "message",
+                "The type Store does not define fill(int) that is applicable here, in Client.use")),
             "methodReferences", List.of(map("filePath", CLIENT, "line", 16, "column", 29, "text", "store::fill",
                 "reason", "Method reference cannot be automatically rewritten; the functional-interface "
                     + "signature would no longer match. Replace with a lambda or refactor manually.")),

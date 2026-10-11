@@ -76,12 +76,15 @@ class ChangeMethodSignatureToolTest {
     }
 
     @Test
-    @DisplayName("remove parameter: declaration newSignature drops `count`; each call drops its argument")
+    @DisplayName("remove parameter: declaration newSignature drops `count`; each call drops its argument; JDT notes that the body still uses count, which the field count captures")
     void removesParameter() {
         ObjectNode args = formatMessageArgs(null, null);
         args.set("newParameters", params("message", "String", null));
-        assertPayload(args, formatMessage("formatMessage", "String", List.of("message", "String"),
-            "String formatMessage(String message)", "formatMessage(\"Items\")", "formatMessage(\"Total\")"));
+        Map<String, Object> expected = formatMessage("formatMessage", "String", List.of("message", "String"),
+            "String formatMessage(String message)", "formatMessage(\"Items\")", "formatMessage(\"Total\")");
+        data(expected).put("introducedProblems", List.of(problem(72, 32,
+            "Removed parameter 'count' is used in method 'formatMessage' declared in type 'RefactoringTarget'.")));
+        assertPayload(args, expected);
     }
 
     @Test
@@ -95,16 +98,20 @@ class ChangeMethodSignatureToolTest {
     }
 
     @Test
-    @DisplayName("changing formatMessage's return type to void, which its body and callers in its file use, is refused, naming each compile error")
+    @DisplayName("changing formatMessage's return type to void, which its body and callers in its file use, goes ahead, listing each compile error it introduces")
     void changesReturnType() {
-        // formatMessage (line 71, return type at 11) returns a String its callers in
-        // printMessages (line 78, return type at 11) assign and print: void breaks all three
-        String at = "src/main/java/com/example/RefactoringTarget.java:";
-        assertPayload(formatMessageArgs(null, "void"), refusal("Invalid parameter 'newParameters': "
-            + "Void methods cannot return a value, in RefactoringTarget.formatMessage at " + at + "71:11; "
-            + "Type mismatch: cannot convert from void to String, in RefactoringTarget.printMessages at " + at + "78:11; "
-            + "The method println(boolean) in the type PrintStream is not applicable for the arguments (void),"
-            + " in RefactoringTarget.printMessages at " + at + "78:11"));
+        // formatMessage's body returns a value (the return statement at line 72, column 8);
+        // printMessages assigns its result (the call at line 79, column 24) and prints it (println
+        // at line 81, column 19): void breaks all three
+        Map<String, Object> expected = formatMessage("formatMessage", "void", List.of("message", "String",
+            "count", "int"), "void formatMessage(String message, int count)", "formatMessage(\"Items\", 5)",
+            "formatMessage(\"Total\", 10)");
+        data(expected).put("introducedProblems", List.of(
+            problem(72, 8, "Void methods cannot return a value, in RefactoringTarget.formatMessage"),
+            problem(79, 24, "Type mismatch: cannot convert from void to String, in RefactoringTarget.printMessages"),
+            problem(81, 19, "The method println(boolean) in the type PrintStream is not applicable for the arguments"
+                + " (void), in RefactoringTarget.printMessages")));
+        assertPayload(formatMessageArgs(null, "void"), expected);
     }
 
     // ========== Required Parameter Tests ==========
@@ -174,7 +181,7 @@ class ChangeMethodSignatureToolTest {
     }
 
     @Test
-    @DisplayName("adding a parameter to a method consumed via method reference (Foo::method) reports that reference with a warning and leaves its file unedited")
+    @DisplayName("adding a parameter to a method consumed via method reference (Foo::method) reports that reference with a warning and the compile error it gets, and leaves its file unedited")
     void addParam_methodReferenceCallSite_isSurfaced() {
         // MethodRefUser holds `IntFunction<String> formatter = MethodRefTarget::formatId;` (line
         // 15, the reference at column 40). IntFunction expects (int), so no textual rewrite fits.
@@ -182,14 +189,18 @@ class ChangeMethodSignatureToolTest {
         String user = "src/main/java/com/example/MethodRefUser.java";
         ObjectNode args = at(projectPath.resolve(target).toString(), 8, 25);
         args.set("newParameters", params("id", "int", null, "prefix", "String", "\"\""));
-        assertPayload(args, payload("formatId", "formatId", List.of("String", "String"), 1,
+        Map<String, Object> expected = payload("formatId", "formatId", List.of("String", "String"), 1,
             List.of("id", "int", "prefix", "String"),
             Map.of(target, List.of(declaration(8, 18, "String formatId(int id)", "String formatId(int id, String prefix)"))),
-            List.of(methodReference(user, 15, 40, "MethodRefTarget::formatId"))));
+            List.of(methodReference(user, 15, 40, "MethodRefTarget::formatId")));
+        // The reference, in MethodRefUser.use, no longer fits IntFunction's apply(int)
+        data(expected).put("introducedProblems", List.of(problem(user, 15, 40,
+            "The type MethodRefTarget does not define formatId(int) that is applicable here, in MethodRefUser.use")));
+        assertPayload(args, expected);
     }
 
     @Test
-    @DisplayName("adding a parameter to SuperMethodParent.greet propagates to super.greet(name) and reports the super::greet reference")
+    @DisplayName("adding a parameter to SuperMethodParent.greet propagates to super.greet(name) and reports the super::greet reference with the compile error it gets")
     void addParam_propagatesToSuperMethodInvocation() {
         // SuperMethodChild calls super.greet(name) (line 17), a SuperMethodInvocation, and
         // captures super::greet (line 21), a method reference that cannot be rewritten.
@@ -197,12 +208,17 @@ class ChangeMethodSignatureToolTest {
         String child = "src/main/java/com/example/SuperMethodChild.java";
         ObjectNode args = at(projectPath.resolve(parent).toString(), 8, 18);
         args.set("newParameters", params("name", "String", null, "suffix", "String", "\"\""));
-        assertPayload(args, payload("greet", "greet", List.of("String", "String"), 1,
+        Map<String, Object> expected = payload("greet", "greet", List.of("String", "String"), 1,
             List.of("name", "String", "suffix", "String"),
             Map.of(
                 parent, List.of(declaration(8, 11, "String greet(String name)", "String greet(String name, String suffix)")),
                 child, List.of(call(17, 15, "super.greet(name)", "super.greet(name, \"\")"))),
-            List.of(methodReference(child, 21, 15, "super::greet"))));
+            List.of(methodReference(child, 21, 15, "super::greet")));
+        // The reference, in SuperMethodChild.greetReference, no longer fits Function's apply(String)
+        data(expected).put("introducedProblems", List.of(problem(child, 21, 15,
+            "The type SuperMethodParent does not define greet(String) that is applicable here,"
+                + " in SuperMethodChild.greetReference")));
+        assertPayload(args, expected);
     }
 
     // ========== Behavior-matrix coverage ==========
@@ -215,13 +231,21 @@ class ChangeMethodSignatureToolTest {
     }
 
     @Test
-    @DisplayName("removing all of formatMessage's parameters, which its body reads, is refused, naming the compile error")
+    @DisplayName("removing all of formatMessage's parameters, which its body reads, goes ahead, listing the compile error and each removed parameter still used, count used through the field count")
     void removesAllParameters() {
-        // formatMessage's body reads message first, which no longer resolves
+        // formatMessage's body (line 72) reads message at column 15, which no longer resolves, and
+        // count at column 32, which the field count (line 16) now captures
         ObjectNode args = formatMessageArgs(null, null);
         args.set("newParameters", objectMapper.createArrayNode());
-        assertPayload(args, refusal("Invalid parameter 'newParameters': message cannot be resolved to a variable,"
-            + " in RefactoringTarget.formatMessage at src/main/java/com/example/RefactoringTarget.java:71:11"));
+        Map<String, Object> expected = formatMessage("formatMessage", "String", List.of(), "String formatMessage()",
+            "formatMessage()", "formatMessage()");
+        data(expected).put("introducedProblems", List.of(
+            problem(72, 15, "Removed parameter 'message' is used in method 'formatMessage' declared in type"
+                + " 'RefactoringTarget'."),
+            problem(72, 15, "message cannot be resolved to a variable, in RefactoringTarget.formatMessage"),
+            problem(72, 32, "Removed parameter 'count' is used in method 'formatMessage' declared in type"
+                + " 'RefactoringTarget'.")));
+        assertPayload(args, expected);
     }
 
     @Test
@@ -430,6 +454,27 @@ class ChangeMethodSignatureToolTest {
         payload.put("data", data);
         payload.put("meta", meta);
         return payload;
+    }
+
+    /** The data of {@code payload}, a success payload. */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> data(Map<String, Object> payload) {
+        return (Map<String, Object>) payload.get("data");
+    }
+
+    /** A problem the change introduces in RefactoringTarget, at its line and column as it is now. */
+    private static Map<String, Object> problem(int line, int column, String message) {
+        return problem(REFACTORING_TARGET, line, column, message);
+    }
+
+    /** A problem the change introduces in {@code file}, at its line and column as it is now. */
+    private static Map<String, Object> problem(String file, int line, int column, String message) {
+        Map<String, Object> problem = new LinkedHashMap<>();
+        problem.put("filePath", file);
+        problem.put("line", line);
+        problem.put("column", column);
+        problem.put("message", message);
+        return problem;
     }
 
     private static Map<String, Object> refusal(String message) {

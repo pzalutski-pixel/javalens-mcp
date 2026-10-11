@@ -84,6 +84,18 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 15). Box declares the field width and the constructor {@code Box(int width)} (line 5, column 4)
  * assigning {@code this.width = width} (the parameter at line 6, column 21), and creates
  * {@code new Box(4)} (line 10, column 15).
+ *
+ * <p>Area declares the fields width and height; {@code int scaled(int k)} (line 6, return type at 4,
+ * name at 8) returns {@code k * width} (line 7, k at 15, width at 19); {@code int area(int width)}
+ * (line 10) returns {@code width * height} (line 11, width at 15); {@code void report(int k)} (line
+ * 14, name at 9) prints {@code k + width} in an anonymous Runnable whose run() declares the local
+ * width (line 18, k at 35) and {@code k + height} in a lambda body declaring the local height (line
+ * 23, k at 31). Spread declares {@code int join(String... parts)} (line 3, name at 8), called as
+ * {@code join(new String[] {"a", "b"})} (line 12, column 15), and {@code long total(int xs[])}
+ * (line 7, name at 9). Descend declares {@code int fall(int depth, int step, int unused)} (line 3)
+ * returning {@code depth <= 0 ? 0 : fall(depth - step, step, depth)} (line 4: depth at 15, the call
+ * at 32 to 63). Meter declares {@code int read()} (line 3) returning 1 (line 4, column 15);
+ * MeterUse returns {@code meter.read() * 2} (line 4, column 15).
  * Raw offsets are not pinned and texts are compared with "\n" line endings.
  */
 class SignatureParametersTest {
@@ -110,6 +122,11 @@ class SignatureParametersTest {
     private static final String RULER = PARAMS + "Ruler.java";
     private static final String SWAP = PARAMS + "Swap.java";
     private static final String BOX = PARAMS + "Box.java";
+    private static final String AREA = PARAMS + "Area.java";
+    private static final String SPREAD = PARAMS + "Spread.java";
+    private static final String DESCEND = PARAMS + "Descend.java";
+    private static final String METER = PARAMS + "Meter.java";
+    private static final String METER_USE = PARAMS + "MeterUse.java";
 
     private static final List<String> NEXT_TOOLS = List.of(
         "Apply the text edits to complete the signature change",
@@ -464,11 +481,175 @@ class SignatureParametersTest {
     // ========== names that collide ==========
 
     @Test
-    @DisplayName("Renaming factor to twice, the name of a local of Doubler.apply, is refused, naming the compile error and the declaration")
+    @DisplayName("Renaming factor to twice, the name of a local of Doubler.apply, is refused at each renamed reference the local would capture")
     void renameToLocalNameRefused() {
         assertRefused(args(helper.getFixturePath(FIXTURE), SCALER, 13, 8,
                 map("name", "twice", "oldName", "factor", "type", "int")),
-            "Duplicate local variable twice, in Doubler.apply at " + DOUBLER + ":5:11");
+            "Name collision with name 'twice', in Doubler.apply at " + DOUBLER + ":6:20; "
+                + "Name collision with name 'twice', in Doubler.apply at " + DOUBLER + ":7:23; "
+                + "Name collision with name 'twice', in Doubler.apply at " + DOUBLER + ":7:32");
+    }
+
+    @Test
+    @DisplayName("Renaming Area.scaled's k to width is refused at the reference to the field width the parameter would capture")
+    void renameCapturingFieldRefused() {
+        assertRefused(args(helper.getFixturePath(FIXTURE), AREA, 6, 8, map("name", "width", "oldName", "k", "type", "int")),
+            "Name collision with name 'width', in Area.scaled at " + AREA + ":7:19");
+    }
+
+    @Test
+    @DisplayName("Renaming Area.report's k to width is refused at the reference a local of the anonymous class would capture")
+    void renameToLocalOfAnonymousClassRefused() {
+        assertRefused(args(helper.getFixturePath(FIXTURE), AREA, 14, 9, map("name", "width", "oldName", "k", "type", "int")),
+            "Name collision with name 'width', in Area$1.run at " + AREA + ":18:35");
+    }
+
+    @Test
+    @DisplayName("Renaming Area.report's k to height is refused at the reference a local of the lambda body would capture")
+    void renameToLocalOfLambdaRefused() {
+        assertRefused(args(helper.getFixturePath(FIXTURE), AREA, 14, 9, map("name", "height", "oldName", "k", "type", "int")),
+            "Name collision with name 'height', in a lambda expression in Area.report at " + AREA + ":23:31");
+    }
+
+    @Test
+    @DisplayName("A blank parameter name is refused, naming its place in the list")
+    void blankNameRefused() {
+        assertRefused(args(helper.getFixturePath(FIXTURE), SWAP, 3, 8,
+                map("name", "a", "type", "int"), map("name", " ", "oldName", "b", "type", "int")),
+            "Enter the name for parameter 2.");
+    }
+
+    // ========== compile errors the change introduces are listed, not refused ==========
+
+    @Test
+    @DisplayName("Removing Area.area's width, which the field width then captures, goes ahead with JDT's note that the removed parameter is used")
+    void removedParameterCapturedByField() {
+        Map<String, Object> data = signature("area", "int", 1, List.of(),
+            map(AREA, List.of(declaration(10, 4, 10, 23, "int area(int width)", "int area()"))));
+        data.put("introducedProblems", List.of(problem(AREA, 11, 15,
+            "Removed parameter 'width' is used in method 'area' declared in type 'Area'.")));
+        assertChange(args(helper.getFixturePath(FIXTURE), AREA, 10, 8), data);
+    }
+
+    @Test
+    @DisplayName("Area.area without width, its edits applied, compiles")
+    void removedParameterCapturedByFieldCompiles() throws Exception {
+        assertAppliedCompiles(root -> args(root, AREA, 10, 8), AREA);
+    }
+
+    @Test
+    @DisplayName("Changing Meter.read to return String lists the compile errors it introduces in Meter and in MeterUse, which only calls it")
+    void returnTypeChangeListsErrorsInEveryFile() {
+        ObjectNode args = args(helper.getFixturePath(FIXTURE), METER, 3, 8);
+        args.put("newReturnType", "String");
+        Map<String, Object> data = signature("read", "int", 0, List.of(), map(
+            METER, List.of(declaration(3, 4, 3, 14, "int read()", "String read()")),
+            METER_USE, List.of(replace(4, 15, 4, 27, "meter.read()", "meter.read()"))));
+        data.put("newReturnType", "String");
+        data.put("introducedProblems", List.of(
+            problem(METER, 4, 15, "Type mismatch: cannot convert from int to String, in Meter.read"),
+            problem(METER_USE, 4, 15, "The operator * is undefined for the argument type(s) String, int, in MeterUse.twice")));
+        assertChange(args, data);
+    }
+
+    @Test
+    @DisplayName("Removing Shifter.shift's offset lists each use left behind: in Mover's lambda, anonymous class and body, and in ShiftUses's two lambdas, each at its place as it is now")
+    void removedParameterUsesListedByPlace() {
+        String note = "Removed parameter 'offset' is used in method 'shift' declared in type ";
+        String unresolved = "offset cannot be resolved to a variable, in ";
+        Map<String, Object> data = signature("shift", "int", 1, List.of(), map(
+            MOVER, List.of(declaration(10, 11, 10, 32, "int shift(int offset)", "int shift()")),
+            SHIFTER, List.of(declaration(3, 4, 3, 25, "int shift(int offset)", "int shift()")),
+            SHIFT_USES, List.of(
+                replace(2, 16, 2, 36, "Shifter#shift(int x)", "Shifter#shift()"),
+                replace(4, 20, 4, 32, "(int offset)", "()"),
+                replace(5, 20, 5, 26, "offset", "()"))));
+        data.put("introducedProblems", List.of(
+            problem(MOVER, 11, 51, note + "'Mover'."),
+            problem(MOVER, 11, 51, unresolved + "a lambda expression in Mover.shift"),
+            problem(MOVER, 14, 23, unresolved + "Mover$1.at"),
+            problem(MOVER, 18, 15, unresolved + "Mover.shift"),
+            problem(SHIFT_USES, 4, 36, note + "'lambda expression implemented in 'ShiftUses''."),
+            problem(SHIFT_USES, 4, 36, unresolved + "a lambda expression in ShiftUses.typed"),
+            problem(SHIFT_USES, 6, 22, note + "'lambda expression implemented in 'ShiftUses''."),
+            problem(SHIFT_USES, 6, 22, unresolved + "a lambda expression in ShiftUses.block")));
+        assertChange(args(helper.getFixturePath(FIXTURE), SHIFTER, 3, 8), data);
+    }
+
+    // ========== varargs and extra dimensions ==========
+
+    @Test
+    @DisplayName("Changing Spread.join's String... parts to Object... keeps it varargs")
+    void varargsToVarargs() {
+        assertChange(args(helper.getFixturePath(FIXTURE), SPREAD, 3, 8, map("name", "parts", "type", "Object...")),
+            joinData("Object...", "int join(Object... parts)"));
+    }
+
+    @Test
+    @DisplayName("Changing Spread.join's String... parts to Object[] makes it an array parameter")
+    void varargsToArray() {
+        assertChange(args(helper.getFixturePath(FIXTURE), SPREAD, 3, 8, map("name", "parts", "type", "Object[]")),
+            joinData("Object[]", "int join(Object[] parts)"));
+    }
+
+    @Test
+    @DisplayName("Changing Spread.join's String... parts to String[] makes it an array parameter of the same element type")
+    void varargsToArrayOfSameElementType() {
+        assertChange(args(helper.getFixturePath(FIXTURE), SPREAD, 3, 8, map("name", "parts", "type", "String[]")),
+            joinData("String[]", "int join(String[] parts)"));
+    }
+
+    @Test
+    @DisplayName("Changing Spread.total's int xs[] to long[] drops the dimensions written after the name")
+    void extraDimensionsDropped() {
+        assertChange(args(helper.getFixturePath(FIXTURE), SPREAD, 7, 9, map("name", "xs", "type", "long[]")),
+            signature("total", "long", 1, List.of(map("name", "xs", "type", "long[]")), map(
+                SPREAD, List.of(declaration(7, 4, 7, 24, "long total(int xs[])", "long total(long[] xs)")))));
+    }
+
+    @Test
+    @DisplayName("Spread.join with parts changed to Object..., its edits applied, compiles")
+    void varargsToVarargsCompiles() throws Exception {
+        assertAppliedCompiles(root -> args(root, SPREAD, 3, 8, map("name", "parts", "type", "Object...")), SPREAD);
+    }
+
+    @Test
+    @DisplayName("Spread.join with parts changed to Object[], its edits applied, compiles")
+    void varargsToArrayCompiles() throws Exception {
+        assertAppliedCompiles(root -> args(root, SPREAD, 3, 8, map("name", "parts", "type", "Object[]")), SPREAD);
+    }
+
+    @Test
+    @DisplayName("Spread.join with parts changed to String[], its edits applied, compiles")
+    void varargsToArrayOfSameElementTypeCompiles() throws Exception {
+        assertAppliedCompiles(root -> args(root, SPREAD, 3, 8, map("name", "parts", "type", "String[]")), SPREAD);
+    }
+
+    @Test
+    @DisplayName("Spread.total with xs changed to long[], its edits applied, compiles")
+    void extraDimensionsDroppedCompiles() throws Exception {
+        assertAppliedCompiles(root -> args(root, SPREAD, 7, 9, map("name", "xs", "type", "long[]")), SPREAD);
+    }
+
+    // ========== a reordered call dropping an argument that holds a changed place ==========
+
+    @Test
+    @DisplayName("Reordering Descend.fall's parameters, renaming depth to level and removing unused drops the recursive call's third argument, depth, with its rename")
+    void droppedArgumentHoldingRename() {
+        assertChange(args(helper.getFixturePath(FIXTURE), DESCEND, 3, 8,
+                map("name", "step", "type", "int"), map("name", "level", "oldName", "depth", "type", "int")),
+            signature("fall", "int", 3, List.of(map("name", "step", "type", "int"), map("name", "level", "type", "int")),
+                map(DESCEND, List.of(
+                    declaration(3, 4, 3, 45, "int fall(int depth, int step, int unused)", "int fall(int step, int level)"),
+                    replace(4, 15, 4, 20, "depth", "level"),
+                    replace(4, 32, 4, 63, "fall(depth - step, step, depth)", "fall(step, level - step)")))));
+    }
+
+    @Test
+    @DisplayName("Descend.fall reordered with depth renamed to level and unused removed, its edits applied, compiles")
+    void droppedArgumentHoldingRenameCompiles() throws Exception {
+        assertAppliedCompiles(root -> args(root, DESCEND, 3, 8,
+            map("name", "step", "type", "int"), map("name", "level", "oldName", "depth", "type", "int")), DESCEND);
     }
 
     @Test
@@ -516,6 +697,27 @@ class SignatureParametersTest {
             + " should start with a lowercase letter."));
         assertChange(args(helper.getFixturePath(FIXTURE), SWAP, 3, 8,
             map("name", "A", "oldName", "a", "type", "int"), map("name", "b", "type", "int")), data);
+    }
+
+    @Test
+    @DisplayName("Swap.diff with a renamed to A, its edits applied, compiles")
+    void uppercaseNameCompiles() throws Exception {
+        assertAppliedCompiles(root -> args(root, SWAP, 3, 8,
+            map("name", "A", "oldName", "a", "type", "int"), map("name", "b", "type", "int")), SWAP);
+    }
+
+    /** Spread.join's change to one parameter, parts, of type {@code type}, its call kept as written. */
+    private static Map<String, Object> joinData(String type, String newSignature) {
+        String call = "join(new String[] {\"a\", \"b\"})";
+        return signature("join", "int", 1, List.of(map("name", "parts", "type", type)), map(
+            SPREAD, List.of(
+                declaration(3, 4, 3, 29, "int join(String... parts)", newSignature),
+                replace(12, 15, 12, 44, call, call))));
+    }
+
+    /** A compile error or note the change introduces, at its line and column as the file is now. */
+    private static Map<String, Object> problem(String file, int line, int column, String message) {
+        return map("filePath", file, "line", line, "column", column, "message", message);
     }
 
     /**

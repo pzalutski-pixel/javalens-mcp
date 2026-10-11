@@ -38,8 +38,9 @@ import java.util.Map;
  * the refactoring) is a refusal carrying JDT's own messages; ERROR and below are
  * surfaced as warnings alongside the computed edits, matching how the IDE lets
  * a user proceed past non-fatal findings. {@link #findings}, which rename_symbol
- * uses, counts ERROR with FATAL as a conflict: a rename JDT marks ERROR leaves
- * the code not compiling or not meaning what it meant.
+ * and change_method_signature use, counts ERROR with FATAL as a conflict: a
+ * rename JDT marks ERROR leaves the code not compiling or not meaning what it
+ * meant.
  */
 public final class RefactoringInvoker {
 

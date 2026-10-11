@@ -156,40 +156,52 @@ public final class TextEditConverter {
 
         private final List<Leaf> leaves = new ArrayList<>();
         private final boolean[] taken;
-        private final String source;
 
         /**
-         * @param root   the edit tree of the rewrite
-         * @param source the compilation unit's source the edits were computed against
+         * @param root the edit tree of the rewrite, computed against the source the spans name
          */
-        public Slices(TextEdit root, String source) {
+        public Slices(TextEdit root) {
             collectLeaves(root, leaves);
             leaves.sort(null); // by offset; stable, so tree order is kept within an offset
             this.taken = new boolean[leaves.size()];
-            this.source = source;
         }
 
         /**
-         * The text {@code [start, end)} of the source becomes when every edit within it that no
-         * span has taken yet is applied, insertions at start and at end included; those edits
-         * are taken. An edit crossing start or end is an error: the span's text would be
-         * incomplete.
+         * Where the text a span becomes goes, piece by piece, each piece naming the source text it
+         * stands for, so a place in the text a span becomes can be traced to the source.
          */
-        public String take(int start, int end) {
-            return take(start, end, true);
+        public interface Sink {
+
+            /** The source text {@code [from, to)}, kept as it is; nothing when the range is empty. */
+            void keep(int from, int to);
+
+            /**
+             * {@code text} in place of the source text {@code [from, to)}: an insertion at
+             * {@code from} when the range is empty, a deletion when {@code text} is.
+             */
+            void replace(int from, int to, String text);
         }
 
         /**
-         * As {@link #take(int, int)}, but an insertion at {@code end} is left to the text that
-         * starts there: the text before a node whose own edits begin with an insertion at its
-         * start (ASTRewrite renders a replaced name as a deletion and an insertion there).
+         * Gives {@code sink} the text {@code [start, end)} of the source becomes when every edit
+         * within it that no span has taken yet is applied, insertions at start and at end
+         * included; those edits are taken. An edit crossing start or end is an error: the span's
+         * text would be incomplete.
          */
-        public String takeBefore(int start, int end) {
-            return take(start, end, false);
+        public void take(int start, int end, Sink sink) {
+            take(start, end, true, sink);
         }
 
-        private String take(int start, int end, boolean insertionsAtEnd) {
-            StringBuilder out = new StringBuilder();
+        /**
+         * As {@link #take(int, int, Sink)}, but an insertion at {@code end} is left to the text
+         * that starts there: the text before a node whose own edits begin with an insertion at
+         * its start (ASTRewrite renders a replaced name as a deletion and an insertion there).
+         */
+        public void takeBefore(int start, int end, Sink sink) {
+            take(start, end, false, sink);
+        }
+
+        private void take(int start, int end, boolean insertionsAtEnd, Sink sink) {
             int cursor = start;
             int replacedFrom = -1;
             for (int i = 0; i < leaves.size(); i++) {
@@ -206,20 +218,19 @@ public final class TextEditConverter {
                         + leaf.offset + "+" + leaf.length);
                 }
                 if (leaf.offset >= cursor) {
-                    out.append(source, cursor, leaf.offset);
+                    sink.keep(cursor, leaf.offset);
                     cursor = leaf.offset;
                 } else if (leaf.length > 0 || leaf.offset != replacedFrom) {
                     throw new IllegalStateException("Edits overlap at " + leaf.offset);
                 }
-                out.append(leaf.text);
+                sink.replace(leaf.offset, leafEnd, leaf.text);
                 if (leaf.length > 0) {
                     replacedFrom = leaf.offset;
                     cursor = leafEnd;
                 }
                 taken[i] = true;
             }
-            out.append(source, cursor, end);
-            return out.toString();
+            sink.keep(cursor, end);
         }
 
         /** Fails when an edit of the rewrite was taken by no span. */

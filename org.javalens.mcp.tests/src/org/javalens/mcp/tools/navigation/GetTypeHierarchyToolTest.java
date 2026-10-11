@@ -157,6 +157,27 @@ class GetTypeHierarchyToolTest {
             "totalSubtypes", 0), 2, 1);
     }
 
+    @Test
+    @DisplayName("maxResults 1 lists Calculator's one superclass, java.lang.Object, whole, and meta.truncated=false")
+    void maxResults_equalToCountCutsNothing() throws Exception {
+        // Calculator's source range starts at its Javadoc (line 2), its name at line 5, column 13;
+        // its only superclass is java.lang.Object, of a class file, so without file and line; it
+        // has no interface and no subtype.
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("filePath", calculatorPath);
+        args.put("line", 5);
+        args.put("column", 13);
+        args.put("maxResults", 1);
+        assertWholePayload(args, map(
+            "type", typeInfo("Calculator", "com.example.Calculator", "class", "Calculator.java", 2),
+            "superclasses", List.of(map("name", "Object", "qualifiedName", "java.lang.Object", "kind", "class")),
+            "interfaces", List.of(),
+            "subtypes", List.of(),
+            "totalSuperclasses", 1,
+            "totalInterfaces", 0,
+            "totalSubtypes", 0), 1, 1, false);
+    }
+
     // ========== Parameter Validation Tests ==========
 
     @Test
@@ -415,13 +436,22 @@ class GetTypeHierarchyToolTest {
      */
     private void assertWholePayload(ObjectNode args, Map<String, Object> data, int total, int returned)
             throws Exception {
+        assertWholePayload(args, data, total, returned, true);
+    }
+
+    /**
+     * As {@link #assertWholePayload(ObjectNode, Map, int, int)}, its meta saying whether a list is
+     * cut by {@code truncated}.
+     */
+    private void assertWholePayload(ObjectNode args, Map<String, Object> data, int total, int returned,
+                                    boolean truncated) throws Exception {
         JsonNode expected = objectMapper.valueToTree(map(
             "success", true,
             "data", data,
             "meta", map(
                 "totalCount", total,
                 "returnedCount", returned,
-                "truncated", true,
+                "truncated", truncated,
                 "suggestedNextTools", List.of(
                     "get_type_members to see members of a specific type",
                     "find_implementations to find all implementors",

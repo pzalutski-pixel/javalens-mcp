@@ -12,6 +12,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
+import org.junit.jupiter.api.function.Executable;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -282,6 +283,25 @@ class SignatureOccurrencesTest {
     }
 
     @Test
+    @DisplayName("Pair.pick with its parameters reordered, its edits applied, compiles")
+    void reorderOfArgumentHoldingChangedPlaceCompiles() throws Exception {
+        JdtServiceImpl copy = helper.loadProjectCopy(FIXTURE);
+        Path root = helper.getTempDirectory().resolve(FIXTURE);
+        Map<String, List<Map<String, Object>>> edits = editsByFile(new ChangeMethodSignatureTool(() -> copy),
+            args(root, PAIR, 4, 15, null, newParameter("second", "int", null), newParameter("first", "int", null)));
+        for (Map.Entry<String, List<Map<String, Object>>> file : edits.entrySet()) {
+            Path path = root.resolve(file.getKey());
+            Files.writeString(path, applied(Files.readString(path, StandardCharsets.UTF_8), file.getValue()),
+                StandardCharsets.UTF_8);
+        }
+        JdtServiceImpl reloaded = new JdtServiceImpl();
+        reloaded.loadProject(root);
+        assertAll(
+            () -> assertEquals(Set.of(PAIR), edits.keySet()),
+            () -> assertEquals(List.of(), NestedTypes.errors(reloaded, root.resolve(PAIR)), "errors in Pair.java"));
+    }
+
+    @Test
     @DisplayName("Changing Mix.mix's String s to CharSequence and adding java.util.List<String> items names the parameters in the Javadoc link that names its own, types alone in the other")
     void javadocLinkNamingParameters() {
         assertChange(args(MIX, 7, 22, null, newParameter("a", "int", null), newParameter("s", "CharSequence", null),
@@ -374,7 +394,7 @@ class SignatureOccurrencesTest {
         List<String> files = List.of(STEPS, ORDER, SHAPE, SQUARE, MEASURE, BUILDER, PAIR, MIX, FN, FNS, MODE, ROOT,
             PLAIN, CORE, BUSY);
         assertEquals(Set.copyOf(files), edits.keySet());
-        assertAll(files.stream().map(file -> (org.junit.jupiter.api.function.Executable) () ->
+        assertAll(files.stream().map(file -> (Executable) () ->
             assertEquals(List.of(), NestedTypes.errors(reloaded, root.resolve(file)), "errors in " + file)));
     }
 
