@@ -380,20 +380,37 @@ JavaLens loads three real build systems plus plain Java directories. Each is exe
 | System | Detection | Single-module | Multi-module / multi-project | Compiler compliance from build files | Generated sources | Annotation processors |
 |--------|-----------|:-:|:-:|:-:|:-:|:-:|
 | Maven | `pom.xml` | ✅ | ✅ (reactor classpath aggregation, cross-module navigation) | ✅ (`maven.compiler.release`/`source`/`target`) | ✅ (`target/generated-sources/*`) | ✅ (`<annotationProcessorPaths>` across the whole reactor) |
-| Gradle | `build.gradle` / `build.gradle.kts` | ✅ | ✅ (`settings.gradle include` parsed; per-subproject classpaths unioned) | ✅ (`sourceCompatibility`) | ✅ (`build/generated/sources/<task>/main/java`) | ✅ (`annotationProcessor` configuration) |
+| Gradle | `build.gradle` / `build.gradle.kts` | ✅ | ✅ (projects, custom `projectDir`s, included builds, source sets and classpaths as Gradle reports them) | ✅ (each project's `sourceCompatibility`) | ✅ (the generated-source directories Gradle reports) | ✅ (`annotationProcessor` configuration) |
 | Bazel | `MODULE.bazel` / `WORKSPACE.bazel` / `WORKSPACE` | ✅ | ✅ (every `BUILD.bazel` package scanned for sources; `bazel-bin` ↔ `bazel-out` symlink dedup) | ✅ (`javacopts` `-source`/`-target`/`--release` parsed across `BUILD.bazel` files) | n/a (Bazel actions write into `bazel-bin/`, not `target/generated-sources/`) | ✅ (any classpath jar with `META-INF/services/javax.annotation.processing.Processor` is auto-registered) |
 | Plain Java | `src/` directory | ✅ | n/a | ✅ (falls back to `Runtime.version().feature()` when no build file) | n/a | n/a |
 
-Subprocess invocations of `mvn` / `gradle` happen during project load. If a tool is missing or fails, JavaLens surfaces a structured `LoadWarning` (e.g. `MAVEN_SUBPROCESS_FAILED`, `GRADLE_SUBPROCESS_FAILED`, `COMPLIANCE_LEVEL_UNKNOWN`) in the `load_project` response so callers know analysis quality is degraded rather than silently getting an empty classpath.
+For Gradle projects, JavaLens runs Gradle once during the load with an init script and takes the project structure, source sets, generated-source directories, classpath and per-project levels from what Gradle reports. Nothing is written into the project tree. When Gradle cannot run or fails before reporting the structure, JavaLens reads `settings.gradle` / `settings.gradle.kts` itself as code (comments and strings declare nothing) and lays each included project out by convention. Maven projects run `mvn` for the classpath.
+
+`load_project` and `health_check` both report a `buildModel` summary (build system, where the structure came from: `build-tool`, `static-read` or `convention`, analysis level, modules) and every load warning, so a degraded load is visible wherever the agent looks, including projects auto-loaded through `JAVA_PROJECT_PATH`. Warning codes:
+
+| Code | Meaning |
+|------|---------|
+| `BUILD_TOOL_UNAVAILABLE` / `BUILD_TOOL_FAILED` / `BUILD_TOOL_TIMEOUT` | The build tool could not start, failed, or ran out of time; the message carries its last output |
+| `MODULE_NOT_LOADED` | A declared module or subproject was not loaded (directory missing, invalid path) |
+| `MODULE_LAYOUT_ASSUMED` | A module's source roots were assumed from the conventional layout |
+| `INCLUDED_OUTSIDE_BUILD` | A conventional source folder the build does not declare stays linked |
+| `COMPILED_OUTPUT_INCLUDED` | A module's compiled output holds classes with no source and stays on the classpath |
+| `COMPLIANCE_LEVEL_MIXED` / `COMPLIANCE_LEVEL_UNKNOWN` / `COMPLIANCE_LEVEL_UNSUPPORTED` | Modules declare different levels, none, or one outside JDT's range |
+| `APT_PROCESSOR_JARS_MISSING` | Declared annotation-processor jars are missing |
+| `BAZEL_NOT_BUILT` | Bazel output the classpath needs has not been built |
+| `INDEX_INCOMPLETE` / `LIBRARY_INDEX_INCOMPLETE` | Source files or libraries JDT's search index still lacks after repair; index-backed tool responses name them while it lasts |
+| `JRE_REGISTRATION_FAILED` | The JDK could not be registered with JDT |
+| `EARLIER_PROJECT_KEPT` | An earlier load's workspace project could not be removed |
+| `TIMEOUT_SECONDS_INVALID` | `JAVALENS_TIMEOUT_SECONDS` is out of range or not a number |
 
 ## Configuration
 
 | Environment Variable | Description | Default |
 |---------------------|-------------|---------|
 | `JAVA_PROJECT_PATH` | Auto-load project on startup | (none) |
-| `JAVALENS_TIMEOUT_SECONDS` | Operation timeout | 30 |
+| `JAVALENS_TIMEOUT_SECONDS` | Time limit on each tool call, a whole number of seconds from 5 to 300 (values outside are clamped, other values ignored, each with a `TIMEOUT_SECONDS_INVALID` load warning); a call past it returns `TIMEOUT`. `load_project` and `health_check` are not limited | (none: no limit) |
 | `JAVALENS_DISK_SYNC` | `strict` (every answer verified against disk) or `manual` (agent calls `load_project` after edits) | strict |
-| `JAVALENS_LOG_LEVEL` | TRACE/DEBUG/INFO/WARN/ERROR | INFO |
+| `JAVALENS_LOG_LEVEL` | TRACE/DEBUG/INFO/WARN/ERROR (case-insensitive); logs go to stderr, stdout carries only JSON-RPC | INFO |
 | `JAVA_TOOL_OPTIONS` | JVM options, e.g. `-Xmx2g` for large projects | (default: 512m via eclipse.ini) |
 | `JAVALENS_LOMBOK_JAR` | Path to the Lombok agent jar attached at launch; overrides the bundled one | (bundled) |
 
@@ -430,7 +447,7 @@ Tests gracefully skip when a tool is missing on a developer machine. Set `JAVALE
 JAVALENS_TESTS_REQUIRE_TOOLS=true ./mvnw verify
 ```
 
-Build-system coverage is structured as focused per-bug tests plus realistic end-to-end tests. The end-to-end tests load a single representative project per build system that exercises every fix in one pass — multi-module Maven with Lombok APT and cross-module references; multi-project Gradle with annotation processors; multi-target Bazel with cross-target deps. CI runs them on Linux, macOS, and Windows.
+Build-system coverage is structured as focused per-bug tests plus realistic end-to-end tests. The end-to-end tests load a single representative project per build system that exercises every fix in one pass — multi-module Maven with Lombok APT and cross-module references; multi-project Gradle with annotation processors; multi-target Bazel with cross-target deps. CI runs them on Linux and macOS; Windows line endings are covered by tests that write CRLF files explicitly.
 
 ## Architecture
 

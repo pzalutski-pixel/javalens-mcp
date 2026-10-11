@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.pzalutski-pixel/javalens",
   "title": "JavaLens",
-  "description": "63 semantic Java analysis tools via Eclipse JDT: navigation, refactoring, code intelligence.",
+  "description": "75 semantic Java analysis tools via Eclipse JDT: navigation, refactoring, code intelligence.",
   "repository": {
     "url": "https://github.com/pzalutski-pixel/javalens-mcp",
     "source": "github"
@@ -25,9 +25,8 @@
         },
         {
           "name": "JAVALENS_TIMEOUT_SECONDS",
-          "description": "Operation timeout in seconds",
-          "format": "number",
-          "default": "30"
+          "description": "Time limit on each tool call in seconds (5-300); unset means no limit",
+          "format": "number"
         },
         {
           "name": "JAVALENS_LOG_LEVEL",

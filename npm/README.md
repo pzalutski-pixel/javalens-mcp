@@ -82,17 +82,17 @@ Single-module and multi-module projects load end-to-end across Maven, Gradle, an
 | Bazel | `MODULE.bazel` / `WORKSPACE.bazel` / `WORKSPACE` | ✅ | ✅ | n/a | ✅ |
 | Plain Java | `src/` directory | n/a | ✅ | n/a | n/a |
 
-If `mvn` / `gradle` is missing or the subprocess fails, JavaLens reports a structured warning (e.g. `MAVEN_SUBPROCESS_FAILED`) in the `load_project` response so callers know the classpath is degraded.
+Gradle projects are read from Gradle's own model (projects, source sets, classpath, levels); when Gradle cannot run, `settings.gradle` is read as code, comments ignored. If `mvn` / `gradle` is missing or fails, `load_project` and `health_check` report a structured warning (e.g. `BUILD_TOOL_UNAVAILABLE`, `BUILD_TOOL_FAILED`) and a `buildModel` summary, so callers know the load is degraded.
 
 ## Configuration
 
 | Environment Variable | Description | Default |
 |---------------------|-------------|---------|
 | `JAVA_PROJECT_PATH` | Auto-load project on startup | (none) |
-| `JAVALENS_TIMEOUT_SECONDS` | Operation timeout | 30 |
+| `JAVALENS_TIMEOUT_SECONDS` | Time limit on each tool call, 5 to 300 seconds; a call past it returns `TIMEOUT` | (none: no limit) |
 | `JAVALENS_DISK_SYNC` | `strict` (answers verified against disk per query) or `manual` (reload after edits) | strict |
 | `JAVA_TOOL_OPTIONS` | JVM options, e.g. `-Xmx2g` for large projects | 512m |
-| `JAVALENS_LOG_LEVEL` | TRACE/DEBUG/INFO/WARN/ERROR | INFO |
+| `JAVALENS_LOG_LEVEL` | TRACE/DEBUG/INFO/WARN/ERROR; logs go to stderr | INFO |
 | `JAVALENS_LOMBOK_JAR` | Path to the Lombok agent jar attached at launch; overrides the bundled one | (bundled) |
 
 ## Documentation

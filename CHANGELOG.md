@@ -1,5 +1,49 @@
 # Changelog
 
+## [1.5.2] - 2026-10-10
+
+### Fixed: critical (destructive edits and silent wrong answers, present in 1.5.1)
+
+- **`rename_symbol` on a type corrupted imports and skipped constructors.** The edit for an import or a qualified reference was built at the first qualifier with the simple name's length, so the import line was mangled; explicit constructors were not renamed, and the file of a public top-level type was not renamed. Renames now edit each occurrence exactly, rename constructors, and report `renamedFiles` when the compilation unit must be renamed.
+- **`rename_symbol` ran no conflict checks.** A rename that leaves code not compiling (a name already taken in the type, package, imports or hierarchy, or a shadowed reference) was answered with edits. It now runs JDT's own rename conditions and refuses with every conflict named; JDT's warnings are listed in a new `warnings` field.
+- **`change_method_signature` changed only the selected method**, not the methods that override or implement it, and missed enum-constant arguments, static imports, implicit `super()` calls, Javadoc references and lambdas, so the result did not compile. Every related method and occurrence is now updated. Renaming a parameter (`oldName`) renames it in bodies, `@param` tags and Javadoc references instead of removing and re-adding it. Compile errors that follow from the requested change are listed in `introducedProblems`; a rename that would change what a name refers to is refused.
+- **Refactorings on local and anonymous classes produced wrong edits.** Type hierarchies left out local and anonymous subtypes (2 of 4 implementors in a measured case), so `rename_symbol`, `push_down` and `pull_up` produced edits that did not compile, and `extract_superclass` on an anonymous class made the outer class extend the new superclass. Hierarchies now come from the Java model, and refactorings JDT does not allow on such classes are refused.
+- **Path-taking tools could answer about the wrong file.** A file was mapped to a type by stripping a conventional source prefix, so with the same class name in two modules a tool could answer for the other module's file, and files in custom source roots were not found. Each path now maps to its exact compilation unit.
+- **The search index could silently lose a file after a reload** (a JDT indexer defect drops a document's declarations when the index merges mid-indexing). `find_references` then reported a complete result while missing every reference in that file. The trigger is removed, the index is verified against the sources after every load and repair, and a gap that survives is reported (`INDEX_INCOMPLETE` load warning, `meta.indexIncomplete` on index-backed tool responses).
+- **The JDK could silently disappear from every search for the rest of the session** (a JDT race between library indexing and index removal), so `suggest_imports` offered nothing for `List`. Library indexes are now verified and rebuilt after every load; a library still missing is reported (`LIBRARY_INDEX_INCOMPLETE`, `meta.libraryIndexIncomplete`).
+- **A failed reload destroyed the project that was already loaded.** A reload now replaces the earlier project only after it succeeds; loads run one at a time and the newest request wins.
+- **Logging never worked** in the released product since at least 1.3.1 (no SLF4J provider was bound), and `JAVALENS_LOG_LEVEL` was never read. Logs now reach stderr at the configured level.
+
+### Fixed: build loading
+
+- **A `gradle init` comment in a CRLF `settings.gradle` aborted `load_project` on Windows** (#34). JavaLens now takes the project structure, custom `projectDir`s, included builds, source sets, generated-source directories, classpath and per-project levels from Gradle itself, writing nothing into the project tree. When Gradle cannot run, `settings.gradle` / `settings.gradle.kts` is read as code, so comments and strings declare nothing. Content in a build file no longer aborts a load; problems become named load warnings.
+- `load_project` and `health_check` report a `buildModel` summary (build system, `build-tool` / `static-read` / `convention`, analysis level, modules) and every load warning, so a degraded load, including a `JAVA_PROJECT_PATH` auto-load, is visible.
+- Conventional source folders the build does not declare stay linked (`INCLUDED_OUTSIDE_BUILD`); compiled output is on the classpath only when it holds classes with no source (`COMPILED_OUTPUT_INCLUDED`), which removes duplicate `target.classes.*` types; modules declaring different levels are reported (`COMPLIANCE_LEVEL_MIXED`).
+- Relative paths given to tools resolve against the project root, not the server's working directory.
+
+### Fixed: silent wrong or partial answers
+
+- About 50 places that swallowed an error and answered empty or with a default (0 for a line, `""` for a name) now fail with `INTERNAL_ERROR` or report the real state.
+- `find_references` counted matches of unrelated same-named methods as references; inaccurate matches are now listed separately in `potentialMatches` and never edited by refactorings. A position on a reference the compiler cannot resolve has no symbol (`SYMBOL_NOT_FOUND`).
+- Hierarchy tools left out a supertype the compiler cannot resolve; it is now reported as unresolved.
+- Capped lists report exact totals and `truncated` (`analyze_change_impact`, `get_type_usage_summary`, `get_di_registrations`, `find_reflection_usage`, `analyze_method`, `get_diagnostics`); `suggest_imports` and `get_quick_fixes` rank every candidate before cutting.
+- `search_symbols kind=field` returned nothing for constants and enum constants, `kind=method` returned lambdas, and paging broke after filtering. Kinds now select exactly, and pages are filled after filters.
+- Anonymous classes in and after lambda bodies were numbered wrongly, so tools answered about the wrong class. Empty names for anonymous and local classes, initializers and the default package are now `pkg.Outer$1`, `<initializer>` and `(default package)`.
+- `load_project` echoed `"projectPath": ""`; it now echoes the absolute root.
+- `find_possible_bugs` for a file that does not exist and `get_dependency_graph` for an unknown package now answer errors instead of empty successes.
+- Generated code that did not compile (`extract_variable` declaring `void`, `extract_interface` without imports, capture types) now compiles or is refused as JDT does.
+- Refactoring warnings no longer change order from one load to the next.
+
+### Changed
+
+- `JAVALENS_TIMEOUT_SECONDS` was documented but never applied. It now limits each tool call (5 to 300 seconds; a call past it returns `TIMEOUT`). Unset means no limit; the documented default of 30 was never in effect and is removed.
+- Unknown values of enum-like parameters (`kind`, `severity`, `memberKind`) and out-of-range limits are `INVALID_PARAMETER` instead of being ignored.
+- `get_type_hierarchy` `maxDepth`, which limited list length, is renamed `maxResults`.
+- Removed: `get_complexity_metrics` `granularity` (every value gave the same answer), the `package` field of `get_dependency_graph` package nodes, and `get_type_hierarchy`'s `external` marker.
+- Build-tool warnings are uniform: `BUILD_TOOL_UNAVAILABLE`, `BUILD_TOOL_FAILED` and `BUILD_TOOL_TIMEOUT` replace `MAVEN_SUBPROCESS_FAILED`, `MAVEN_SUBPROCESS_TIMEOUT` and `GRADLE_SUBPROCESS_FAILED`.
+- npm releases are published through trusted publishing.
+- README: Windows is not in the CI matrix (Linux and macOS); Windows line endings are covered by tests that write CRLF files explicitly.
+
 ## [1.5.1] - 2026-06-15
 
 ### Fixed
