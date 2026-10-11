@@ -14,10 +14,10 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /**
@@ -31,7 +31,7 @@ import java.util.stream.Stream;
  * {@link Provenance#BUILD_TOOL}.
  *
  * <p>When the run does not produce the model, the model is the structure read statically
- * from {@code settings.gradle} ({@link #getSubprojects}) and laid out by convention, with
+ * from {@code settings.gradle} as code ({@link #getSubprojects}) and laid out by convention, with
  * no classpath, processors or level, provenance {@link Provenance#STATIC_READ}, and one
  * build-tool warning saying why. Gradle is not run again.
  */
@@ -164,40 +164,105 @@ public class GradleImporter implements BuildSystemImporter {
     }
 
     /**
-     * Parse {@code settings.gradle} (or {@code settings.gradle.kts}) for {@code include}
-     * directives and resolve each to a subproject directory under the root.
+     * Read {@code settings.gradle} (or {@code settings.gradle.kts}) as code, through
+     * {@link BuildLexer}, for {@code include} statements and resolve each to a subproject
+     * directory. Comments and strings declare nothing.
      *
-     * <p>Recognizes the common forms: {@code include 'a'}, {@code include "a"},
-     * {@code include 'a', 'b'} and {@code include('a')}. Colon-prefixed paths
-     * (e.g. {@code include ':app:core'}) are normalized: leading colons stripped,
-     * internal colons converted to file separators.
+     * <p>Recognizes {@code include 'a'}, {@code include "a"}, {@code include 'a', 'b'} and
+     * {@code include('a')}, with string-literal arguments. Colon-prefixed paths
+     * (e.g. {@code include ':app:core'}) are normalized: leading colons stripped, internal
+     * colons converted to file separators. A literal
+     * {@code project(':a').projectDir = file('dir')} places that project at {@code dir},
+     * relative to the settings file's directory, wherever it appears in the script.
      *
      * <p>An include that is not a valid path, or whose directory does not exist, is
      * skipped and appended to {@code warnings} as a {@link LoadWarning#MODULE_NOT_LOADED}.
      */
     public List<Path> getSubprojects(Path projectPath, List<LoadWarning> warnings) {
         Path settings = projectPath.resolve("settings.gradle");
-        if (!Files.exists(settings)) settings = projectPath.resolve("settings.gradle.kts");
+        boolean kotlin = false;
+        if (!Files.exists(settings)) {
+            settings = projectPath.resolve("settings.gradle.kts");
+            kotlin = true;
+        }
         if (!Files.exists(settings)) return List.of();
 
-        List<Path> subprojects = new ArrayList<>();
+        String content;
         try {
-            String content = Files.readString(settings);
-            Matcher includeMatcher = Pattern.compile(
-                "include\\s*\\(?\\s*((?:['\"][^'\"]+['\"]\\s*,?\\s*)+)").matcher(content);
-            while (includeMatcher.find()) {
-                Matcher nameMatcher = Pattern.compile("['\"]([^'\"]+)['\"]").matcher(includeMatcher.group(1));
-                while (nameMatcher.find()) {
-                    String raw = nameMatcher.group(1).trim();
-                    if (raw.isEmpty()) continue;
-                    DeclaredPaths.gradleProjectDir(projectPath, settings, raw, warnings)
-                        .ifPresent(subprojects::add);
-                }
-            }
+            content = Files.readString(settings);
         } catch (IOException e) {
             log.debug("Failed to read settings.gradle for subprojects: {}", e.getMessage());
+            return List.of();
+        }
+        List<BuildLexer.Token> tokens = kotlin ? BuildLexer.kotlin(content) : BuildLexer.groovy(content);
+        Map<String, String> projectDirs = projectDirs(tokens);
+
+        List<Path> subprojects = new ArrayList<>();
+        for (String declared : includes(tokens)) {
+            String projectDir = projectDirs.get(projectPath(declared));
+            Optional<Path> dir = projectDir == null
+                ? DeclaredPaths.gradleProjectDir(projectPath, settings, declared, warnings)
+                : DeclaredPaths.gradleProjectDir(projectPath, settings, declared, projectDir, warnings);
+            dir.ifPresent(subprojects::add);
         }
         return subprojects;
+    }
+
+    /**
+     * The non-empty string arguments of every {@code include} call, in order. An
+     * {@code include} that is a member access ({@code x.include}) is not the settings
+     * method.
+     */
+    private static List<String> includes(List<BuildLexer.Token> tokens) {
+        List<String> declared = new ArrayList<>();
+        for (int i = 0; i < tokens.size(); i++) {
+            if (!tokens.get(i).isIdentifier("include") || (i > 0 && tokens.get(i - 1).isSymbol('.'))) {
+                continue;
+            }
+            int j = i + 1;
+            if (j < tokens.size() && tokens.get(j).isSymbol('(')) j++;
+            while (j < tokens.size() && tokens.get(j).kind() == BuildLexer.Kind.STRING) {
+                String name = tokens.get(j).text().trim();
+                if (!name.isEmpty()) declared.add(name);
+                j++;
+                if (j < tokens.size() && tokens.get(j).isSymbol(',')) {
+                    j++;
+                } else {
+                    break;
+                }
+            }
+        }
+        return declared;
+    }
+
+    /**
+     * The directory of each literal {@code project('<path>').projectDir = file('<dir>')}
+     * assignment, keyed by the project's path without leading colons. A later assignment
+     * to the same project wins, as it does when Gradle runs the script.
+     */
+    private static Map<String, String> projectDirs(List<BuildLexer.Token> tokens) {
+        Map<String, String> dirs = new HashMap<>();
+        for (int i = 0; i + 10 < tokens.size(); i++) {
+            if (tokens.get(i).isIdentifier("project")
+                    && tokens.get(i + 1).isSymbol('(')
+                    && tokens.get(i + 2).kind() == BuildLexer.Kind.STRING
+                    && tokens.get(i + 3).isSymbol(')')
+                    && tokens.get(i + 4).isSymbol('.')
+                    && tokens.get(i + 5).isIdentifier("projectDir")
+                    && tokens.get(i + 6).isSymbol('=')
+                    && tokens.get(i + 7).isIdentifier("file")
+                    && tokens.get(i + 8).isSymbol('(')
+                    && tokens.get(i + 9).kind() == BuildLexer.Kind.STRING
+                    && tokens.get(i + 10).isSymbol(')')) {
+                dirs.put(projectPath(tokens.get(i + 2).text().trim()), tokens.get(i + 9).text());
+            }
+        }
+        return dirs;
+    }
+
+    /** A Gradle project path without its leading colons: {@code :app:core} is {@code app:core}. */
+    private static String projectPath(String declared) {
+        return declared.replaceAll("^:+", "");
     }
 
     /**

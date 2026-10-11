@@ -12,6 +12,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -93,6 +94,61 @@ class GradleClasspathTest {
                     projectRoot.resolve("nested/inner")),
                 subprojects, "subprojects"),
             () -> assertEquals(List.of(), warnings, "every include resolves to an existing directory"));
+    }
+
+    @Test
+    @DisplayName("getSubprojects reads Groovy settings as code: includes inside comments and strings are not declarations, and a block comment ends at its first */")
+    void getSubprojectsIgnoresGroovyCommentsAndStrings() throws Exception {
+        Path projectRoot = helper.getTempDirectory().resolve("groovy-comments");
+        for (String dir : List.of("blockGhost", "lineGhost", "afterInner", "stringGhost", "tripleGhost", "app")) {
+            Files.createDirectories(projectRoot.resolve(dir));
+        }
+        // Every ghost directory exists, so only reading it as code keeps it out. Groovy block
+        // comments do not nest, so the include after the inner "*/" is code.
+        Files.write(projectRoot.resolve("settings.gradle"), String.join("\r\n",
+            "/* the 'include' method",
+            "include 'blockGhost' */",
+            "// include 'lineGhost'",
+            "/* outer /* inner */ include 'afterInner'",
+            "def note = \"include 'stringGhost'\"",
+            "def multi = '''include 'tripleGhost' '''",
+            "include 'app'",
+            "").getBytes(StandardCharsets.UTF_8));
+
+        List<LoadWarning> warnings = new ArrayList<>();
+        List<Path> subprojects = new GradleImporter().getSubprojects(projectRoot, warnings);
+
+        assertAll(
+            () -> assertEquals(List.of(projectRoot.resolve("afterInner"), projectRoot.resolve("app")),
+                subprojects, "subprojects"),
+            () -> assertEquals(List.of(), warnings, "warnings"));
+    }
+
+    @Test
+    @DisplayName("getSubprojects reads Kotlin settings as code: nested block comments, raw strings and line comments declare nothing, and a literal projectDir places its project")
+    void getSubprojectsIgnoresKotlinCommentsAndStrings() throws Exception {
+        Path projectRoot = helper.getTempDirectory().resolve("kotlin-comments");
+        for (String dir : List.of("innerGhost", "nestedGhost", "rawGhost", "lineGhost", "app",
+                "modules/app-impl", "nested/inner")) {
+            Files.createDirectories(projectRoot.resolve(dir));
+        }
+        // Kotlin block comments nest, so the include after the inner "*/" is still comment.
+        // The app directory exists, so only the projectDir assignment moves app elsewhere.
+        Files.write(projectRoot.resolve("settings.gradle.kts"), String.join("\r\n",
+            "/* outer /* inner include(\"innerGhost\") */ include(\"nestedGhost\") */",
+            "val note = \"\"\"include(\"rawGhost\")\"\"\"",
+            "// include(\"lineGhost\")",
+            "include(\"app\", \":nested:inner\")",
+            "project(\":app\").projectDir = file(\"modules/app-impl\")",
+            "").getBytes(StandardCharsets.UTF_8));
+
+        List<LoadWarning> warnings = new ArrayList<>();
+        List<Path> subprojects = new GradleImporter().getSubprojects(projectRoot, warnings);
+
+        assertAll(
+            () -> assertEquals(List.of(projectRoot.resolve("modules/app-impl"), projectRoot.resolve("nested/inner")),
+                subprojects, "subprojects"),
+            () -> assertEquals(List.of(), warnings, "warnings"));
     }
 
     @Test

@@ -42,6 +42,16 @@ final class DeclaredPaths {
     }
 
     /**
+     * The directory of the Gradle project that {@code settings} includes as
+     * {@code declared} and places at {@code projectDir}, a path relative to the settings
+     * file's directory as {@code file(...)} in a settings script resolves it.
+     */
+    static Optional<Path> gradleProjectDir(Path projectRoot, Path settings, String declared, String projectDir,
+            List<LoadWarning> warnings) {
+        return moduleDir(projectRoot, settings, declared, projectDir, warnings);
+    }
+
+    /**
      * The directory of the Maven module that {@code pom} declares as
      * {@code <module>declared</module>}, relative to the pom's directory.
      */

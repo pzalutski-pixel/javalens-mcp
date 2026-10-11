@@ -244,6 +244,35 @@ class FidelityGradleTest {
         }
     }
 
+    @Test
+    @DisplayName("Gradle unavailable, CRLF or LF settings: the static read holds the root, app and lib at its literal projectDir; the commented-out includes, whose shared directory exists, are not modules")
+    void staticReadIgnoresCommentedIncludes() throws Exception {
+        String previous = System.getProperty("javalens.gradle.binary");
+        try {
+            Path root = prepare(CRLF);
+            System.setProperty("javalens.gradle.binary", root.resolve("no-such-gradle").toString());
+
+            BuildModel crlf = new GradleImporter().resolve(root);
+            writeSettings(root, LF);
+            BuildModel lf = new GradleImporter().resolve(root);
+
+            assertAll(
+                () -> assertEquals(Provenance.STATIC_READ, crlf.provenance(), "provenance"),
+                () -> assertEquals(List.of(root, root.resolve("app"), root.resolve("libs/lib-impl")),
+                    crlf.modules().stream().map(BuildModule::dir).toList(), "module directories"),
+                // The start failure's text is the operating system's, so only the code is pinned.
+                () -> assertEquals(List.of(LoadWarning.BUILD_TOOL_UNAVAILABLE),
+                    crlf.warnings().stream().map(LoadWarning::code).toList(), "warning codes"),
+                () -> assertEquals(crlf, lf, "LF settings give the identical model"));
+        } finally {
+            if (previous == null) {
+                System.clearProperty("javalens.gradle.binary");
+            } else {
+                System.setProperty("javalens.gradle.binary", previous);
+            }
+        }
+    }
+
     // ========== Expected values ==========
 
     /**
