@@ -5,6 +5,7 @@ import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IPath;
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IField;
+import org.eclipse.jdt.core.IImportContainer;
 import org.eclipse.jdt.core.IImportDeclaration;
 import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IJavaProject;
@@ -141,8 +142,9 @@ public class RenameSymbolTool extends AbstractTool {
             """ + POTENTIAL_MATCHES + """
             A module is renamed in its declaration and its references. A package
             (renamed with its folder, which no text edit does), a package
-            declaration or an import declaration is refused: INVALID_PARAMETER
-            for position, naming it.
+            declaration, an import declaration or the import list is refused:
+            INVALID_PARAMETER for position, naming it. So is a type, field or
+            method of a library (binary), which has no source to edit.
 
             Requires load_project to be called first.
             """;
@@ -201,13 +203,24 @@ public class RenameSymbolTool extends AbstractTool {
                         + ", which has no name to rename");
             }
             // A package is renamed with its folder, which no edit of a file's text can do; a package
-            // or import declaration is no symbol of its own
+            // or import declaration, or the import list, is no symbol of its own
             String unrenamed = element instanceof IPackageFragment ? "package"
                 : element instanceof IPackageDeclaration ? "package declaration"
-                : element instanceof IImportDeclaration ? "import declaration" : null;
+                : element instanceof IImportDeclaration ? "import declaration"
+                : element instanceof IImportContainer ? "import list" : null;
             if (unrenamed != null) {
-                return ToolResponse.invalidParameter("position", "Symbol at position is the " + unrenamed + " "
-                    + element.getElementName() + ", which rename_symbol does not rename");
+                String name = element instanceof IImportContainer ? "" : " " + element.getElementName();
+                return ToolResponse.invalidParameter("position", "Symbol at position is the " + unrenamed + name
+                    + ", which rename_symbol does not rename");
+            }
+            // A type or field of a class file has no source to edit, as a method of one has not
+            if (element instanceof IType type && type.isBinary()) {
+                return ToolResponse.invalidParameter("position",
+                    "Type at position, " + ElementNames.qualifiedName(type) + ", is binary and cannot be renamed");
+            }
+            if (element instanceof IField field && field.isBinary()) {
+                return ToolResponse.invalidParameter("position", "Field at position, " + field.getElementName() + " in "
+                    + ElementNames.qualifiedName(field.getDeclaringType()) + ", is binary and cannot be renamed");
             }
 
             String oldName = element.getElementName();

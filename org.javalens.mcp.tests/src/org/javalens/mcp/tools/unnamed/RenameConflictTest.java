@@ -558,6 +558,22 @@ class RenameConflictTest {
     }
 
     @Test
+    @DisplayName("the import list, at a blank line between two import groups, is refused like an import declaration")
+    void importList_refused() {
+        assertPayload(mapper, new RenameSymbolTool(() -> service), envelope, at("imports/Grouped.java", 3, 0, "Lists"),
+            invalidParameter("Invalid parameter 'position': Symbol at position is the import list,"
+                + " which rename_symbol does not rename"));
+    }
+
+    @Test
+    @DisplayName("a binary type is refused, naming it, as a binary method is")
+    void binaryType_refused() {
+        assertPayload(mapper, new RenameSymbolTool(() -> service), envelope, at("imports/Grouped.java", 7, 4, "Sequence"),
+            invalidParameter("Invalid parameter 'position': Type at position, java.util.List, is binary and cannot"
+                + " be renamed"));
+    }
+
+    @Test
     @DisplayName("a module, at its declaration's keyword, is renamed in its declaration, as JDT's module rename finds no conflict")
     void module_renamed() throws Exception {
         JdtServiceImpl modular = helper.loadProject("modular-maven");
