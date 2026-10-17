@@ -692,8 +692,11 @@ public class SearchService {
      * anonymous class, and the reference belongs to the member enclosing the creation.
      */
     static SearchMatch withModelElement(SearchMatch match) {
-        if (!(match.getElement() instanceof IJavaElement element) || !withinLocalScope(element)
-            || !(element.getAncestor(IJavaElement.COMPILATION_UNIT) instanceof ICompilationUnit unit)) {
+        // Only a source element has a model element at the match's offset; a class-file element
+        // is left as search reports it, without reading it.
+        if (!(match.getElement() instanceof IJavaElement element)
+            || !(element.getAncestor(IJavaElement.COMPILATION_UNIT) instanceof ICompilationUnit unit)
+            || !withinLocalScope(element)) {
             return match;
         }
         try {

@@ -340,6 +340,22 @@ class SearchServiceHierarchyTest {
     }
 
     @Test
+    @DisplayName("overriding Runnable.run, which local and anonymous classes of the JDK's class files implement, answers without reading them, and none is listed")
+    void overridingSkipsLocalClassesOfClassFiles() throws CoreException {
+        IType runnable = service.findType("java.lang.Runnable");
+        IMethod run = Arrays.stream(runnable.getMethods())
+            .filter(m -> m.getElementName().equals("run")).findFirst().orElseThrow();
+        List<String> localOrAnonymous = new ArrayList<>();
+        for (IMethod overrider : search.hierarchyOf(runnable).overriding(run)) {
+            IType declaring = overrider.getDeclaringType();
+            if (declaring.isBinary() && (declaring.isLocal() || declaring.isAnonymous())) {
+                localOrAnonymous.add(methodName(overrider));
+            }
+        }
+        assertEquals(List.of(), localOrAnonymous);
+    }
+
+    @Test
     @DisplayName("overriding: Leaf.weight, of a class without subtypes, has no overrider")
     void overridingWithoutSubtypes() throws CoreException {
         assertEquals(List.of(),

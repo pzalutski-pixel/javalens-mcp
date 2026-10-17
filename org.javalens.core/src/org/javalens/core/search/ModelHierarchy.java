@@ -309,6 +309,8 @@ public final class ModelHierarchy {
     /**
      * Every method of a subtype that overrides {@code method}, declared in this hierarchy's type,
      * by file and position. A constructor, a static and a private method are overridden by none.
+     * A class-file subtype the compiler resolves no binding for from the project (one in a package
+     * its module does not export) is not read.
      */
     public List<IMethod> overriding(IMethod method) throws CoreException {
         requireDeclared(method);
@@ -319,11 +321,11 @@ public final class ModelHierarchy {
         // An overrider has the method's name and number of parameters (JLS 8.4.2): only the
         // subtypes declaring such a method are read with bindings.
         Map<ICompilationUnit, Set<IType>> sources = new LinkedHashMap<>();
-        Map<String, IType> classFiles = new LinkedHashMap<>();
+        Set<String> classFiles = new LinkedHashSet<>();
         for (IType subtype : allSubtypes()) {
             if (declaresLike(subtype, method)) {
                 if (subtype.isBinary()) {
-                    classFiles.put(subtype.getKey(), subtype);
+                    classFiles.add(subtype.getKey());
                 } else {
                     sources.computeIfAbsent(subtype.getCompilationUnit(), unit -> new HashSet<>()).add(subtype);
                 }
@@ -331,7 +333,7 @@ public final class ModelHierarchy {
         }
         List<IMethod> overriders = new ArrayList<>();
         CoreException[] failure = { null };
-        ModelElements.parse(project, sources.keySet(), classFiles.keySet(), (unit, ast) -> {
+        ModelElements.parse(project, sources.keySet(), classFiles, (unit, ast) -> {
             ModelElements elements = new ModelElements(unit, ast);
             Set<IType> candidates = sources.get(unit);
             ModelElements.forEachTypeDeclaration(ast, node -> {
@@ -345,10 +347,11 @@ public final class ModelHierarchy {
             });
         }, (key, binding) -> {
             try {
+                // A class-file type the compiler resolves no binding for from the project (one in
+                // a package its module does not export) cannot be named or extended by the
+                // project's code, so its methods are not read.
                 if (failure[0] == null && binding instanceof ITypeBinding subtype) {
                     addOverriders(subtype, method, new ModelElements(null, null), overriders);
-                } else if (failure[0] == null) {
-                    failure[0] = unresolved(classFiles.get(key));
                 }
             } catch (CoreException e) {
                 failure[0] = e;
@@ -408,7 +411,8 @@ public final class ModelHierarchy {
      * method of a parameterized type as its generic declaration (MethodVerifier15.isMethodSubsignature
      * :956-966) and so misses {@code Peg<T>.hang(T)} implementing {@code Hook.hang(String)} in a
      * {@code Peg<String>}. By file and position; none for a constructor, a static and a private
-     * method.
+     * method. A class-file subtype the compiler resolves no binding for from the project is not
+     * read.
      */
     public List<IMethod> joinedInSubtypes(IMethod method) throws CoreException {
         requireDeclared(method);
@@ -417,17 +421,17 @@ public final class ModelHierarchy {
             return List.of();
         }
         Map<ICompilationUnit, Set<IType>> sources = new LinkedHashMap<>();
-        Map<String, IType> classFiles = new LinkedHashMap<>();
+        Set<String> classFiles = new LinkedHashSet<>();
         for (IType subtype : allSubtypes()) {
             if (subtype.isBinary()) {
-                classFiles.put(subtype.getKey(), subtype);
+                classFiles.add(subtype.getKey());
             } else {
                 sources.computeIfAbsent(subtype.getCompilationUnit(), unit -> new HashSet<>()).add(subtype);
             }
         }
         Set<IMethod> joined = new LinkedHashSet<>();
         CoreException[] failure = { null };
-        ModelElements.parse(project, sources.keySet(), classFiles.keySet(), (unit, ast) -> {
+        ModelElements.parse(project, sources.keySet(), classFiles, (unit, ast) -> {
             ModelElements elements = new ModelElements(unit, ast);
             Set<IType> candidates = sources.get(unit);
             ModelElements.forEachTypeDeclaration(ast, node -> {
@@ -446,10 +450,10 @@ public final class ModelHierarchy {
             });
         }, (key, binding) -> {
             try {
+                // As in overriding: a class-file type the compiler resolves no binding for from
+                // the project is not read.
                 if (failure[0] == null && binding instanceof ITypeBinding subtype) {
                     addJoined(subtype, method, new ModelElements(null, null), joined);
-                } else if (failure[0] == null) {
-                    failure[0] = unresolved(classFiles.get(key));
                 }
             } catch (CoreException e) {
                 failure[0] = e;
@@ -760,12 +764,24 @@ public final class ModelHierarchy {
                     }
                     if (match.getAccuracy() == SearchMatch.A_INACCURATE) {
                         potential.add(match);
-                    } else if (element instanceof IType subtype && (!subtype.isBinary() || isResolvedTo(subtype))) {
+                    } else if (element instanceof IType subtype && (!subtype.isBinary() || isNamedClassFileType(subtype))) {
                         found.add(subtype);
                     }
                 }
             }, Deadline.monitor());
         return found;
+    }
+
+    /**
+     * Whether {@code binary}, a class-file type search reports, is listed as a subtype: a type
+     * that exists, is neither local nor anonymous, and is what the classpath resolves its name to
+     * ({@link #isResolvedTo}). A local or anonymous class of a class file is not listed, as for
+     * the implicit roots: no source can name it or override its methods, the compiler builds no
+     * binding for it, and search reports it by a handle the model may not hold (an anonymous
+     * class's handle names a class file that does not exist).
+     */
+    private boolean isNamedClassFileType(IType binary) throws CoreException {
+        return binary.exists() && !binary.isLocal() && !binary.isAnonymous() && isResolvedTo(binary);
     }
 
     /**
