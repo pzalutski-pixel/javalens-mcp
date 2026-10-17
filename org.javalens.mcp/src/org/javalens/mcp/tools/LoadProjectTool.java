@@ -86,7 +86,7 @@ public class LoadProjectTool implements Tool {
 
             Supports:
             - Maven projects (pom.xml)
-            - Gradle projects (build.gradle or build.gradle.kts)
+            - Gradle projects (settings.gradle, settings.gradle.kts, build.gradle or build.gradle.kts)
             - Bazel projects (MODULE.bazel or WORKSPACE)
             - Plain Java projects with src/ directory
 

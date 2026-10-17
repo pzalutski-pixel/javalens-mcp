@@ -78,7 +78,7 @@ Single-module and multi-module projects load end-to-end across Maven, Gradle, an
 | System | Detection | Multi-module | Compiler compliance | Generated sources | Annotation processors |
 |--------|-----------|:-:|:-:|:-:|:-:|
 | Maven | `pom.xml` | ✅ | ✅ | ✅ | ✅ |
-| Gradle | `build.gradle` / `build.gradle.kts` | ✅ | ✅ | ✅ | ✅ |
+| Gradle | `settings.gradle(.kts)` / `build.gradle(.kts)` | ✅ | ✅ | ✅ | ✅ |
 | Bazel | `MODULE.bazel` / `WORKSPACE.bazel` / `WORKSPACE` | ✅ | ✅ | n/a | ✅ |
 | Plain Java | `src/` directory | n/a | ✅ | n/a | n/a |
 

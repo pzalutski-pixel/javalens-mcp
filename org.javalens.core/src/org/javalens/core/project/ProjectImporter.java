@@ -390,13 +390,17 @@ public class ProjectImporter {
     }
 
     /**
-     * Detect build system from project structure.
+     * Detect build system from project structure. A Gradle build is marked by its settings
+     * file or its root build file: {@code gradle init} generates a settings file with no root
+     * build file.
      */
     public BuildSystem detectBuildSystem(java.nio.file.Path projectPath) {
         if (Files.exists(projectPath.resolve("pom.xml"))) {
             return BuildSystem.MAVEN;
         }
-        if (Files.exists(projectPath.resolve("build.gradle")) ||
+        if (Files.exists(projectPath.resolve("settings.gradle")) ||
+            Files.exists(projectPath.resolve("settings.gradle.kts")) ||
+            Files.exists(projectPath.resolve("build.gradle")) ||
             Files.exists(projectPath.resolve("build.gradle.kts"))) {
             return BuildSystem.GRADLE;
         }

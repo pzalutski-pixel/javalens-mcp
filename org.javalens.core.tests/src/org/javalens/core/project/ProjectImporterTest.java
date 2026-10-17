@@ -78,6 +78,22 @@ class ProjectImporterTest {
     }
 
     @Test
+    @DisplayName("detectBuildSystem detects Gradle from a settings.gradle alone, the layout gradle init generates")
+    void detectBuildSystem_detectsGradleSettingsOnly(@TempDir Path tempDir) throws IOException {
+        Files.writeString(tempDir.resolve("settings.gradle"), "include('app')\n");
+
+        assertEquals(BuildSystem.GRADLE, importer.detectBuildSystem(tempDir));
+    }
+
+    @Test
+    @DisplayName("detectBuildSystem detects Gradle from a settings.gradle.kts alone")
+    void detectBuildSystem_detectsGradleKotlinSettingsOnly(@TempDir Path tempDir) throws IOException {
+        Files.writeString(tempDir.resolve("settings.gradle.kts"), "include(\"app\")\n");
+
+        assertEquals(BuildSystem.GRADLE, importer.detectBuildSystem(tempDir));
+    }
+
+    @Test
     @DisplayName("detectBuildSystem should return UNKNOWN for plain project")
     void detectBuildSystem_returnsUnknownForPlainProject(@TempDir Path tempDir) throws IOException {
         // Create a plain Java project with no build file

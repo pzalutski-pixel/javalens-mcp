@@ -380,7 +380,7 @@ JavaLens loads three real build systems plus plain Java directories. Each is exe
 | System | Detection | Single-module | Multi-module / multi-project | Compiler compliance from build files | Generated sources | Annotation processors |
 |--------|-----------|:-:|:-:|:-:|:-:|:-:|
 | Maven | `pom.xml` | ✅ | ✅ (reactor classpath aggregation, cross-module navigation) | ✅ (`maven.compiler.release`/`source`/`target`) | ✅ (`target/generated-sources/*`) | ✅ (`<annotationProcessorPaths>` across the whole reactor) |
-| Gradle | `build.gradle` / `build.gradle.kts` | ✅ | ✅ (projects, custom `projectDir`s, included builds, source sets and classpaths as Gradle reports them) | ✅ (each project's `sourceCompatibility`) | ✅ (the generated-source directories Gradle reports) | ✅ (`annotationProcessor` configuration) |
+| Gradle | `settings.gradle(.kts)` / `build.gradle(.kts)` | ✅ | ✅ (projects, custom `projectDir`s, included builds, source sets and classpaths as Gradle reports them) | ✅ (each project's `sourceCompatibility`) | ✅ (the generated-source directories Gradle reports) | ✅ (`annotationProcessor` configuration) |
 | Bazel | `MODULE.bazel` / `WORKSPACE.bazel` / `WORKSPACE` | ✅ | ✅ (every `BUILD.bazel` package scanned for sources; `bazel-bin` ↔ `bazel-out` symlink dedup) | ✅ (`javacopts` `-source`/`-target`/`--release` parsed across `BUILD.bazel` files) | n/a (Bazel actions write into `bazel-bin/`, not `target/generated-sources/`) | ✅ (any classpath jar with `META-INF/services/javax.annotation.processing.Processor` is auto-registered) |
 | Plain Java | `src/` directory | ✅ | n/a | ✅ (falls back to `Runtime.version().feature()` when no build file) | n/a | n/a |
 

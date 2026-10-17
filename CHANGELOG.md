@@ -17,6 +17,7 @@
 ### Fixed: build loading
 
 - **A `gradle init` comment in a CRLF `settings.gradle` aborted `load_project` on Windows** (#34). JavaLens now takes the project structure, custom `projectDir`s, included builds, source sets, generated-source directories, classpath and per-project levels from Gradle itself, writing nothing into the project tree. When Gradle cannot run, `settings.gradle` / `settings.gradle.kts` is read as code, so comments and strings declare nothing. Content in a build file no longer aborts a load; problems become named load warnings.
+- A Gradle build with a settings file and no root build file, the layout `gradle init` generates, was loaded as plain Java, so Gradle was never asked for its classpath. A `settings.gradle` or `settings.gradle.kts` now marks a Gradle build.
 - `load_project` and `health_check` report a `buildModel` summary (build system, `build-tool` / `static-read` / `convention`, analysis level, modules) and every load warning, so a degraded load, including a `JAVA_PROJECT_PATH` auto-load, is visible.
 - Conventional source folders the build does not declare stay linked (`INCLUDED_OUTSIDE_BUILD`); compiled output is on the classpath only when it holds classes with no source (`COMPILED_OUTPUT_INCLUDED`), which removes duplicate `target.classes.*` types; modules declaring different levels are reported (`COMPLIANCE_LEVEL_MIXED`).
 - Relative paths given to tools resolve against the project root, not the server's working directory.
