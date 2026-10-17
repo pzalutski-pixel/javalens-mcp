@@ -1,328 +1,252 @@
 package org.javalens.core.project;
 
+import org.javalens.core.fixtures.MavenBinary;
 import org.javalens.core.project.model.BuildModel;
 import org.javalens.core.project.model.BuildModule;
 import org.javalens.core.project.model.LoadWarning;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Unit tests for {@link MavenImporter} branches not exercised by the existing
- * MultiModuleMavenTest / NestedAggregatorMavenTest / SilentSubprocessFailureTest /
- * EndToEndIntegrationTest integration suite.
- *
- * <p>Targets the pure-function pieces (multi-module detection, compiler-level
- * extraction priority order, module walking with cycle detection) plus the
- * failed-subprocess path via the {@code javalens.maven.binary} override.
+ * Pins {@link MavenImporter}'s static read: with a Maven binary that cannot start, the model
+ * is read from the {@code pom.xml} files as XML. Comments are not elements, so nothing in a
+ * comment is read; levels follow maven-compiler-plugin's precedence; parents on disk lend
+ * their values.
  */
 class MavenImporterTest {
 
-    private final MavenImporter importer = new MavenImporter();
-    private String savedBinaryProperty;
+    private static final String POM = "<project xmlns=\"http://maven.apache.org/POM/4.0.0\"><modelVersion>4.0.0</modelVersion>"
+        + "<groupId>g</groupId><version>1</version>";
 
-    @BeforeEach
-    void setUp() {
-        savedBinaryProperty = System.getProperty("javalens.maven.binary");
+    // ========== Modules ==========
+
+    @Test
+    @DisplayName("The reactor is the root and every declared module, recursively, each identified by groupId:artifactId; commented-out modules are not declared")
+    void walksDeclaredModulesOnly(@TempDir Path root) throws IOException {
+        write(root, "pom.xml", POM + "<artifactId>root</artifactId><packaging>pom</packaging>"
+            + "<!-- <modules><module>ghost</module></modules> -->"
+            + "<modules><module>a</module><!-- <module>legacy</module> --><module>b</module></modules></project>");
+        write(root, "a/pom.xml", POM + "<artifactId>a</artifactId>"
+            + "<modules><module>nested</module></modules></project>");
+        write(root, "a/nested/pom.xml", POM + "<artifactId>nested</artifactId></project>");
+        write(root, "b/pom.xml", POM + "<artifactId>b</artifactId></project>");
+        write(root, "legacy/pom.xml", POM + "<artifactId>legacy</artifactId></project>");
+
+        BuildModel model = staticRead(root);
+
+        assertAll(
+            () -> assertEquals(List.of("g:root", "g:a", "g:nested", "g:b"), ids(model), "module ids"),
+            () -> assertEquals(List.of(root, root.resolve("a"), root.resolve("a/nested"), root.resolve("b")),
+                model.modules().stream().map(BuildModule::dir).toList(), "module directories"),
+            () -> assertEquals(List.of(LoadWarning.BUILD_TOOL_UNAVAILABLE, LoadWarning.BUILD_MODEL_STATIC),
+                codes(model), "warning codes"));
     }
 
-    @AfterEach
-    void tearDown() {
-        if (savedBinaryProperty == null) {
-            System.clearProperty("javalens.maven.binary");
-        } else {
-            System.setProperty("javalens.maven.binary", savedBinaryProperty);
+    @Test
+    @DisplayName("A module that declares its own parent directory again is visited once")
+    void cycleIsVisitedOnce(@TempDir Path root) throws IOException {
+        write(root, "pom.xml", POM + "<artifactId>root</artifactId><modules><module>a</module></modules></project>");
+        write(root, "a/pom.xml", POM + "<artifactId>a</artifactId><modules><module>../a</module></modules></project>");
+
+        assertEquals(List.of("g:root", "g:a"), ids(staticRead(root)), "module ids");
+    }
+
+    @Test
+    @DisplayName("A module entry naming a pom file loads that pom's module; a missing module is MODULE_NOT_LOADED, root declarations before nested ones")
+    void moduleEntriesResolveDirectoriesAndFiles(@TempDir Path root) throws IOException {
+        write(root, "pom.xml", POM + "<artifactId>root</artifactId>"
+            + "<modules><module>core</module><module>ghost</module><module>alt/build.xml</module></modules></project>");
+        write(root, "core/pom.xml", POM + "<artifactId>core</artifactId>"
+            + "<modules><module>inner-gone</module></modules></project>");
+        write(root, "alt/build.xml", POM + "<artifactId>alt</artifactId></project>");
+
+        BuildModel model = staticRead(root);
+
+        assertAll(
+            () -> assertEquals(List.of("g:root", "g:core", "g:alt"), ids(model), "module ids"),
+            () -> assertEquals(List.of(
+                    missingModule("pom.xml", "ghost", "ghost"),
+                    missingModule("core/pom.xml", "inner-gone", "core/inner-gone")),
+                model.warnings().subList(0, 2), "module warnings"));
+    }
+
+    @Test
+    @DisplayName("A module declared only in a profile is linked with its conventional layout and INCLUDED_OUTSIDE_BUILD")
+    void profileModuleIsIncludedOutsideBuild(@TempDir Path root) throws IOException {
+        write(root, "pom.xml", POM + "<artifactId>root</artifactId>"
+            + "<profiles><profile><id>extra</id><modules><module>x</module></modules></profile></profiles></project>");
+        write(root, "x/pom.xml", POM + "<artifactId>x</artifactId></project>");
+        Files.createDirectories(root.resolve("x/src/main/java"));
+
+        BuildModel model = staticRead(root);
+
+        assertAll(
+            () -> assertEquals(List.of(
+                    new BuildModule("g:root", root, List.of(), List.of(),
+                        List.of(root.resolve("target/classes"), root.resolve("target/test-classes")), null, false),
+                    new BuildModule("g:x", root.resolve("x"), List.of(root.resolve("x/src/main/java")), List.of(),
+                        List.of(), null, false)),
+                model.modules(), "modules"),
+            () -> assertEquals(new LoadWarning(LoadWarning.INCLUDED_OUTSIDE_BUILD,
+                    "x is declared as a module only in profile 'extra' of pom.xml, which the load did not activate, so "
+                        + "its dependencies are not resolved; it is linked with its conventional layout",
+                    "Activate the profile through JAVALENS_MAVEN_ARGS (for example -Pextra) and reload the project to "
+                        + "load the module fully.",
+                    "g:x"),
+                model.warnings().get(0), "profile warning"));
+    }
+
+    @Test
+    @DisplayName("A root pom that is not well-formed XML fails the read, so the load falls back to the root's conventional layout")
+    void malformedRootPomFailsTheRead(@TempDir Path root) throws IOException {
+        write(root, "pom.xml", "<project><modules></project>");
+
+        try (MavenBinary maven = MavenBinary.use(root.resolve("no-such-mvn").toString())) {
+            UncheckedIOException failure = assertThrows(UncheckedIOException.class,
+                () -> new MavenImporter().resolve(root));
+            assertTrue(failure.getMessage().startsWith("The root pom.xml could not be read: pom.xml is not well-formed XML: "),
+                failure::getMessage);
         }
     }
 
-    // ========== isMultiModule ==========
+    // ========== Levels ==========
 
     @Test
-    @DisplayName("isMultiModule returns false when no pom.xml exists")
-    void isMultiModule_noPom_returnsFalse(@TempDir Path projectRoot) {
-        assertFalse(importer.isMultiModule(projectRoot),
-            "No pom.xml → must be false; got: " + importer.isMultiModule(projectRoot));
+    @DisplayName("maven.compiler.release wins over maven.compiler.source; a commented-out property is not read")
+    void releasePropertyWinsOverSource(@TempDir Path root) throws IOException {
+        write(root, "pom.xml", POM + "<artifactId>root</artifactId><properties>"
+            + "<maven.compiler.source>17</maven.compiler.source>"
+            + "<maven.compiler.release>21</maven.compiler.release>"
+            + "<!-- <maven.compiler.release>8</maven.compiler.release> -->"
+            + "</properties></project>");
+
+        assertEquals("21", staticRead(root).analysisLevel());
     }
 
     @Test
-    @DisplayName("isMultiModule returns true when pom has <modules>")
-    void isMultiModule_modulesBlock_returnsTrue(@TempDir Path projectRoot) throws IOException {
-        Files.writeString(projectRoot.resolve("pom.xml"),
-            "<project><modules><module>a</module></modules></project>");
-        assertTrue(importer.isMultiModule(projectRoot));
+    @DisplayName("An explicit plugin <source> wins over maven.compiler.source, and ${...} references resolve against the properties")
+    void pluginSourceWinsOverSourceProperty(@TempDir Path root) throws IOException {
+        write(root, "pom.xml", POM + "<artifactId>root</artifactId>"
+            + "<properties><java.version>11</java.version><maven.compiler.source>17</maven.compiler.source></properties>"
+            + "<build><plugins><plugin><artifactId>maven-compiler-plugin</artifactId>"
+            + "<configuration><source>${java.version}</source></configuration></plugin></plugins></build></project>");
+
+        assertEquals("11", staticRead(root).analysisLevel());
     }
 
     @Test
-    @DisplayName("isMultiModule returns true when pom has <packaging>pom</packaging> (aggregator)")
-    void isMultiModule_packagingPom_returnsTrue(@TempDir Path projectRoot) throws IOException {
-        Files.writeString(projectRoot.resolve("pom.xml"),
-            "<project><packaging>pom</packaging></project>");
-        assertTrue(importer.isMultiModule(projectRoot));
-    }
+    @DisplayName("Compiler configuration in pluginManagement applies, and a child inherits its parent's level")
+    void pluginManagementAndParentLevel(@TempDir Path root) throws IOException {
+        write(root, "pom.xml", POM + "<artifactId>root</artifactId><modules><module>child</module></modules>"
+            + "<build><pluginManagement><plugins><plugin><artifactId>maven-compiler-plugin</artifactId>"
+            + "<configuration><release>17</release></configuration></plugin></plugins></pluginManagement></build>"
+            + "</project>");
+        write(root, "child/pom.xml", "<project><modelVersion>4.0.0</modelVersion>"
+            + "<parent><groupId>g</groupId><artifactId>root</artifactId><version>1</version></parent>"
+            + "<artifactId>child</artifactId></project>");
 
-    @Test
-    @DisplayName("isMultiModule returns false for ordinary single-module pom")
-    void isMultiModule_singleModule_returnsFalse(@TempDir Path projectRoot) throws IOException {
-        Files.writeString(projectRoot.resolve("pom.xml"),
-            "<project><artifactId>simple</artifactId></project>");
-        assertFalse(importer.isMultiModule(projectRoot));
-    }
-
-    // ========== detectCompilerLevel ==========
-
-    @Test
-    @DisplayName("detectCompilerLevel returns null when no pom.xml")
-    void detectCompilerLevel_noPom_returnsNull(@TempDir Path projectRoot) {
-        assertNull(importer.detectCompilerLevel(projectRoot));
-    }
-
-    @Test
-    @DisplayName("detectCompilerLevel reads <properties> maven.compiler.release shortcut")
-    void detectCompilerLevel_propertiesRelease(@TempDir Path projectRoot) throws IOException {
-        Files.writeString(projectRoot.resolve("pom.xml"),
-            "<project><properties><maven.compiler.release>21</maven.compiler.release></properties></project>");
-        assertEquals("21", importer.detectCompilerLevel(projectRoot));
-    }
-
-    @Test
-    @DisplayName("detectCompilerLevel prefers maven.compiler.release over .source/.target")
-    void detectCompilerLevel_priority_releaseFirst(@TempDir Path projectRoot) throws IOException {
-        // Source-code priority: release > source > target. Pin that when all three
-        // are present, release wins.
-        Files.writeString(projectRoot.resolve("pom.xml"),
-            "<project><properties>"
-                + "<maven.compiler.release>21</maven.compiler.release>"
-                + "<maven.compiler.source>17</maven.compiler.source>"
-                + "<maven.compiler.target>11</maven.compiler.target>"
-                + "</properties></project>");
-        assertEquals("21", importer.detectCompilerLevel(projectRoot),
-            "<maven.compiler.release> must win over .source/.target");
-    }
-
-    @Test
-    @DisplayName("detectCompilerLevel falls back to <plugin>maven-compiler-plugin <configuration>")
-    void detectCompilerLevel_pluginConfiguration(@TempDir Path projectRoot) throws IOException {
-        // No <properties> shortcuts → falls through to plugin configuration parsing.
-        Files.writeString(projectRoot.resolve("pom.xml"),
-            "<project><build><plugins><plugin>"
-                + "<artifactId>maven-compiler-plugin</artifactId>"
-                + "<configuration><release>17</release></configuration>"
-                + "</plugin></plugins></build></project>");
-        assertEquals("17", importer.detectCompilerLevel(projectRoot),
-            "Plugin <configuration><release> must be picked up when no <properties> shortcut exists");
-    }
-
-    @Test
-    @DisplayName("detectCompilerLevel resolves ${property} placeholders against <properties>")
-    void detectCompilerLevel_resolvesPropertyPlaceholder(@TempDir Path projectRoot) throws IOException {
-        // Real projects commonly write `<release>${java.version}</release>` with the
-        // value declared in <properties>. The resolver must substitute the reference.
-        Files.writeString(projectRoot.resolve("pom.xml"),
-            "<project>"
-                + "<properties><java.version>17</java.version></properties>"
-                + "<build><plugins><plugin>"
-                + "<artifactId>maven-compiler-plugin</artifactId>"
-                + "<configuration><source>${java.version}</source></configuration>"
-                + "</plugin></plugins></build></project>");
-        assertEquals("17", importer.detectCompilerLevel(projectRoot),
-            "${java.version} must resolve against <properties> definition; got: "
-                + importer.detectCompilerLevel(projectRoot));
-    }
-
-    @Test
-    @DisplayName("detectCompilerLevel returns null when no level is declared anywhere")
-    void detectCompilerLevel_noLevel_returnsNull(@TempDir Path projectRoot) throws IOException {
-        Files.writeString(projectRoot.resolve("pom.xml"),
-            "<project><artifactId>simple</artifactId></project>");
-        assertNull(importer.detectCompilerLevel(projectRoot));
-    }
-
-    // ========== walkModules ==========
-
-    @Test
-    @DisplayName("walkModules visits the root + every declared module recursively")
-    void walkModules_visitsAllRecursively(@TempDir Path root) throws IOException {
-        // Aggregator with modules a, b. Each module has its own pom.xml.
-        Files.writeString(root.resolve("pom.xml"),
-            "<project><modules><module>a</module><module>b</module></modules></project>");
-        Files.createDirectories(root.resolve("a"));
-        Files.writeString(root.resolve("a/pom.xml"), "<project/>");
-        Files.createDirectories(root.resolve("b"));
-        Files.writeString(root.resolve("b/pom.xml"), "<project/>");
-
-        List<Path> visited = new ArrayList<>();
-        List<LoadWarning> warnings = new ArrayList<>();
-        importer.walkModules(root, visited::add, warnings);
-
-        assertEquals(List.of(), warnings, "every <module> resolves to an existing directory");
-        assertEquals(3, visited.size(),
-            "Aggregator + 2 modules = 3 visits; got: " + visited);
-        assertTrue(visited.stream().anyMatch(p -> p.endsWith("a")));
-        assertTrue(visited.stream().anyMatch(p -> p.endsWith("b")));
-    }
-
-    @Test
-    @DisplayName("walkModules detects cycles via canonical-path visited set (../sibling pattern)")
-    void walkModules_cycleSafe(@TempDir Path root) throws IOException {
-        // Module 'a' declares '../a' (relative loop). Visited tracks canonical
-        // paths; the second walk into a/ must short-circuit.
-        Files.writeString(root.resolve("pom.xml"),
-            "<project><modules><module>a</module></modules></project>");
-        Files.createDirectories(root.resolve("a"));
-        Files.writeString(root.resolve("a/pom.xml"),
-            "<project><modules><module>../a</module></modules></project>");
-
-        List<Path> visited = new ArrayList<>();
-        List<LoadWarning> warnings = new ArrayList<>();
-        importer.walkModules(root, visited::add, warnings);
-
-        // Root + a/ = 2 visits. The `../a` self-reference inside a/pom.xml must
-        // NOT cause infinite recursion or an extra visit.
-        assertEquals(2, visited.size(),
-            "Cycle (../a inside a/pom.xml) must not produce additional visits; got: " + visited);
-        // `../a` names an existing directory, so the cycle is not an unloaded module.
-        assertEquals(List.of(), warnings, "warnings");
-    }
-
-    @Test
-    @DisplayName("walkModules skips a <module> entry that doesn't resolve to a directory and reports it as MODULE_NOT_LOADED")
-    void walkModules_skipsMissingDirectories(@TempDir Path root) throws IOException {
-        Files.writeString(root.resolve("pom.xml"),
-            "<project><modules>"
-                + "<module>missing</module>"
-                + "<module>a</module>"
-                + "</modules></project>");
-        Files.createDirectories(root.resolve("a"));
-        Files.writeString(root.resolve("a/pom.xml"), "<project/>");
-
-        List<Path> visited = new ArrayList<>();
-        List<LoadWarning> warnings = new ArrayList<>();
-        importer.walkModules(root, visited::add, warnings);
-
-        // Root + a/: the `missing` module has no directory, so it is not visited.
-        assertAll(
-            () -> assertEquals(List.of(root, root.resolve("a")), visited, "visited module roots"),
-            () -> assertEquals(List.of(missingModule("pom.xml", "missing", "missing")),
-                warnings, "warnings"));
-    }
-
-    @Test
-    @DisplayName("walkModules reports each unloaded <module> once with its declaring pom, root declarations before nested ones")
-    void walkModules_reportsMissingModulesAtEveryDepth(@TempDir Path root) throws IOException {
-        writeTreeWithMissingModules(root);
-
-        List<Path> visited = new ArrayList<>();
-        List<LoadWarning> warnings = new ArrayList<>();
-        importer.walkModules(root, visited::add, warnings);
+        BuildModel model = staticRead(root);
 
         assertAll(
-            () -> assertEquals(List.of(root, root.resolve("core")), visited, "visited module roots"),
-            () -> assertEquals(List.of(
-                    missingModule("pom.xml", "ghost", "ghost"),
-                    missingModule("core/pom.xml", "inner-gone", "core/inner-gone")),
-                warnings, "warnings"));
+            () -> assertEquals(List.of("g:root", "g:child"), ids(model), "module ids"),
+            () -> assertEquals(java.util.Arrays.asList("17", "17"),
+                model.modules().stream().map(BuildModule::declaredLevel).toList(), "declared levels"));
     }
 
     @Test
-    @DisplayName("resolve reports each unloaded <module> once although the processor scan reads the same poms")
-    void resolve_reportsEachMissingModuleOnce(@TempDir Path root) throws IOException {
-        writeTreeWithMissingModules(root);
-        // Fail Maven fast; its warning follows the module warnings.
-        String mvnCmd = root.resolve("never-existed-mvn").toString();
-        System.setProperty("javalens.maven.binary", mvnCmd);
+    @DisplayName("Without a declared level the model has none")
+    void noLevelDeclared(@TempDir Path root) throws IOException {
+        write(root, "pom.xml", POM + "<artifactId>root</artifactId></project>");
 
-        BuildModel model = importer.resolve(root);
+        assertEquals(null, staticRead(root).analysisLevel());
+    }
 
-        List<LoadWarning> warnings = model.warnings();
+    // ========== Annotation processors ==========
+
+    @Test
+    @DisplayName("A processor path takes a missing version from dependency management; one with no version anywhere is APT_PROCESSOR_JARS_MISSING")
+    void processorVersions(@TempDir Path root) throws IOException {
+        write(root, "pom.xml", POM + "<artifactId>root</artifactId>"
+            + "<dependencyManagement><dependencies><dependency><groupId>p</groupId><artifactId>managed</artifactId>"
+            + "<version>2.0</version></dependency></dependencies></dependencyManagement>"
+            + "<build><plugins><plugin><artifactId>maven-compiler-plugin</artifactId><configuration>"
+            + "<annotationProcessorPaths>"
+            + "<path><groupId>p</groupId><artifactId>managed</artifactId></path>"
+            + "<path><groupId>p</groupId><artifactId>unversioned</artifactId></path>"
+            + "</annotationProcessorPaths></configuration></plugin></plugins></build></project>");
+
+        BuildModel model = staticRead(root);
+
+        Path repository = Path.of(System.getProperty("user.home"), ".m2", "repository");
         assertAll(
-            () -> assertEquals(List.of(".", "core"),
-                model.modules().stream().map(BuildModule::id).toList(), "module ids"),
-            () -> assertEquals(List.of(LoadWarning.MODULE_NOT_LOADED, LoadWarning.MODULE_NOT_LOADED,
-                    LoadWarning.BUILD_TOOL_UNAVAILABLE),
-                warnings.stream().map(LoadWarning::code).toList(), "warning codes"),
-            () -> assertEquals(List.of(
-                    missingModule("pom.xml", "ghost", "ghost"),
-                    missingModule("core/pom.xml", "inner-gone", "core/inner-gone")),
-                warnings.subList(0, Math.min(2, warnings.size())), "module warnings"),
-            // The message embeds the OS's process-start error text, which differs per OS
-            // and locale, so only the fields Maven's importer composes itself are pinned.
-            () -> assertEquals(null, warnings.get(warnings.size() - 1).module(), "subprocess warning module"),
-            () -> assertEquals("Install Maven and ensure '" + mvnCmd + "' is on PATH for the process that "
-                    + "launches JavaLens. Project dependencies will be unresolved until this is fixed.",
-                warnings.get(warnings.size() - 1).remediation(), "subprocess warning remediation"));
+            () -> assertEquals(List.of(repository.resolve("p/managed/2.0/managed-2.0.jar")), model.processorJars(),
+                "processor jars"),
+            () -> assertEquals(new LoadWarning(LoadWarning.APT_PROCESSOR_JARS_MISSING,
+                    "Annotation processor paths without a version, in the path or in dependency management, are not "
+                        + "registered: p:unversioned (g:root)",
+                    "Give each annotation processor path a version, then reload the project."),
+                model.warnings().get(0), "unversioned processor"));
     }
 
-    // ========== getDependencies failure path ==========
+    // ========== Maven unavailable ==========
 
     @Test
-    @DisplayName("getDependencies with a Maven binary that cannot start returns no dependencies and exactly one BUILD_TOOL_UNAVAILABLE")
-    void getDependencies_invalidMavenBinary_emitsWarning(@TempDir Path projectRoot) throws IOException {
-        Files.writeString(projectRoot.resolve("pom.xml"), "<project/>");
-        String mvnCmd = projectRoot.resolve("never-existed-mvn").toString();
-        System.setProperty("javalens.maven.binary", mvnCmd);
+    @DisplayName("A Maven binary that cannot start gives BUILD_TOOL_UNAVAILABLE, then BUILD_MODEL_STATIC, and no classpath")
+    void unavailableMaven(@TempDir Path root) throws IOException {
+        write(root, "pom.xml", POM + "<artifactId>root</artifactId></project>");
+        String mvn = root.resolve("no-such-mvn").toString();
 
-        List<LoadWarning> warnings = new ArrayList<>();
-        List<String> deps = importer.getDependencies(projectRoot, warnings);
+        BuildModel model;
+        try (MavenBinary maven = MavenBinary.use(mvn)) {
+            model = new MavenImporter().resolve(root);
+        }
 
+        LoadWarning unavailable = model.warnings().get(0);
+        BuildModel read = model;
         assertAll(
-            () -> assertEquals(List.of(), deps, "dependencies"),
-            () -> assertEquals(List.of(LoadWarning.BUILD_TOOL_UNAVAILABLE),
-                warnings.stream().map(LoadWarning::code).toList(), "warning codes"),
-            () -> assertEquals(null, warnings.get(0).module(), "warning module"),
-            () -> assertEquals("Install Maven and ensure '" + mvnCmd + "' is on PATH for the process that "
-                    + "launches JavaLens. Project dependencies will be unresolved until this is fixed.",
-                warnings.get(0).remediation(), "warning remediation"),
-            // The message ends with the OS's process-start error text, which differs per OS
-            // and locale, so only the part MavenImporter composes is pinned.
-            () -> assertTrue(warnings.get(0).message().startsWith("Could not start '" + mvnCmd + "': "),
-                () -> "warning message: " + warnings.get(0).message()));
-    }
-
-    // ========== detectAnnotationProcessors ==========
-
-    @Test
-    @DisplayName("detectAnnotationProcessors returns empty when no <annotationProcessorPaths> blocks exist")
-    void detectAnnotationProcessors_noBlocks_returnsEmpty(@TempDir Path projectRoot) throws IOException {
-        Files.writeString(projectRoot.resolve("pom.xml"),
-            "<project><artifactId>simple</artifactId></project>");
-        List<Path> processors = importer.detectAnnotationProcessors(projectRoot);
-        assertTrue(processors.isEmpty(),
-            "No <annotationProcessorPaths> → no processors; got: " + processors);
+            () -> assertEquals(List.of(LoadWarning.BUILD_TOOL_UNAVAILABLE, LoadWarning.BUILD_MODEL_STATIC),
+                codes(read), "warning codes"),
+            () -> assertEquals(List.of(), read.classpath(), "classpath"),
+            () -> assertEquals("Install Maven and ensure '" + mvn + "' is on PATH for the process that launches "
+                    + "JavaLens.", unavailable.remediation(), "remediation"),
+            // The message ends with the OS's process-start error text, which differs per OS and
+            // locale, so only the part MavenImporter composes is pinned.
+            () -> assertTrue(unavailable.message().startsWith("Could not start '" + mvn + "': "),
+                unavailable::message));
     }
 
     // ========== Helpers ==========
 
-    /**
-     * Root pom declaring {@code core} (present) and {@code ghost} (absent); {@code core}'s
-     * pom declares {@code inner-gone} (absent).
-     */
-    private static void writeTreeWithMissingModules(Path root) throws IOException {
-        Files.writeString(root.resolve("pom.xml"),
-            "<project><modules>"
-                + "<module>core</module>"
-                + "<module>ghost</module>"
-                + "</modules></project>");
-        Files.createDirectories(root.resolve("core"));
-        Files.writeString(root.resolve("core/pom.xml"),
-            "<project><modules>"
-                + "<module>inner-gone</module>"
-                + "</modules></project>");
+    private static BuildModel staticRead(Path root) {
+        try (MavenBinary maven = MavenBinary.use(root.resolve("no-such-mvn").toString())) {
+            return new MavenImporter().resolve(root);
+        }
+    }
+
+    private static void write(Path root, String relative, String content) throws IOException {
+        Path file = root.resolve(relative);
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, content);
+    }
+
+    private static List<String> ids(BuildModel model) {
+        return model.modules().stream().map(BuildModule::id).toList();
+    }
+
+    private static List<String> codes(BuildModel model) {
+        return model.warnings().stream().map(LoadWarning::code).toList();
     }
 
     private static LoadWarning missingModule(String declaringPom, String module, String relativeDir) {

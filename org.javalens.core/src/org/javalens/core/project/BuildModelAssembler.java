@@ -19,14 +19,12 @@ import java.util.jar.JarFile;
 /**
  * Assembles a {@link BuildModel} from an importer's per-concern methods and conventional
  * layout probing of the project's module directories. An importer's
- * {@link BuildSystemImporter#resolve} delegates here until it reads its build tool's
- * model; {@link GradleImporter}, which reads Gradle's, delegates here for the structure it
- * falls back to when Gradle does not report the model.
+ * {@link BuildSystemImporter#resolve} delegates here for a project with no build system
+ * and for the structure Gradle and Bazel fall back to when the tool does not report the
+ * model.
  *
- * <p>Module directories are found as the orchestrator found them before the model
- * existed, whatever the build system: the Maven module walk from the root, then the
- * Gradle subprojects named in {@code settings.gradle}, then for Bazel every BUILD
- * package. Each directory is one {@link BuildModule}, identified by its directory as
+ * <p>Module directories are the project root, then the Gradle subprojects named in
+ * {@code settings.gradle}, then for Bazel every BUILD package. Each directory is one {@link BuildModule}, identified by its directory as
  * {@link ProjectPaths#relativeToRoot} renders it. The first module at the project root
  * reports the root's existing conventional compiled-output directories as its output; no
  * other module reports output.
@@ -36,7 +34,6 @@ final class BuildModelAssembler {
     private static final Logger log = LoggerFactory.getLogger(BuildModelAssembler.class);
 
     private static final LinkedFolderConfigurator LAYOUT = new LinkedFolderConfigurator();
-    private static final MavenImporter MAVEN = new MavenImporter();
     private static final GradleImporter GRADLE = new GradleImporter();
     private static final BazelImporter BAZEL = new BazelImporter();
 
@@ -86,10 +83,7 @@ final class BuildModelAssembler {
         // directory is skipped when this list already holds a path under it.
         List<Path> discovered = new ArrayList<>();
 
-        // A module declared by the root pom can itself be an aggregator with its own
-        // <modules> and no sources; walkModules recurses into it. Without a root
-        // pom.xml the walk visits the root alone.
-        MAVEN.walkModules(projectRoot, dir -> modules.add(probe(projectRoot, dir, discovered)), warnings);
+        modules.add(probe(projectRoot, projectRoot, discovered));
 
         for (Path subproject : GRADLE.getSubprojects(projectRoot, warnings)) {
             modules.add(probe(projectRoot, subproject, discovered));

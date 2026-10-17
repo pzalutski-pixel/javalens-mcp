@@ -407,7 +407,8 @@ public class GradleImporter implements BuildSystemImporter {
 
     /**
      * The structure read statically from {@code settings.gradle}, laid out by convention by
-     * {@link BuildModelAssembler}, followed by {@code failure}. This importer implements none
+     * {@link BuildModelAssembler}, followed by {@code failure} and a
+     * {@link LoadWarning#BUILD_MODEL_STATIC}. This importer implements none
      * of the per-concern methods the assembler composes, so the model has no classpath,
      * processors or level, and Gradle is not run again.
      */
@@ -415,6 +416,11 @@ public class GradleImporter implements BuildSystemImporter {
         BuildModel read = BuildModelAssembler.assemble(this, BuildSystem.GRADLE, Provenance.STATIC_READ, projectRoot);
         List<LoadWarning> warnings = new ArrayList<>(read.warnings());
         warnings.addAll(failure);
+        warnings.add(new LoadWarning(LoadWarning.BUILD_MODEL_STATIC,
+            "Gradle did not report the project model, so the projects were read from the settings file; a static "
+                + "read cannot see custom source directories, Java levels, dependencies, plugins or build logic, so "
+                + "each project is laid out by convention and the classpath holds no dependencies",
+            "Fix the build-tool problem reported above, then reload the project."));
         return new BuildModel(read.buildSystem(), read.provenance(), read.modules(), read.classpath(),
             read.processorJars(), read.analysisLevel(), read.inputs(), warnings);
     }

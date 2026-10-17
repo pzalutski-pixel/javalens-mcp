@@ -28,9 +28,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * via {@code IJdtService.getWarnings()}, which {@code LoadProjectTool} includes in its
  * response.
  *
- * <p>This fixture deliberately declares a non-existent dependency so {@code mvn
- * dependency:build-classpath} exits non-zero. The test asserts that
- * {@code BUILD_TOOL_FAILED} is the load's one warning.
+ * <p>This fixture deliberately declares a non-existent dependency, so Maven reports the
+ * project model but cannot resolve the module's dependencies and exits non-zero. The test
+ * asserts that a {@code BUILD_TOOL_FAILED} naming the module is the load's one warning.
  *
  * <p>Requires {@code mvn} on PATH: the contract is a build tool that runs and fails.
  * Without Maven the load reports {@code BUILD_TOOL_UNAVAILABLE} instead, which
@@ -42,7 +42,7 @@ class SilentSubprocessFailureTest {
     TestProjectHelper helper = new TestProjectHelper();
 
     @Test
-    @DisplayName("mvn dependency resolution failure surfaces exactly one BUILD_TOOL_FAILED warning naming the exit code")
+    @DisplayName("A module whose dependencies Maven cannot resolve surfaces exactly one BUILD_TOOL_FAILED warning naming the module and the exit code")
     void mavenSubprocessFailureIsSurfaced() throws Exception {
         TestEnvironment.requireOrSkip(isMavenAvailable(),
             "Maven binary on PATH (build tool that runs and fails)");
@@ -57,14 +57,15 @@ class SilentSubprocessFailureTest {
 
         LoadWarning w = warnings.get(0);
         assertAll(
-            () -> assertEquals(null, w.module(), "warning module"),
-            () -> assertEquals("Run 'mvn dependency:build-classpath' manually in " + service.getProjectRoot()
-                    + " to see the full error.",
+            () -> assertEquals("com.example:broken-maven-deps", w.module(), "warning module"),
+            () -> assertEquals("If the module depends on another module of this build, install the build once "
+                    + "('mvn install -DskipTests') so Maven can resolve it, then reload the project.",
                 w.remediation(), "warning remediation"),
             // Maven exits with 1 when the build fails. The message ends with the last lines
             // of Maven's own error output, whose wording belongs to Maven, so only the part
             // MavenImporter composes is pinned.
-            () -> assertTrue(w.message().startsWith("mvn dependency:build-classpath exited with code 1. Last output: "),
+            () -> assertTrue(w.message().startsWith("Maven exited with code 1 and did not resolve the dependencies "
+                    + "of module 'com.example:broken-maven-deps', so they are not on the classpath. Last output: "),
                 () -> "warning message: " + w.message()));
     }
 

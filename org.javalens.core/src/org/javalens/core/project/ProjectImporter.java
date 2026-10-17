@@ -274,10 +274,11 @@ public class ProjectImporter {
     /**
      * Register the given jars on the project's JDT APT factory path and enable processing.
      * Failures are logged but don't propagate — APT not wiring up is a degraded mode, not
-     * a fatal load error. When every candidate jar fails the regular-file probe (e.g. a
+     * a fatal load error. When any candidate jar fails the regular-file probe (e.g. a
      * stale path no longer present on disk), a {@link LoadWarning#APT_PROCESSOR_JARS_MISSING}
-     * is recorded so the {@code load_project} response signals the silent-degradation
-     * state ("APT enabled, factory path empty") to MCP clients.
+     * names the missing jars, so the {@code load_project} response signals that those
+     * processors do not run; when every jar is missing it says APT runs with an empty
+     * factory path.
      */
     private void wireApt(IJavaProject javaProject, java.util.Set<java.nio.file.Path> processorJars) {
         try {
@@ -301,6 +302,14 @@ public class ProjectImporter {
                     "Annotation processors were declared but none of the " + processorJars.size()
                         + " candidate jar(s) were found on disk; APT is enabled with an empty "
                         + "factory path. Missing: " + missing,
+                    "Run your build's dependency-resolution step (e.g. 'mvn dependency:resolve', "
+                        + "'gradle resolveDependencies') so the declared processor jars are present "
+                        + "in the local cache, then reload the project."));
+            } else if (!missing.isEmpty()) {
+                warnings.add(new LoadWarning(
+                    LoadWarning.APT_PROCESSOR_JARS_MISSING,
+                    missing.size() + " of the " + processorJars.size() + " declared annotation-processor "
+                        + "jar(s) were not found on disk, so those processors do not run. Missing: " + missing,
                     "Run your build's dependency-resolution step (e.g. 'mvn dependency:resolve', "
                         + "'gradle resolveDependencies') so the declared processor jars are present "
                         + "in the local cache, then reload the project."));

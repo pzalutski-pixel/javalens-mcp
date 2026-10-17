@@ -6,466 +6,295 @@ import org.javalens.core.project.model.Provenance;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.File;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.LinkedHashSet;
+import java.util.Comparator;
 import java.util.List;
-import java.util.Set;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Consumer;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.Optional;
 import java.util.stream.Stream;
 
 /**
- * Maven {@link BuildSystemImporter} implementation. Owns:
- * <ul>
- *   <li>Multi-module detection and recursive module walking driven by
- *       {@code <modules>} entries in {@code pom.xml}.</li>
- *   <li>Dependency assembly via {@code mvn dependency:build-classpath}, with
- *       per-module aux files unioned after the build exits.</li>
- *   <li>Compiler-level extraction from {@code <properties>} shortcuts and the
- *       {@code maven-compiler-plugin} {@code <configuration>} block.</li>
- *   <li>Annotation-processor discovery by parsing {@code <annotationProcessorPaths>}
- *       blocks across the whole reactor, resolved against the local Maven repository.</li>
- * </ul>
+ * Maven {@link BuildSystemImporter}: the project model is the one Maven reports.
+ *
+ * <p>{@link #resolve} runs Maven once, through {@link BuildToolRunner}, in the project root:
+ * {@code help:effective-pom} writes the effective pom of every reactor project, and
+ * {@code dependency:build-classpath} writes each project's classpath to a file named by its
+ * coordinates, both into a scratch directory created for the run and deleted once the model
+ * is read, so nothing is written into the project tree. {@link MavenModels} builds the model,
+ * with provenance {@link Provenance#BUILD_TOOL}. When a module declares annotation processor
+ * paths, a second run asks Maven for its local repository, where the processor jars are.
+ * Arguments in {@code JAVALENS_MAVEN_ARGS} are passed to both runs.
+ *
+ * <p>Maven runs with {@code --fail-at-end}: when it reports the effective poms but fails on
+ * some modules, the model is still Maven's, and each module Maven wrote no classpath for is
+ * named by a {@link LoadWarning#BUILD_TOOL_FAILED}.
+ *
+ * <p>When Maven does not produce the model, the model is read from the {@code pom.xml} files
+ * as XML ({@link MavenModels#walkStatic}), with no classpath, provenance
+ * {@link Provenance#STATIC_READ}, the build-tool warning saying why, and a
+ * {@link LoadWarning#BUILD_MODEL_STATIC}. Maven is not run again.
  */
 public class MavenImporter implements BuildSystemImporter {
 
     private static final Logger log = LoggerFactory.getLogger(MavenImporter.class);
 
-    // Pattern to extract module names from pom.xml
-    private static final Pattern MODULE_PATTERN = Pattern.compile("<module>([^<]+)</module>");
+    private static final String HELP_PLUGIN = "org.apache.maven.plugins:maven-help-plugin:3.5.1";
+    private static final String DEPENDENCY_PLUGIN = "org.apache.maven.plugins:maven-dependency-plugin:3.8.1";
+
+    /** The prefix of the scratch directory each run creates in the system temporary directory. */
+    private static final String SCRATCH_PREFIX = "javalens-maven-model-";
 
     /**
-     * Per-module classpath file path written by {@code dependency:build-classpath}.
-     *
-     * <p>Bug C: passing this as a *relative* path (rather than absolute) makes each
-     * reactor child write to its own {@code <module>/target/javalens-classpath.txt};
-     * an absolute path causes every child to overwrite the same file so only the last
-     * child's classpath survives. The {@code target/} prefix is necessary because the
-     * dependency-plugin resolves relative {@code mdep.outputFile} against the module's
-     * project base directory, not its build directory.
+     * How long a Maven run may take before it is stopped. A first run may download the help
+     * and dependency plugins, hence a generous limit; later runs hit the local repository.
      */
-    private static final String MAVEN_CP_FILENAME = "javalens-classpath.txt";
-    private static final String MAVEN_CP_RELATIVE_PATH = "target/" + MAVEN_CP_FILENAME;
+    private static final Duration MAVEN_TIMEOUT = Duration.ofMinutes(10);
 
-    /** How long {@code mvn dependency:build-classpath} may run before it is stopped. */
-    private static final Duration MAVEN_TIMEOUT = Duration.ofSeconds(120);
+    private final Duration timeout;
 
-    /**
-     * Compose the module walk with {@link #getDependencies}, {@link #detectCompilerLevel}
-     * and {@link #detectAnnotationProcessors}. Modules, level and processors come from
-     * regex reads of the poms, so the model is {@link Provenance#STATIC_READ}.
-     */
+    public MavenImporter() {
+        this(MAVEN_TIMEOUT);
+    }
+
+    /** Test seam: stop each Maven run after {@code timeout}. */
+    MavenImporter(Duration timeout) {
+        this.timeout = timeout;
+    }
+
     @Override
     public BuildModel resolve(Path projectRoot) {
-        return BuildModelAssembler.assemble(this, BuildSystem.MAVEN, Provenance.STATIC_READ, projectRoot);
+        List<LoadWarning> failure = new ArrayList<>();
+        Optional<BuildModel> reported = reportedModel(projectRoot, failure);
+        return reported.isPresent() ? reported.get() : staticModel(projectRoot, failure);
     }
 
     /**
-     * Detect if this is a multi-module Maven project.
+     * Run Maven in a scratch directory of its own and build the model from what it wrote,
+     * deleting the scratch directory afterwards. Empty, with the reason appended to
+     * {@code failure}, when Maven does not produce the model.
      */
-    public boolean isMultiModule(Path projectPath) {
-        Path pomPath = projectPath.resolve("pom.xml");
-        if (!Files.exists(pomPath)) {
-            return false;
-        }
+    private Optional<BuildModel> reportedModel(Path projectRoot, List<LoadWarning> failure) {
+        Path scratch;
         try {
-            String content = Files.readString(pomPath);
-            return content.contains("<modules>") || content.contains("<packaging>pom</packaging>");
+            scratch = Files.createTempDirectory(SCRATCH_PREFIX);
         } catch (IOException e) {
-            log.debug("Error reading pom.xml: {}", e.getMessage());
-            return false;
+            failure.add(preparationFailure(e));
+            return Optional.empty();
         }
-    }
-
-    /**
-     * Get the module directories that {@code moduleRoot}'s pom.xml declares, in
-     * declaration order. A {@code <module>} entry that is not a valid path, or whose
-     * directory does not exist, is skipped and appended to {@code warnings} as a
-     * {@link LoadWarning#MODULE_NOT_LOADED}.
-     */
-    private List<Path> getModules(Path projectRoot, Path moduleRoot, List<LoadWarning> warnings) {
-        List<Path> modules = new ArrayList<>();
-        Path pomPath = moduleRoot.resolve("pom.xml");
-
-        if (!Files.exists(pomPath)) {
-            return modules;
-        }
-
         try {
-            String content = Files.readString(pomPath);
-            Matcher matcher = MODULE_PATTERN.matcher(content);
-            while (matcher.find()) {
-                String moduleName = matcher.group(1).trim();
-                DeclaredPaths.mavenModuleDir(projectRoot, pomPath, moduleName, warnings)
-                    .ifPresent(modules::add);
-            }
-        } catch (IOException e) {
-            log.warn("Error reading pom.xml for modules: {}", e.getMessage());
-        }
-
-        log.debug("Found {} modules in multi-module project", modules.size());
-        return modules;
-    }
-
-    /**
-     * Recursively visit a Maven module and every {@code <module>} entry it declares,
-     * calling {@code visitor} on each module root (including pure aggregators that have
-     * {@code <modules>} but no {@code src/main/java}). The visited set is keyed on
-     * canonical paths so a relative {@code <module>} like {@code ../sibling} that loops
-     * back to an already-visited directory exits cleanly.
-     *
-     * <p>The visitor is invoked once per module root in the reactor; callers wire their
-     * own per-module logic (e.g. probing for source layouts). Each {@code <module>} entry
-     * that does not resolve to a directory is appended to {@code warnings} as a
-     * {@link LoadWarning#MODULE_NOT_LOADED}, every declaration of a pom before those of
-     * its modules.
-     */
-    public void walkModules(Path projectPath, Consumer<Path> visitor, List<LoadWarning> warnings) {
-        walkModulesInternal(projectPath, projectPath, visitor, new HashSet<>(), warnings);
-    }
-
-    private void walkModulesInternal(Path projectRoot, Path moduleRoot, Consumer<Path> visitor,
-            Set<Path> visited, List<LoadWarning> warnings) {
-        Path canonical;
-        try {
-            canonical = moduleRoot.toRealPath();
-        } catch (IOException e) {
-            canonical = moduleRoot.toAbsolutePath().normalize();
-        }
-        if (!visited.add(canonical)) return;
-
-        visitor.accept(moduleRoot);
-
-        if (isMultiModule(moduleRoot)) {
-            for (Path child : getModules(projectRoot, moduleRoot, warnings)) {
-                walkModulesInternal(projectRoot, child, visitor, visited, warnings);
-            }
-        }
-    }
-
-    /**
-     * Read the project's declared Java source level from pom.xml. Tries, in priority order:
-     * <ol>
-     *   <li>{@code <properties>}: {@code maven.compiler.release} > {@code source} >
-     *       {@code target}.</li>
-     *   <li>{@code <plugin><artifactId>maven-compiler-plugin</artifactId><configuration>}:
-     *       {@code <release>} > {@code <source>} > {@code <target>}. This form is the more
-     *       common one in real projects that don't use the property shortcuts.</li>
-     * </ol>
-     * Returns {@code null} if neither location declares a level.
-     */
-    public String detectCompilerLevel(Path projectPath) {
-        Path pom = projectPath.resolve("pom.xml");
-        if (!Files.exists(pom)) return null;
-        try {
-            String content = Files.readString(pom);
-
-            // 1. <properties> shortcuts.
-            for (String key : new String[]{"maven.compiler.release", "maven.compiler.source", "maven.compiler.target"}) {
-                String value = extractXmlText(content, key);
-                if (value != null) return resolvePomProperty(content, value);
-            }
-
-            // 2. <plugin>maven-compiler-plugin</plugin>'s <configuration> block. Match
-            // <plugin>...</plugin> spans first, then check artifactId inside — handles
-            // groupId-before-artifactId, artifactId-before-groupId, or no groupId at all.
-            Matcher pluginBlock = Pattern.compile("<plugin>(.*?)</plugin>", Pattern.DOTALL).matcher(content);
-            while (pluginBlock.find()) {
-                String inner = pluginBlock.group(1);
-                String artifact = extractXmlText(inner, "artifactId");
-                if (!"maven-compiler-plugin".equals(artifact)) continue;
-                Matcher configBlock = Pattern.compile("<configuration>(.*?)</configuration>", Pattern.DOTALL).matcher(inner);
-                if (configBlock.find()) {
-                    String config = configBlock.group(1);
-                    for (String tag : new String[]{"release", "source", "target"}) {
-                        String value = extractXmlText(config, tag);
-                        if (value != null) return resolvePomProperty(content, value);
-                    }
-                }
-            }
-        } catch (IOException e) {
-            log.debug("Failed to read pom.xml for compiler level: {}", e.getMessage());
-        }
-        return null;
-    }
-
-    /**
-     * Parse {@code <annotationProcessorPaths>} blocks from {@code maven-compiler-plugin}
-     * configuration across the whole reactor, resolve each {@code <path>} to the
-     * corresponding jar in the local Maven repository, and union the results.
-     *
-     * <p>In a multi-module project the {@code <annotationProcessorPaths>} block typically
-     * lives in a child module's pom (e.g. only {@code :model} declares Lombok), so reading
-     * just the root pom misses the processors entirely. We walk the reactor: root pom plus
-     * every module's pom, recursively for nested modules. Property references in
-     * {@code <version>} (e.g. {@code ${lombok.version}}) resolve against the pom they
-     * appear in first, then fall back to the parent if undefined.
-     */
-    public List<Path> detectAnnotationProcessors(Path projectPath) {
-        List<Path> jars = new ArrayList<>();
-        LinkedHashSet<Path> visited = new LinkedHashSet<>();
-        collectProcessorJarsRecursive(projectPath, projectPath, null, jars, visited);
-        return jars;
-    }
-
-    private void collectProcessorJarsRecursive(Path projectRoot, Path moduleRoot, String parentPomContent,
-            List<Path> jars, Set<Path> visited) {
-        if (!visited.add(moduleRoot)) return;
-
-        Path pom = moduleRoot.resolve("pom.xml");
-        if (!Files.exists(pom)) return;
-
-        String content;
-        try {
-            content = Files.readString(pom);
-        } catch (IOException e) {
-            log.debug("Failed to read pom.xml at {}: {}", pom, e.getMessage());
-            return;
-        }
-
-        parseProcessorPathsFromPomContent(content, parentPomContent, jars);
-
-        // Recurse into <modules> entries. The module walk reports every entry that does
-        // not resolve to a directory; this recursion reads the same entries, so what it
-        // would report is dropped to keep one warning per declaration.
-        List<LoadWarning> reportedByModuleWalk = new ArrayList<>();
-        Matcher matcher = MODULE_PATTERN.matcher(content);
-        while (matcher.find()) {
-            String moduleName = matcher.group(1).trim();
-            DeclaredPaths.mavenModuleDir(projectRoot, pom, moduleName, reportedByModuleWalk)
-                .ifPresent(childRoot -> collectProcessorJarsRecursive(
-                    projectRoot, childRoot, content, jars, visited));
-        }
-    }
-
-    private void parseProcessorPathsFromPomContent(String content, String parentPomContent, List<Path> jars) {
-        Matcher block = Pattern.compile(
-            "<annotationProcessorPaths>(.*?)</annotationProcessorPaths>",
-            Pattern.DOTALL).matcher(content);
-        while (block.find()) {
-            String inner = block.group(1);
-            Matcher pathBlock = Pattern.compile("<path>(.*?)</path>", Pattern.DOTALL).matcher(inner);
-            while (pathBlock.find()) {
-                String pb = pathBlock.group(1);
-                String group = extractXmlText(pb, "groupId");
-                String artifact = extractXmlText(pb, "artifactId");
-                String version = extractXmlText(pb, "version");
-                if (group != null && artifact != null && version != null) {
-                    version = resolvePomProperty(content, version);
-                    if (version.startsWith("${") && parentPomContent != null) {
-                        version = resolvePomProperty(parentPomContent, version);
-                    }
-                    Path jar = mavenRepoJarPath(group, artifact, version);
-                    if (Files.isRegularFile(jar)) {
-                        jars.add(jar);
-                    } else {
-                        log.warn("Annotation processor jar missing in local repo: {} " +
-                            "(run 'mvn dependency:resolve' to download)", jar);
-                    }
-                }
-            }
-        }
-    }
-
-    /**
-     * Resolve a Maven property reference like {@code ${lombok.version}} against the pom's
-     * own {@code <properties>}. Returns the input unchanged if it isn't a {@code ${...}}
-     * placeholder or the property isn't declared.
-     */
-    private String resolvePomProperty(String pomContent, String value) {
-        if (!value.startsWith("${") || !value.endsWith("}")) return value;
-        String name = value.substring(2, value.length() - 1);
-        String resolved = extractXmlText(pomContent, name);
-        return resolved != null ? resolved : value;
-    }
-
-    private Path mavenRepoJarPath(String groupId, String artifactId, String version) {
-        String repo = System.getProperty("user.home") + "/.m2/repository";
-        String groupPath = groupId.replace('.', '/');
-        return Path.of(repo, groupPath, artifactId, version,
-            artifactId + "-" + version + ".jar");
-    }
-
-    /**
-     * Run {@code mvn dependency:build-classpath} with a per-module {@code mdep.outputFile},
-     * then walk the reactor for the per-module aux files and union their contents. A Maven
-     * that cannot start appends {@code BUILD_TOOL_UNAVAILABLE}, one that does not finish in
-     * time {@code BUILD_TOOL_TIMEOUT}, and one that fails or is interrupted
-     * {@code BUILD_TOOL_FAILED}, so the orchestrator can surface degraded loads.
-     */
-    public List<String> getDependencies(Path projectPath, List<LoadWarning> warnings) {
-        LinkedHashSet<String> jars = new LinkedHashSet<>();
-
-        try {
-            // The system property override lets test runs (and pinned-Maven setups) point at
-            // a specific Maven binary without touching the process PATH. Production callers
-            // don't set this, so the default lookup is unchanged.
-            String mvnCmd = System.getProperty("javalens.maven.binary",
-                isWindows() ? "mvn.cmd" : "mvn");
-            List<String> command = List.of(
-                mvnCmd,
-                "dependency:build-classpath",
-                "-Dmdep.outputFile=" + MAVEN_CP_RELATIVE_PATH,
-                "-Dmdep.regenerateFile=true",
-                "-q"
-            );
-
-            log.info("Running Maven to get classpath...");
-            BuildToolRunner.Result result = BuildToolRunner.run(command, projectPath, MAVEN_TIMEOUT);
-
-            if (result.outcome() == BuildToolRunner.Outcome.UNAVAILABLE) {
-                // Most common cause: mvn (or mvn.cmd) not on PATH. Surface it explicitly.
-                log.warn("Cannot start Maven subprocess: {}", result.startFailure());
-                warnings.add(new LoadWarning(
-                    LoadWarning.BUILD_TOOL_UNAVAILABLE,
-                    "Could not start '" + mvnCmd + "': " + result.startFailure(),
-                    "Install Maven and ensure '" + mvnCmd + "' is on PATH for the process that " +
-                        "launches JavaLens. Project dependencies will be unresolved until this is fixed."));
-                return new ArrayList<>(jars);
-            }
-
-            if (result.outcome() == BuildToolRunner.Outcome.TIMED_OUT) {
-                log.warn("Maven classpath command timed out");
-                warnings.add(new LoadWarning(
-                    LoadWarning.BUILD_TOOL_TIMEOUT,
-                    "Maven dependency:build-classpath did not finish within " +
-                        MAVEN_TIMEOUT.toSeconds() + " seconds",
-                    "Check that the project's pom.xml resolves correctly. Try running " +
-                        "'mvn dependency:build-classpath' manually in " + projectPath));
-                return new ArrayList<>(jars);
-            }
-
-            if (result.outcome() == BuildToolRunner.Outcome.INTERRUPTED) {
-                log.warn("Maven classpath command was interrupted");
-                warnings.add(new LoadWarning(
-                    LoadWarning.BUILD_TOOL_FAILED,
-                    "Maven dependency:build-classpath was interrupted before it finished",
-                    "Reload the project to run the build tool again."));
-                return new ArrayList<>(jars);
-            }
-
-            if (result.exitCode() == 0) {
-                int filesFound = aggregateClasspathFiles(projectPath, jars);
-                log.info("Got {} classpath entries from Maven ({} per-module files)", jars.size(), filesFound);
-                // Narrow Bug X regression: mvn can exit 0 yet write zero classpath files
-                // — for example, a custom dependency-plugin version that doesn't honor our
-                // flag, a profile that disables the plugin, or a different mojo binding.
-                // Distinguish "mvn wrote nothing" (suspicious, soft fail) from "mvn wrote
-                // files but the project has no deps" (legitimate, no warning).
-                if (filesFound == 0) {
-                    String snippet = result.lastLines();
-                    warnings.add(new LoadWarning(
-                        LoadWarning.BUILD_TOOL_FAILED,
-                        "mvn dependency:build-classpath exited successfully but produced no " +
-                            "classpath files. Last output: " + (snippet.isEmpty() ? "(empty)" : snippet),
-                        "Run 'mvn dependency:build-classpath -Dmdep.outputFile=target/cp.txt' " +
-                            "manually in " + projectPath + " to confirm the plugin emits output."));
-                }
-            } else {
-                int exitCode = result.exitCode();
-                log.warn("Maven classpath command failed with exit code: {}", exitCode);
-                String snippet = result.lastLines();
-                warnings.add(new LoadWarning(
-                    LoadWarning.BUILD_TOOL_FAILED,
-                    "mvn dependency:build-classpath exited with code " + exitCode +
-                        (snippet.isEmpty() ? "" : ". Last output: " + snippet),
-                    "Run 'mvn dependency:build-classpath' manually in " + projectPath +
-                        " to see the full error."));
-            }
-
-        } catch (Exception e) {
-            log.error("Failed to get Maven classpath", e);
-            warnings.add(new LoadWarning(
-                LoadWarning.BUILD_TOOL_FAILED,
-                "Maven invocation threw an unexpected error: " + e.getClass().getSimpleName() +
-                    ": " + e.getMessage(),
-                "Run 'mvn dependency:build-classpath' manually in " + projectPath +
-                    " to reproduce."));
+            return runMaven(projectRoot, scratch, failure);
         } finally {
-            cleanupClasspathFiles(projectPath);
+            deleteScratch(scratch);
+        }
+    }
+
+    private Optional<BuildModel> runMaven(Path projectRoot, Path scratch, List<LoadWarning> failure) {
+        Path effectivePom = scratch.resolve("effective-pom.xml");
+        Path classpathDir = scratch.resolve("classpath");
+        String mvn = mavenBinary();
+        // --fail-at-end: a module whose dependencies do not resolve (one that depends on a
+        // module of the build that is not installed, typically) fails alone; the effective
+        // pom, written at the root project, and every other module's classpath still come.
+        List<String> command = new ArrayList<>(List.of(
+            mvn, "-B", "-q", "--fail-at-end",
+            HELP_PLUGIN + ":effective-pom", "-Doutput=" + effectivePom,
+            DEPENDENCY_PLUGIN + ":build-classpath",
+            // Maven expands the project references for each reactor project, so each writes
+            // its own file.
+            "-Dmdep.outputFile=" + classpathDir.resolve("${project.groupId}__${project.artifactId}.txt")));
+        command.addAll(BuildToolArgs.of(BuildToolArgs.MAVEN));
+
+        log.info("Running Maven to read the project model of {}", projectRoot);
+        BuildToolRunner.Result result = BuildToolRunner.run(command, projectRoot, timeout);
+        Optional<LoadWarning> runFailure = runFailure(result, mvn, projectRoot, "reading the project model");
+        boolean exitedNonZero = result.outcome() == BuildToolRunner.Outcome.EXITED && result.exitCode() != 0;
+        if (runFailure.isPresent() && !(exitedNonZero && Files.isRegularFile(effectivePom))) {
+            failure.add(runFailure.get());
+            return Optional.empty();
         }
 
-        return new ArrayList<>(jars);
+        List<LoadWarning> warnings = new ArrayList<>();
+        List<MavenModels.Module> reactor;
+        try {
+            reactor = MavenModels.walkEffective(projectRoot, MavenModels.readEffective(effectivePom), warnings);
+        } catch (IOException | UncheckedIOException e) {
+            log.warn("Maven's project model could not be read", e);
+            failure.add(new LoadWarning(LoadWarning.BUILD_TOOL_FAILED,
+                "Maven exited with code 0, but the project model could not be read: " + e.getMessage(),
+                "Run 'mvn help:effective-pom' in " + projectRoot + " to see the model Maven reports."));
+            return Optional.empty();
+        }
+
+        Path localRepository = null;
+        if (MavenModels.declaresProcessors(reactor)) {
+            localRepository = localRepository(projectRoot, scratch, warnings).orElse(null);
+        }
+        // Maven reported the structure but failed on some modules: each module it wrote no
+        // classpath for is named, with Maven's last output.
+        List<LoadWarning> unresolved = new ArrayList<>();
+        if (exitedNonZero) {
+            for (MavenModels.Module module : reactor) {
+                if (!Files.isRegularFile(MavenModels.classpathFile(classpathDir, module))) {
+                    String snippet = result.lastLines();
+                    unresolved.add(new LoadWarning(LoadWarning.BUILD_TOOL_FAILED,
+                        "Maven exited with code " + result.exitCode() + " and did not resolve the dependencies of "
+                            + "module '" + module.pom().id() + "', so they are not on the classpath"
+                            + (snippet.isEmpty() ? "" : ". Last output: " + snippet),
+                        "If the module depends on another module of this build, install the build once "
+                            + "('mvn install -DskipTests') so Maven can resolve it, then reload the project.",
+                        module.pom().id()));
+                }
+            }
+            if (unresolved.isEmpty()) {
+                unresolved.add(runFailure.get());
+            }
+        } else if (reactor.stream().noneMatch(module ->
+                Files.isRegularFile(MavenModels.classpathFile(classpathDir, module)))) {
+            unresolved.add(new LoadWarning(LoadWarning.BUILD_TOOL_FAILED,
+                "Maven exited successfully but wrote no classpath file, so the classpath holds no dependencies",
+                "Run 'mvn dependency:build-classpath' in " + projectRoot + " to confirm the plugin runs."));
+        }
+        BuildModel model = MavenModels.model(projectRoot, Provenance.BUILD_TOOL, reactor, classpathDir,
+            localRepository, warnings, unresolved);
+        log.info("Maven reported {} modules, {} classpath entries, {} processor jars, level {}",
+            model.modules().size(), model.classpath().size(), model.processorJars().size(), model.analysisLevel());
+        return Optional.of(model);
     }
 
     /**
-     * Walk the project tree for {@code <module>/target/javalens-classpath.txt} files
-     * written by {@code dependency:build-classpath} and union their contents into
-     * {@code jars}. The caller passes a {@link LinkedHashSet} so duplicates across
-     * modules collapse while preserving discovery order.
-     *
-     * @return number of classpath files actually found and read. Distinguishes "mvn ran but
-     *     produced no files" (suspicious, plugin disabled or wrong version) from "mvn ran,
-     *     produced files, files were empty" (legitimate — project has no dependencies).
+     * The local repository Maven resolves artifacts in, from a second run of
+     * {@code help:evaluate}. Empty, with a {@link LoadWarning#BUILD_TOOL_FAILED} saying the
+     * annotation processors are not registered, when the run does not report it.
      */
-    private int aggregateClasspathFiles(Path projectPath, Set<String> jars) {
-        AtomicInteger filesFound = new AtomicInteger();
-        try (Stream<Path> stream = Files.walk(projectPath)) {
-            stream.filter(p -> p.getFileName() != null
-                        && MAVEN_CP_FILENAME.equals(p.getFileName().toString()))
-                  .filter(p -> p.getParent() != null
-                        && p.getParent().getFileName() != null
-                        && "target".equals(p.getParent().getFileName().toString()))
-                  .forEach(cpFile -> {
-                      filesFound.incrementAndGet();
-                      try {
-                          String content = Files.readString(cpFile).trim();
-                          if (!content.isEmpty()) {
-                              for (String entry : content.split(File.pathSeparator)) {
-                                  if (!entry.isBlank()) jars.add(entry);
-                              }
-                          }
-                      } catch (IOException e) {
-                          log.warn("Could not read classpath file {}: {}", cpFile, e.getMessage());
-                      }
-                  });
+    private Optional<Path> localRepository(Path projectRoot, Path scratch, List<LoadWarning> warnings) {
+        Path output = scratch.resolve("local-repository.txt");
+        String mvn = mavenBinary();
+        List<String> command = new ArrayList<>(List.of(
+            mvn, "-B", "-q", "-N", HELP_PLUGIN + ":evaluate",
+            "-Dexpression=settings.localRepository", "-Doutput=" + output));
+        command.addAll(BuildToolArgs.of(BuildToolArgs.MAVEN));
+        BuildToolRunner.Result result = BuildToolRunner.run(command, projectRoot, timeout);
+        Optional<LoadWarning> runFailure = runFailure(result, mvn, projectRoot, "reading its local repository");
+        String reason = runFailure.map(LoadWarning::message).orElse(null);
+        if (reason == null) {
+            try {
+                String value = Files.readString(output).trim();
+                if (!value.isEmpty()) {
+                    return Optional.of(Path.of(value));
+                }
+                reason = "Maven reported an empty local repository";
+            } catch (IOException | InvalidPathException e) {
+                reason = "Maven's local repository could not be read: " + e.getMessage();
+            }
+        }
+        warnings.add(new LoadWarning(LoadWarning.BUILD_TOOL_FAILED,
+            reason + "; the declared annotation processors are not registered",
+            "Run 'mvn help:evaluate -Dexpression=settings.localRepository' in " + projectRoot
+                + " to see the error, then reload the project."));
+        return Optional.empty();
+    }
+
+    /**
+     * The model read from the {@code pom.xml} files as XML, with no classpath, followed by
+     * {@code failure} and a {@link LoadWarning#BUILD_MODEL_STATIC}. Processor jars are
+     * resolved in the default local repository.
+     */
+    private BuildModel staticModel(Path projectRoot, List<LoadWarning> failure) {
+        List<LoadWarning> warnings = new ArrayList<>();
+        List<MavenModels.Module> reactor = MavenModels.walkStatic(projectRoot, warnings);
+        List<LoadWarning> trailing = new ArrayList<>(failure);
+        trailing.add(new LoadWarning(LoadWarning.BUILD_MODEL_STATIC,
+            "Maven did not report the project model, so the modules, source directories, Java levels and "
+                + "annotation processors were read from the pom.xml files; a static read resolves no dependencies "
+                + "(the classpath holds none), does not evaluate profile activation or parents outside the project "
+                + "tree, and looks for processor jars in the default local repository "
+                + MavenModels.defaultLocalRepository(),
+            "Fix the build-tool problem reported above, then reload the project."));
+        return MavenModels.model(projectRoot, Provenance.STATIC_READ, reactor, null,
+            MavenModels.defaultLocalRepository(), warnings, trailing);
+    }
+
+    /**
+     * The warning for a run that did not exit 0: one that could not start, ran past
+     * {@link #timeout}, was interrupted, or exited non-zero. Empty for a run that exited 0.
+     */
+    private Optional<LoadWarning> runFailure(BuildToolRunner.Result result, String mvn, Path projectRoot,
+            String purpose) {
+        return switch (result.outcome()) {
+            case UNAVAILABLE -> {
+                log.warn("Cannot start Maven: {}", result.startFailure());
+                yield Optional.of(new LoadWarning(LoadWarning.BUILD_TOOL_UNAVAILABLE,
+                    "Could not start '" + mvn + "': " + result.startFailure(),
+                    "Install Maven and ensure '" + mvn + "' is on PATH for the process that launches JavaLens."));
+            }
+            case TIMED_OUT -> {
+                log.warn("Maven did not finish within {}", timeout);
+                yield Optional.of(new LoadWarning(LoadWarning.BUILD_TOOL_TIMEOUT,
+                    "Maven did not finish " + purpose + " within " + describe(timeout),
+                    "Check that the project's pom.xml resolves correctly. Try running 'mvn validate' in "
+                        + projectRoot));
+            }
+            case INTERRUPTED -> {
+                log.warn("Maven was interrupted");
+                yield Optional.of(new LoadWarning(LoadWarning.BUILD_TOOL_FAILED,
+                    "Maven was interrupted before it finished " + purpose,
+                    "Reload the project to run the build tool again."));
+            }
+            case EXITED -> {
+                if (result.exitCode() == 0) {
+                    yield Optional.empty();
+                }
+                log.warn("Maven exited with code {}", result.exitCode());
+                String snippet = result.lastLines();
+                yield Optional.of(new LoadWarning(LoadWarning.BUILD_TOOL_FAILED,
+                    "Maven exited with code " + result.exitCode() + " while " + purpose
+                        + (snippet.isEmpty() ? "" : ". Last output: " + snippet),
+                    "Run 'mvn validate' in " + projectRoot + " to see the full error."));
+            }
+        };
+    }
+
+    /** The warning for a scratch directory that could not be created. */
+    private static LoadWarning preparationFailure(IOException e) {
+        log.warn("Could not prepare the Maven run", e);
+        return new LoadWarning(LoadWarning.BUILD_TOOL_FAILED,
+            "Could not prepare the Maven run that reads the project model: "
+                + e.getClass().getSimpleName() + ": " + e.getMessage(),
+            "Check that the system temporary directory " + System.getProperty("java.io.tmpdir")
+                + " is writable, then reload the project.");
+    }
+
+    /** {@code limit} in minutes when it is a whole number of minutes, otherwise in seconds. */
+    private static String describe(Duration limit) {
+        if (!limit.isZero() && limit.equals(Duration.ofMinutes(limit.toMinutes()))) {
+            return limit.toMinutes() + " minutes";
+        }
+        return limit.toSeconds() + " seconds";
+    }
+
+    /** Delete {@code scratch} and everything in it; a failure is logged at warn. */
+    private static void deleteScratch(Path scratch) {
+        try (Stream<Path> walk = Files.walk(scratch)) {
+            for (Path path : walk.sorted(Comparator.reverseOrder()).toList()) {
+                Files.delete(path);
+            }
         } catch (IOException e) {
-            log.warn("Failed to walk {} for classpath files: {}", projectPath, e.getMessage());
-        }
-        return filesFound.get();
-    }
-
-    /**
-     * Remove every {@code <module>/target/javalens-classpath.txt} we may have written so we
-     * don't leave artifacts behind in the user's project.
-     */
-    private void cleanupClasspathFiles(Path projectPath) {
-        try (Stream<Path> stream = Files.walk(projectPath)) {
-            stream.filter(p -> p.getFileName() != null
-                        && MAVEN_CP_FILENAME.equals(p.getFileName().toString()))
-                  .filter(p -> p.getParent() != null
-                        && p.getParent().getFileName() != null
-                        && "target".equals(p.getParent().getFileName().toString()))
-                  .forEach(p -> {
-                      try { Files.deleteIfExists(p); }
-                      catch (IOException e) { log.trace("Could not delete {}: {}", p, e.getMessage()); }
-                  });
-        } catch (IOException e) {
-            log.trace("Cleanup walk failed for {}: {}", projectPath, e.getMessage());
+            log.warn("Could not delete the Maven scratch directory {}: {}", scratch, e.getMessage());
         }
     }
 
     /**
-     * Extract the trimmed text content of the first occurrence of {@code <tag>...</tag>}.
-     * Returns {@code null} if the tag is absent or empty.
+     * The Maven binary to run: the {@code javalens.maven.binary} system property when set (a
+     * test and pinned-Maven seam), otherwise {@code mvn} on PATH ({@code mvn.cmd} on Windows).
      */
-    private static String extractXmlText(String xml, String tag) {
-        Pattern p = Pattern.compile("<" + Pattern.quote(tag) + ">\\s*([^<]+?)\\s*</" + Pattern.quote(tag) + ">");
-        Matcher m = p.matcher(xml);
-        if (!m.find()) return null;
-        String value = m.group(1).trim();
-        return value.isEmpty() ? null : value;
-    }
-
-    private boolean isWindows() {
-        return System.getProperty("os.name").toLowerCase().contains("win");
+    private static String mavenBinary() {
+        String override = System.getProperty("javalens.maven.binary");
+        if (override != null && !override.isBlank()) return override;
+        return System.getProperty("os.name").toLowerCase().contains("win") ? "mvn.cmd" : "mvn";
     }
 }

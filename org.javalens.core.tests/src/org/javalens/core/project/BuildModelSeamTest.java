@@ -335,12 +335,12 @@ class BuildModelSeamTest {
             // The root pom's maven.compiler.source.
             () -> assertEquals("21", service.getAnalysisLevel(), "analysis level"));
         // The root pom declares api, impl and web; the root itself is the first module. A
-        // module's id is its directory relative to the root.
+        // module's id is its groupId:artifactId.
         assertEquals(List.of(
-                Map.entry(".", root),
-                Map.entry("api", root.resolve("api")),
-                Map.entry("impl", root.resolve("impl")),
-                Map.entry("web", root.resolve("web"))),
+                Map.entry("com.example:multi-module-parent", root),
+                Map.entry("com.example:api", root.resolve("api")),
+                Map.entry("com.example:impl", root.resolve("impl")),
+                Map.entry("com.example:web", root.resolve("web"))),
             model.modules().stream().map(module -> Map.entry(module.id(), module.dir())).toList(),
             "module ids and directories");
     }

@@ -85,7 +85,7 @@ class LoadResilienceTest {
             () -> assertEquals(1, service.getSourceFileCount(), "source file count"),
             () -> assertEquals(List.of("app"), service.getPackages(), "packages"),
             () -> assertEquals(List.of(LoadWarning.MODULE_NOT_LOADED, LoadWarning.BUILD_TOOL_UNAVAILABLE,
-                    LoadWarning.COMPLIANCE_LEVEL_UNKNOWN),
+                    LoadWarning.BUILD_MODEL_STATIC, LoadWarning.COMPLIANCE_LEVEL_UNKNOWN),
                 warnings.stream().map(LoadWarning::code).toList(), "warning codes in order"),
             () -> assertEquals(new LoadWarning(LoadWarning.MODULE_NOT_LOADED,
                     "settings.gradle declares 'bad\\0name', which is not a valid path: control character U+0000",
@@ -97,11 +97,18 @@ class LoadResilienceTest {
             () -> assertEquals(null, warnings.get(1).module(), "subprocess warning module"),
             () -> assertEquals("Verify the Gradle Wrapper is intact, or install Gradle and ensure 'gradle' is on PATH.",
                 warnings.get(1).remediation(), "subprocess warning remediation"),
+            () -> assertEquals(new LoadWarning(LoadWarning.BUILD_MODEL_STATIC,
+                    "Gradle did not report the project model, so the projects were read from the settings file; a "
+                        + "static read cannot see custom source directories, Java levels, dependencies, plugins or "
+                        + "build logic, so each project is laid out by convention and the classpath holds no "
+                        + "dependencies",
+                    "Fix the build-tool problem reported above, then reload the project."),
+                warnings.get(2), "static read warning"),
             () -> assertEquals(new LoadWarning(LoadWarning.COMPLIANCE_LEVEL_UNKNOWN,
                     "Could not determine declared Java source level for GRADLE project; "
                         + "defaulting to runtime JVM major version " + runtimeLevel,
                     COMPLIANCE_UNKNOWN_REMEDIATION),
-                warnings.get(2), "compliance warning"));
+                warnings.get(3), "compliance warning"));
     }
 
     @Test

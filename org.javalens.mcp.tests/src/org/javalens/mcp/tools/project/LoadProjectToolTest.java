@@ -41,15 +41,16 @@ class LoadProjectToolTest {
         "com.example.staticcycle.y");
 
     /**
-     * simple-maven's build model: the pom declares maven.compiler.source 21 and no modules,
-     * so the root is the one module. Maven modules and levels are read from the poms.
+     * simple-maven's build model as Maven reports it: the pom declares
+     * maven.compiler.source 21 and no modules, so the root, com.example:simple-maven, is
+     * the one module.
      */
     private static final Map<String, Object> SIMPLE_MAVEN_BUILD_MODEL = Map.of(
         "buildSystem", "maven",
-        "source", "static-read",
+        "source", "build-tool",
         "analysisLevel", "21",
         "moduleCount", 1,
-        "modules", List.of(Map.of("id", ".", "dir", ".")));
+        "modules", List.of(Map.of("id", "com.example:simple-maven", "dir", ".")));
 
     @RegisterExtension
     TestProjectHelper helper = new TestProjectHelper();
@@ -144,20 +145,22 @@ class LoadProjectToolTest {
         assertEquals(List.of(LoadWarning.BUILD_TOOL_FAILED),
             warnings.stream().map(w -> w.get("code")).toList(), "warning codes");
 
-        // The warning carries code, message and remediation so the agent can act on it; it
-        // names no module.
+        // The warning carries code, message, remediation and the module whose dependencies
+        // Maven could not resolve, so the agent can act on it.
         Map<String, Object> warning = warnings.get(0);
         assertAll(
-            () -> assertEquals(List.of("code", "message", "remediation"), List.copyOf(warning.keySet()),
+            () -> assertEquals(List.of("code", "message", "remediation", "module"), List.copyOf(warning.keySet()),
                 "warning fields in order"),
-            () -> assertEquals("Run 'mvn dependency:build-classpath' manually in "
-                    + brokenPath.toAbsolutePath().normalize() + " to see the full error.",
+            () -> assertEquals("com.example:broken-maven-deps", warning.get("module"), "warning module"),
+            () -> assertEquals("If the module depends on another module of this build, install the build once "
+                    + "('mvn install -DskipTests') so Maven can resolve it, then reload the project.",
                 warning.get("remediation"), "warning remediation"),
             // Maven exits with 1 when the build fails. The message ends with the last lines
             // of Maven's own error output, whose wording belongs to Maven, so only the part
             // MavenImporter composes is pinned.
             () -> assertTrue(String.valueOf(warning.get("message"))
-                    .startsWith("mvn dependency:build-classpath exited with code 1. Last output: "),
+                    .startsWith("Maven exited with code 1 and did not resolve the dependencies of module "
+                        + "'com.example:broken-maven-deps', so they are not on the classpath. Last output: "),
                 () -> "warning message: " + warning.get("message")));
     }
 
@@ -176,7 +179,7 @@ class LoadProjectToolTest {
             "'warnings' is omitted when the load is clean; got: " + data.get("warnings"));
     }
 
-    @Test @DisplayName("simple-maven response carries exactly the documented fields; buildModel reports Maven, read statically, level 21, the root as its one module")
+    @Test @DisplayName("simple-maven response carries exactly the documented fields; buildModel reports Maven's model, level 21, the root as its one module")
     void responseExposesDocumentedFields() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("projectPath", projectPath.toString());
@@ -186,8 +189,8 @@ class LoadProjectToolTest {
         Map<String, Object> data = getData(r);
 
         // The build system is reported only inside buildModel, and a clean load carries no
-        // warnings. Maven modules and levels are still read from the poms (static-read); the
-        // pom declares maven.compiler.source 21; the root is the only module.
+        // warnings. Maven reports the model (build-tool); the pom declares
+        // maven.compiler.source 21; the root is the only module.
         assertAll(
             () -> assertEquals(List.of("loaded", "projectPath", "sourceFileCount", "packageCount",
                     "packages", "classpathEntryCount", "loadedAt", "buildModel"),
@@ -216,18 +219,18 @@ class LoadProjectToolTest {
         Map<String, Object> data = getData(r);
         assertEquals(true, data.get("loaded"));
         // The root pom declares api, impl and web and maven.compiler.source 21; the root
-        // itself is the first module. A module's id and dir are its directory relative to
-        // the root, "." for the root.
+        // itself is the first module. A module's id is its groupId:artifactId and its dir
+        // its directory relative to the root, "." for the root.
         assertEquals(Map.of(
                 "buildSystem", "maven",
-                "source", "static-read",
+                "source", "build-tool",
                 "analysisLevel", "21",
                 "moduleCount", 4,
                 "modules", List.of(
-                    Map.of("id", ".", "dir", "."),
-                    Map.of("id", "api", "dir", "api"),
-                    Map.of("id", "impl", "dir", "impl"),
-                    Map.of("id", "web", "dir", "web"))),
+                    Map.of("id", "com.example:multi-module-parent", "dir", "."),
+                    Map.of("id", "com.example:api", "dir", "api"),
+                    Map.of("id", "com.example:impl", "dir", "impl"),
+                    Map.of("id", "com.example:web", "dir", "web"))),
             data.get("buildModel"), "buildModel");
         assertEquals(false, data.containsKey("buildSystem"),
             "the build system is reported only inside buildModel");

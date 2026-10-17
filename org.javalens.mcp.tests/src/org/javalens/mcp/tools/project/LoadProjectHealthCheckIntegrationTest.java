@@ -46,19 +46,21 @@ class LoadProjectHealthCheckIntegrationTest {
     private static final String MAVEN_BINARY_PROPERTY = "javalens.maven.binary";
 
     /**
-     * simple-maven's build model: the pom declares maven.compiler.source 21 and no modules,
-     * so the root is the one module. Maven modules and levels are read from the poms.
+     * simple-maven's build model as Maven reports it: the pom declares
+     * maven.compiler.source 21 and no modules, so the root, com.example:simple-maven, is
+     * the one module.
      */
     private static final Map<String, Object> SIMPLE_MAVEN_BUILD_MODEL = Map.of(
         "buildSystem", "maven",
-        "source", "static-read",
+        "source", "build-tool",
         "analysisLevel", "21",
         "moduleCount", 1,
-        "modules", List.of(Map.of("id", ".", "dir", ".")));
+        "modules", List.of(Map.of("id", "com.example:simple-maven", "dir", ".")));
 
     /**
-     * The build model of {@link #writeProjectWithMissingModule}: the root and {@code present}
-     * load, {@code ghost} does not, and the root pom declares maven.compiler.release 17.
+     * The build model of {@link #writeProjectWithMissingModule}, read from the poms because
+     * Maven cannot start: the root and {@code present} load, {@code ghost} does not, and the
+     * root pom declares maven.compiler.release 17.
      */
     private static final Map<String, Object> MISSING_MODULE_BUILD_MODEL = Map.of(
         "buildSystem", "maven",
@@ -66,8 +68,8 @@ class LoadProjectHealthCheckIntegrationTest {
         "analysisLevel", "17",
         "moduleCount", 2,
         "modules", List.of(
-            Map.of("id", ".", "dir", "."),
-            Map.of("id", "present", "dir", "present")));
+            Map.of("id", "com.example:missing-module-parent", "dir", "."),
+            Map.of("id", "com.example:present", "dir", "present")));
 
     /** The root pom's {@code <module>ghost</module>}, whose directory does not exist. */
     private static final Map<String, Object> GHOST_WARNING = Map.of(
@@ -250,7 +252,8 @@ class LoadProjectHealthCheckIntegrationTest {
     /**
      * Pin load_project's report of {@link #writeProjectWithMissingModule} and health_check's
      * {@code project} after it. The load's warnings are the module walk's MODULE_NOT_LOADED
-     * for {@code ghost}, then Maven's classpath step failing to start {@code mvnCmd}.
+     * for {@code ghost}, then Maven failing to start {@code mvnCmd}, then the static read's
+     * BUILD_MODEL_STATIC.
      */
     private void assertMissingModuleReport(JsonNode loadData, JsonNode project, String mvnCmd) {
         JsonNode warnings = loadData.path("warnings");
@@ -258,7 +261,8 @@ class LoadProjectHealthCheckIntegrationTest {
         assertAll(
             () -> assertEquals(objectMapper.valueToTree(MISSING_MODULE_BUILD_MODEL), loadData.get("buildModel"),
                 "load_project buildModel"),
-            () -> assertEquals(List.of(LoadWarning.MODULE_NOT_LOADED, LoadWarning.BUILD_TOOL_UNAVAILABLE),
+            () -> assertEquals(List.of(LoadWarning.MODULE_NOT_LOADED, LoadWarning.BUILD_TOOL_UNAVAILABLE,
+                    LoadWarning.BUILD_MODEL_STATIC),
                 warningCodes(warnings), "load_project warning codes in order"),
             () -> assertEquals(objectMapper.valueToTree(GHOST_WARNING), warnings.get(0), "ghost's warning"),
             () -> assertEquals(List.of("code", "message", "remediation", "module"), fieldNames(warnings.path(0)),
@@ -267,7 +271,7 @@ class LoadProjectHealthCheckIntegrationTest {
             () -> assertEquals(List.of("code", "message", "remediation"), fieldNames(subprocessWarning),
                 "subprocess warning fields in order"),
             () -> assertEquals("Install Maven and ensure '" + mvnCmd + "' is on PATH for the process that "
-                    + "launches JavaLens. Project dependencies will be unresolved until this is fixed.",
+                    + "launches JavaLens.",
                 subprocessWarning.path("remediation").asText(), "subprocess warning remediation"),
             // The message ends with the OS's process-start error text, which differs per OS
             // and locale, so only the part Maven's importer composes is pinned.

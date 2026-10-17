@@ -298,7 +298,7 @@ class FidelityGradleTest {
                 () -> assertEquals(List.of(root, root.resolve("app"), root.resolve("libs/lib-impl")),
                     crlf.modules().stream().map(BuildModule::dir).toList(), "module directories"),
                 // The start failure's text is the operating system's, so only the code is pinned.
-                () -> assertEquals(List.of(LoadWarning.BUILD_TOOL_UNAVAILABLE),
+                () -> assertEquals(List.of(LoadWarning.BUILD_TOOL_UNAVAILABLE, LoadWarning.BUILD_MODEL_STATIC),
                     crlf.warnings().stream().map(LoadWarning::code).toList(), "warning codes"),
                 () -> assertEquals(crlf, lf, "LF settings give the identical model"));
         } finally {

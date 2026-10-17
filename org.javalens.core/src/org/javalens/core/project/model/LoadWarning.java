@@ -18,13 +18,16 @@ package org.javalens.core.project.model;
  *       be prepared, or invoking it threw an unexpected error.</li>
  *   <li>{@code BUILD_TOOL_TIMEOUT}: the build tool did not finish within its time limit
  *       and was stopped.</li>
+ *   <li>{@code BUILD_MODEL_STATIC}: the build tool did not report the project model, so
+ *       JavaLens read the build files itself; the message says what such a read cannot
+ *       see.</li>
  *   <li>{@code BAZEL_NOT_BUILT} — {@code bazel-bin/}/{@code bazel-out/} not populated; user
  *       has not run {@code bazel build} recently.</li>
  *   <li>{@code COMPLIANCE_LEVEL_UNKNOWN} — could not determine the project's compiler
  *       source/target level; using JVM defaults.</li>
- *   <li>{@code APT_PROCESSOR_JARS_MISSING} — annotation processors were declared but
- *       every candidate jar was missing from disk at wiring time; APT is enabled with
- *       an empty factory path so generated members will not resolve.</li>
+ *   <li>{@code APT_PROCESSOR_JARS_MISSING}: declared annotation-processor jars are missing
+ *       from disk at wiring time, or a declared processor names no version; those processors
+ *       do not run, so members they generate will not resolve.</li>
  *   <li>{@code MODULE_NOT_LOADED}: a module a build file declares was not loaded because
  *       its name is not a valid path or its directory does not exist.</li>
  *   <li>{@code MODULE_LAYOUT_ASSUMED}: a module's source roots were assumed from
@@ -77,6 +80,14 @@ public record LoadWarning(String code, String message, String remediation, Strin
      * every process it started. The message names the tool and the limit.
      */
     public static final String BUILD_TOOL_TIMEOUT = "BUILD_TOOL_TIMEOUT";
+
+    /**
+     * The build tool did not report the project model (a {@code BUILD_TOOL_*} warning says
+     * why), so JavaLens read the build files itself, as code: comments and strings declare
+     * nothing. The message names the files read and what a static read cannot see; modules
+     * are laid out by convention where the files do not say otherwise.
+     */
+    public static final String BUILD_MODEL_STATIC = "BUILD_MODEL_STATIC";
 
     public static final String BAZEL_NOT_BUILT = "BAZEL_NOT_BUILT";
     public static final String COMPLIANCE_LEVEL_UNKNOWN = "COMPLIANCE_LEVEL_UNKNOWN";

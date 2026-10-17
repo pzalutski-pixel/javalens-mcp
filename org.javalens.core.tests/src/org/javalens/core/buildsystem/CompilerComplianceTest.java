@@ -123,16 +123,15 @@ class CompilerComplianceTest {
     @Test
     @DisplayName("Properties precedence: maven.compiler.release wins over maven.compiler.source")
     void propertiesPrecedence_releaseWinsOverSource() throws Exception {
-        // detectCompilerLevel iterates ["release", "source", "target"]; the first non-null
-        // wins. Mutate compliance-level-mismatch (declares source=17) to also declare
-        // release=11. Expected outcome: release wins → "11", not "17".
+        // maven-compiler-plugin compiles at release when it is set, whatever source says.
+        // compliance-level-mismatch declares source, target and release 17; set release to 11
+        // and leave source at 17. Expected outcome: release wins, "11".
         Path projectRoot = helper.copyFixture("compliance-level-mismatch");
         Path pom = projectRoot.resolve("pom.xml");
         String original = Files.readString(pom);
         String withRelease = original.replace(
-            "<maven.compiler.source>17</maven.compiler.source>",
-            "<maven.compiler.release>11</maven.compiler.release>\n"
-                + "        <maven.compiler.source>17</maven.compiler.source>");
+            "<maven.compiler.release>17</maven.compiler.release>",
+            "<maven.compiler.release>11</maven.compiler.release>");
         Files.writeString(pom, withRelease);
 
         JdtServiceImpl service = new JdtServiceImpl();
@@ -147,9 +146,9 @@ class CompilerComplianceTest {
     @Test
     @DisplayName("Plugin precedence: <release> wins over <source> within <configuration>")
     void pluginPrecedence_releaseWinsOverSource() throws Exception {
-        // detectCompilerLevel's plugin branch iterates ["release", "source", "target"].
+        // maven-compiler-plugin compiles at release when it is set, whatever source says.
         // Mutate compliance-from-plugin-config (declares <release>17</release>) to also
-        // include <source>11</source>. Expected outcome: release still wins → "17".
+        // include <source>11</source>. Expected outcome: release still wins, "17".
         Path projectRoot = helper.copyFixture("compliance-from-plugin-config");
         Path pom = projectRoot.resolve("pom.xml");
         String original = Files.readString(pom);
@@ -168,10 +167,11 @@ class CompilerComplianceTest {
     }
 
     @Test
-    @DisplayName("Cross-section precedence: pom <properties> win over plugin <configuration>")
-    void propertiesWinOverPluginConfiguration() throws Exception {
-        // detectCompilerLevel tries <properties> before the plugin block. Construct a pom
-        // declaring BOTH: properties=11, plugin <release>=17. Properties must win → "11".
+    @DisplayName("Cross-section precedence: a plugin <release> wins over the maven.compiler.source property, as maven-compiler-plugin applies them")
+    void pluginReleaseWinsOverSourceProperty() throws Exception {
+        // maven-compiler-plugin's release parameter, set here by the plugin <configuration>,
+        // wins over its source parameter, set here by maven.compiler.source. Construct a pom
+        // declaring both: property source=11, plugin <release>=17. Expected outcome: "17".
         Path projectRoot = helper.copyFixture("compliance-from-plugin-config");
         Path pom = projectRoot.resolve("pom.xml");
         String original = Files.readString(pom);
@@ -188,9 +188,9 @@ class CompilerComplianceTest {
         service.loadProject(projectRoot);
         ClasspathSnapshot snapshot = ClasspathSnapshot.capture(service.getJavaProject());
 
-        assertEquals("11", snapshot.compilerSource(),
-            "pom <properties> must win over plugin <configuration> per documented "
-                + "precedence; got: " + snapshot.compilerSource());
+        assertEquals("17", snapshot.compilerSource(),
+            "the plugin's <release> must win over maven.compiler.source, as maven-compiler-plugin "
+                + "applies them; got: " + snapshot.compilerSource());
     }
 
     @Test

@@ -1,0 +1,2 @@
+// A Gradle project beside the Maven build: include 'gradle-ghost'
+include 'gradle-extra'
