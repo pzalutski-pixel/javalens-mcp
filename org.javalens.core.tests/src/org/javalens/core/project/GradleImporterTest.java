@@ -55,7 +55,7 @@ class GradleImporterTest {
     private static final String SILENT_POSIX = "#!/bin/sh\nexit 0\n";
 
     @Test
-    @DisplayName("A Gradle binary that cannot start gives exactly one BUILD_TOOL_UNAVAILABLE and the static structure")
+    @DisplayName("A Gradle binary that cannot start gives exactly one BUILD_TOOL_UNAVAILABLE, the static structure and BUILD_MODEL_STATIC")
     void binaryThatCannotStartFallsBackToStaticStructure(@TempDir Path dir) throws IOException {
         Path project = includesApp(dir.resolve("project"));
         String binary = dir.resolve("does-not-exist-binary").toString();
@@ -65,7 +65,7 @@ class GradleImporterTest {
             model = new GradleImporter().resolve(project);
         }
 
-        assertEquals(1, model.warnings().size(), () -> "warnings: " + model.warnings());
+        assertEquals(2, model.warnings().size(), () -> "warnings: " + model.warnings());
         LoadWarning warning = model.warnings().get(0);
         assertAll(
             () -> assertEquals(staticModel(project, List.of(warning)), model, "model"),
@@ -178,9 +178,16 @@ class GradleImporterTest {
 
     /**
      * The structure read statically from {@link #includesApp}'s settings: the root and
-     * {@code app}, each laid out by convention, followed by {@code warnings}.
+     * {@code app}, each laid out by convention, followed by {@code buildToolWarnings} and the
+     * static read's BUILD_MODEL_STATIC.
      */
-    private static BuildModel staticModel(Path project, List<LoadWarning> warnings) {
+    private static BuildModel staticModel(Path project, List<LoadWarning> buildToolWarnings) {
+        List<LoadWarning> warnings = new java.util.ArrayList<>(buildToolWarnings);
+        warnings.add(new LoadWarning(LoadWarning.BUILD_MODEL_STATIC,
+            "Gradle did not report the project model, so the projects were read from the settings file; a static "
+                + "read cannot see custom source directories, Java levels, dependencies, plugins or build logic, so "
+                + "each project is laid out by convention and the classpath holds no dependencies",
+            "Fix the build-tool problem reported above, then reload the project."));
         return new BuildModel(BuildSystem.GRADLE, Provenance.STATIC_READ,
             List.of(
                 new BuildModule(".", project, List.of(), List.of(), List.of(), null, false),

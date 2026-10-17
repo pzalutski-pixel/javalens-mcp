@@ -85,7 +85,7 @@ class LoadWarningTest {
 
         Map<String, Object> expected = new TreeMap<>();
         for (String code : List.of(
-                "BUILD_TOOL_UNAVAILABLE", "BUILD_TOOL_FAILED", "BUILD_TOOL_TIMEOUT",
+                "BUILD_TOOL_UNAVAILABLE", "BUILD_TOOL_FAILED", "BUILD_TOOL_TIMEOUT", "BUILD_MODEL_STATIC",
                 "BAZEL_NOT_BUILT", "COMPLIANCE_LEVEL_UNKNOWN", "COMPLIANCE_LEVEL_UNSUPPORTED",
                 "APT_PROCESSOR_JARS_MISSING", "JRE_REGISTRATION_FAILED",
                 "MODULE_NOT_LOADED", "MODULE_LAYOUT_ASSUMED", "COMPILED_OUTPUT_INCLUDED",
