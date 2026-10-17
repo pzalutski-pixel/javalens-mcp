@@ -8,6 +8,7 @@ import org.eclipse.jdt.core.IMethod;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.JavaModelException;
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.core.fixtures.BazelBinary;
 import org.javalens.core.fixtures.ClasspathSnapshot;
 import org.javalens.core.fixtures.TestProjectHelper;
 import org.javalens.core.project.model.BuildInputs;
@@ -536,29 +537,29 @@ class BuildModelSeamTest {
     }
 
     @Test
-    @DisplayName("Only the first module at the project root reports the root's compiled output; other modules report none")
-    void onlyFirstRootModuleReportsRootOutputDirs() throws Exception {
+    @DisplayName("Bazel's static read: a root package is one module, each package is identified by its label, and conventional compiled-output directories are not Bazel output")
+    void bazelStaticReadListsEachPackageOnce() throws Exception {
         Path root = Files.createDirectories(helper.getTempDirectory().resolve("bazel-root-packages"));
         Files.writeString(root.resolve("MODULE.bazel"), "module(name = \"out\")\n");
-        // The root and sub are both BUILD packages, so the root is a module twice: once
-        // from the module walk, once as a package.
         Files.writeString(root.resolve("BUILD"), "# root package\n");
         Path sub = Files.createDirectories(root.resolve("sub"));
         Files.writeString(sub.resolve("BUILD"), "# sub package\n");
-        Path rootClasses = Files.createDirectories(root.resolve("target/classes"));
+        Files.createDirectories(root.resolve("target/classes"));
         Files.createDirectories(sub.resolve("target/classes"));
 
-        BuildModel model = new BazelImporter().resolve(root);
+        BuildModel model;
+        try (BazelBinary bazel = BazelBinary.use(root.resolve("no-such-bazel").toString())) {
+            model = new BazelImporter().resolve(root);
+        }
 
         assertEquals(List.of(
-                new BuildModule(".", root, List.of(), List.of(), List.of(rootClasses), null, false),
-                new BuildModule(".", root, List.of(), List.of(), List.of(), null, false),
-                new BuildModule("sub", sub, List.of(), List.of(), List.of(), null, false)),
+                new BuildModule("//", root, List.of(), List.of(), List.of(), null, false),
+                new BuildModule("//sub", sub, List.of(), List.of(), List.of(), null, false)),
             model.modules(), "modules");
     }
 
     @Test
-    @DisplayName("Bazel resolves processor jars as the resolved classpath jars that carry the processor SPI descriptor")
+    @DisplayName("Bazel's static read resolves processor jars as the output-tree jars that carry the processor SPI descriptor")
     void bazelResolvesProcessorJarsBySpiScan() throws Exception {
         Path root = Files.createDirectories(helper.getTempDirectory().resolve("bazel-spi"));
         Files.writeString(root.resolve("MODULE.bazel"), "module(name = \"spi\")\n");
@@ -566,11 +567,14 @@ class BuildModelSeamTest {
             "META-INF/services/javax.annotation.processing.Processor", "p.Processor\n"));
         Path library = writeJar(root.resolve("bazel-bin/lib/library.jar"), Map.of(
             "p/readme.txt", "no processor here\n"));
-        // getDependencies canonicalizes every jar it collects.
+        // The static read collects every jar by its real path.
         Path processorReal = processor.toRealPath();
         Path libraryReal = library.toRealPath();
 
-        BuildModel model = new BazelImporter().resolve(root);
+        BuildModel model;
+        try (BazelBinary bazel = BazelBinary.use(root.resolve("no-such-bazel").toString())) {
+            model = new BazelImporter().resolve(root);
+        }
 
         assertAll(
             () -> assertEquals(BuildSystem.BAZEL, model.buildSystem(), "build system"),
@@ -583,7 +587,9 @@ class BuildModelSeamTest {
             () -> assertEquals(2, model.classpath().size(), "classpath size"),
             () -> assertEquals(List.of(processorReal), model.processorJars(), "processor jars"),
             () -> assertEquals(null, model.analysisLevel(), "analysis level"),
-            () -> assertEquals(List.of(), model.warnings(), "warnings"));
+            // The start failure's text is the operating system's, so the warnings are pinned by code.
+            () -> assertEquals(List.of(LoadWarning.BUILD_TOOL_UNAVAILABLE, LoadWarning.BUILD_MODEL_STATIC),
+                model.warnings().stream().map(LoadWarning::code).toList(), "warning codes"));
     }
 
     // ========== Helpers ==========
@@ -601,16 +607,6 @@ class BuildModelSeamTest {
         public BuildModel resolve(Path projectRoot) {
             resolveCalls++;
             return model;
-        }
-
-        @Override
-        public String detectCompilerLevel(Path projectPath) {
-            return null;
-        }
-
-        @Override
-        public List<String> getDependencies(Path projectPath, List<LoadWarning> warnings) {
-            return List.of();
         }
     }
 

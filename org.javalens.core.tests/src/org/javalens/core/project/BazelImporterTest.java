@@ -1,178 +1,140 @@
 package org.javalens.core.project;
 
+import org.javalens.core.fixtures.BazelBinary;
+import org.javalens.core.project.model.BuildModel;
+import org.javalens.core.project.model.BuildModule;
+import org.javalens.core.project.model.LoadWarning;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Unit tests for {@link BazelImporter} pieces that aren't naturally exercised
- * by the existing {@code EndToEndBazelIntegrationTest} / {@code BazelNotBuiltWarningTest}
- * / {@code BazelSymlinkDedupTest} integration suite:
- *
- * <ul>
- *   <li>{@code detectCompilerLevel} regex variants: paired {@code -source}/{@code -target}/
- *       {@code --release} and the inline {@code --release=N} form, plus picking the
- *       highest level when multiple BUILD files declare different levels.</li>
- *   <li>{@code getTargetPackages} discovery of BUILD-prefixed directories.</li>
- * </ul>
- *
- * <p>The bazel-bin/bazel-out scanning paths require real Bazel output trees and stay
- * with the existing integration tests; this file targets only the pure-function pieces
- * that can be exercised with simple {@code @TempDir} fixtures.
+ * Pins {@link BazelImporter}'s static read: with a Bazel binary that cannot start, the BUILD
+ * files are read as Starlark code. Comments are not code, so a commented-out
+ * {@code javacopts} is not read; within a list the last level flag wins; a package's level is
+ * the highest of its lists.
  */
 class BazelImporterTest {
 
-    private final BazelImporter importer = new BazelImporter();
-
     @Test
-    @DisplayName("detectCompilerLevel returns null when no BUILD file declares javacopts")
-    void detectCompilerLevel_noJavacopts_returnsNull(@TempDir Path projectRoot) throws IOException {
-        Files.writeString(projectRoot.resolve("BUILD"),
-            "java_library(name = \"lib\", srcs = [\"X.java\"])\n");
-        assertNull(importer.detectCompilerLevel(projectRoot),
-            "BUILD without javacopts must yield null (signals 'use JVM default')");
+    @DisplayName("javacopts: the last of -source, --release and --release=N in a list wins; comments and strings outside the list are not read")
+    void lastLevelFlagWins(@TempDir Path root) throws IOException {
+        write(root, "MODULE.bazel", "module(name = \"m\")\n");
+        write(root, "a/BUILD.bazel", String.join("\r\n",
+            "# javacopts = [\"--release\", \"21\"]",
+            "java_library(",
+            "    name = \"a\",",
+            "    javacopts = [\"-source\", \"11\", \"--release=17\"],  # trailing comment",
+            "    tags = [\"javacopts = ['--release', '25']\"],",
+            ")",
+            ""));
+        write(root, "b/BUILD", "java_library(name = \"b\", javacopts = [\"--release=8\", \"-source\", \"11\"])\n");
+
+        BuildModel model = staticRead(root);
+
+        assertAll(
+            () -> assertEquals(List.of(".", "//a", "//b"), ids(model), "module ids"),
+            () -> assertEquals(java.util.Arrays.asList(null, "17", "11"),
+                model.modules().stream().map(BuildModule::declaredLevel).toList(), "declared levels"),
+            () -> assertEquals("17", model.analysisLevel(), "analysis level"));
     }
 
     @Test
-    @DisplayName("detectCompilerLevel parses paired `-source` / `-target` form")
-    void detectCompilerLevel_pairedSourceTarget() throws IOException {
-        Path projectRoot = Files.createTempDirectory("bazel-pair");
-        try {
-            Files.writeString(projectRoot.resolve("BUILD"),
-                "java_library(\n"
-                    + "    name = \"lib\",\n"
-                    + "    srcs = [\"X.java\"],\n"
-                    + "    javacopts = [\"-source\", \"17\", \"-target\", \"17\"],\n"
-                    + ")\n");
-            assertEquals("17", importer.detectCompilerLevel(projectRoot),
-                "Paired `-source` `-target` 17 must produce level 17");
-        } finally {
-            Files.deleteIfExists(projectRoot.resolve("BUILD"));
-            Files.deleteIfExists(projectRoot);
+    @DisplayName("A package's level is the highest of its javacopts lists; # inside a string is not a comment")
+    void highestListInAPackage(@TempDir Path root) throws IOException {
+        write(root, "MODULE.bazel", "module(name = \"m\")\n");
+        write(root, "BUILD.bazel", String.join("\n",
+            "java_library(name = \"x\", javacopts = [\"--release\", \"11\"], tags = [\"#not-a-comment\"])",
+            "java_library(name = \"y\", javacopts = [r\"--release\", '''21'''])",
+            ""));
+
+        BuildModel model = staticRead(root);
+
+        assertAll(
+            () -> assertEquals(List.of("//"), ids(model), "module ids"),
+            () -> assertEquals("21", model.analysisLevel(), "analysis level"));
+    }
+
+    @Test
+    @DisplayName("Packages are found by their BUILD files outside Bazel's bazel-* trees and ignored directories, each laid out by convention")
+    void packagesLaidOutByConvention(@TempDir Path root) throws IOException {
+        write(root, "MODULE.bazel", "module(name = \"m\")\n");
+        write(root, "lib/BUILD.bazel", "\n");
+        Files.createDirectories(root.resolve("lib/src/main/java"));
+        write(root, "bazel-out/k8/BUILD", "\n");
+        write(root, "node_modules/x/BUILD", "\n");
+
+        BuildModel model = staticRead(root);
+
+        assertEquals(List.of(
+                new BuildModule(".", root, List.of(), List.of(), List.of(), null, false),
+                new BuildModule("//lib", root.resolve("lib"), List.of(root.resolve("lib/src/main/java")), List.of(),
+                    List.of(), null, false)),
+            model.modules(), "modules");
+    }
+
+    @Test
+    @DisplayName("Without any conventional layout, each package directory holding .java files is its own source root")
+    void packageDirectoriesAsRoots(@TempDir Path root) throws IOException {
+        write(root, "MODULE.bazel", "module(name = \"m\")\n");
+        write(root, "app/BUILD", "\n");
+        write(root, "app/App.java", "class App {}\n");
+        write(root, "docs/BUILD", "\n");
+
+        BuildModel model = staticRead(root);
+
+        assertEquals(List.of(
+                new BuildModule(".", root, List.of(), List.of(), List.of(), null, false),
+                new BuildModule("//app", root.resolve("app"), List.of(root.resolve("app")), List.of(), List.of(), null,
+                    false),
+                new BuildModule("//docs", root.resolve("docs"), List.of(), List.of(), List.of(), null, false)),
+            model.modules(), "modules");
+    }
+
+    @Test
+    @DisplayName("A Bazel binary that cannot start gives BUILD_TOOL_UNAVAILABLE and BUILD_MODEL_STATIC after the model's own warnings")
+    void unavailableBazel(@TempDir Path root) throws IOException {
+        write(root, "MODULE.bazel", "module(name = \"m\")\n");
+        String bazel = root.resolve("no-such-bazel").toString();
+
+        BuildModel model;
+        try (BazelBinary binary = BazelBinary.use(bazel)) {
+            model = new BazelImporter().resolve(root);
+        }
+
+        BuildModel read = model;
+        assertAll(
+            () -> assertEquals(List.of(LoadWarning.BAZEL_NOT_BUILT, LoadWarning.BUILD_TOOL_UNAVAILABLE,
+                    LoadWarning.BUILD_MODEL_STATIC),
+                read.warnings().stream().map(LoadWarning::code).toList(), "warning codes"),
+            () -> assertEquals("Install Bazel (or Bazelisk as 'bazel') and ensure it is on PATH for the process that "
+                    + "launches JavaLens.", read.warnings().get(1).remediation(), "remediation"));
+    }
+
+    // ========== Helpers ==========
+
+    private static BuildModel staticRead(Path root) {
+        try (BazelBinary binary = BazelBinary.use(root.resolve("no-such-bazel").toString())) {
+            return new BazelImporter().resolve(root);
         }
     }
 
-    @Test
-    @DisplayName("detectCompilerLevel parses paired `--release` form")
-    void detectCompilerLevel_pairedReleaseForm(@TempDir Path projectRoot) throws IOException {
-        Files.writeString(projectRoot.resolve("BUILD.bazel"),
-            "java_library(\n"
-                + "    name = \"lib\",\n"
-                + "    srcs = [\"X.java\"],\n"
-                + "    javacopts = [\"--release\", \"21\"],\n"
-                + ")\n");
-        assertEquals("21", importer.detectCompilerLevel(projectRoot),
-            "Paired `--release` 21 must produce level 21");
+    private static void write(Path root, String relative, String content) throws IOException {
+        Path file = root.resolve(relative);
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, content, StandardCharsets.UTF_8);
     }
 
-    @Test
-    @DisplayName("detectCompilerLevel parses inline `--release=N` form")
-    void detectCompilerLevel_inlineReleaseForm(@TempDir Path projectRoot) throws IOException {
-        // The inline `--release=17` token is its own regex branch in
-        // highestLevelInJavacopts — distinct from the paired pattern.
-        Files.writeString(projectRoot.resolve("BUILD"),
-            "java_binary(\n"
-                + "    name = \"bin\",\n"
-                + "    srcs = [\"Main.java\"],\n"
-                + "    javacopts = [\"--release=17\", \"-Xlint:all\"],\n"
-                + ")\n");
-        assertEquals("17", importer.detectCompilerLevel(projectRoot),
-            "Inline `--release=17` must produce level 17");
-    }
-
-    @Test
-    @DisplayName("detectCompilerLevel returns highest level across multiple BUILD files (multi-target)")
-    void detectCompilerLevel_picksHighestAcrossFiles(@TempDir Path projectRoot) throws IOException {
-        // Create two packages: one declares Java 11, the other Java 17. The importer
-        // must surface the highest (17) — multi-target Bazel projects commonly have
-        // mixed levels and the orchestrator wants the maximum so all targets compile.
-        Files.createDirectories(projectRoot.resolve("a"));
-        Files.writeString(projectRoot.resolve("a/BUILD"),
-            "java_library(name = \"a\", srcs = [\"A.java\"], javacopts = [\"-source\", \"11\"])\n");
-        Files.createDirectories(projectRoot.resolve("b"));
-        Files.writeString(projectRoot.resolve("b/BUILD"),
-            "java_library(name = \"b\", srcs = [\"B.java\"], javacopts = [\"-source\", \"17\"])\n");
-
-        assertEquals("17", importer.detectCompilerLevel(projectRoot),
-            "Multi-file detection must pick the highest declared level; got: "
-                + importer.detectCompilerLevel(projectRoot));
-    }
-
-    @Test
-    @DisplayName("getTargetPackages discovers directories containing BUILD or BUILD.bazel")
-    void getTargetPackages_discoversBuildDirectories(@TempDir Path projectRoot) throws IOException {
-        Files.createDirectories(projectRoot.resolve("pkg1"));
-        Files.writeString(projectRoot.resolve("pkg1/BUILD"), "");
-        Files.createDirectories(projectRoot.resolve("pkg2"));
-        Files.writeString(projectRoot.resolve("pkg2/BUILD.bazel"), "");
-        Files.createDirectories(projectRoot.resolve("not-a-pkg"));
-        // not-a-pkg has no BUILD file → must be excluded
-
-        List<Path> packages = importer.getTargetPackages(projectRoot);
-        assertTrue(packages.contains(projectRoot.resolve("pkg1")),
-            "pkg1 with BUILD must be discovered; got: " + packages);
-        assertTrue(packages.contains(projectRoot.resolve("pkg2")),
-            "pkg2 with BUILD.bazel must be discovered; got: " + packages);
-        assertTrue(packages.stream().noneMatch(p -> p.endsWith("not-a-pkg")),
-            "not-a-pkg (no BUILD file) must NOT be discovered; got: " + packages);
-    }
-
-    @Test
-    @DisplayName("getTargetPackages skips bazel-* output directories")
-    void getTargetPackages_skipsBazelOutputDirs(@TempDir Path projectRoot) throws IOException {
-        // bazel-bin commonly exists as a symlink with deeply-nested BUILD files
-        // (from the build's own derived packages). The importer must not surface
-        // those as user-facing packages.
-        Files.createDirectories(projectRoot.resolve("bazel-bin/nested"));
-        Files.writeString(projectRoot.resolve("bazel-bin/nested/BUILD"), "");
-        Files.createDirectories(projectRoot.resolve("real-pkg"));
-        Files.writeString(projectRoot.resolve("real-pkg/BUILD"), "");
-
-        List<Path> packages = importer.getTargetPackages(projectRoot);
-        assertTrue(packages.contains(projectRoot.resolve("real-pkg")));
-        assertTrue(packages.stream().noneMatch(p -> p.toString().contains("bazel-bin")),
-            "Directories under bazel-bin/ must be skipped; got: " + packages);
-    }
-
-    @Test
-    @DisplayName("getDependencies emits BAZEL_NOT_BUILT warning when neither bazel-bin nor bazel-out exists")
-    void getDependencies_noBazelOutputDirs_emitsWarning(@TempDir Path projectRoot) {
-        List<org.javalens.core.project.model.LoadWarning> warnings = new ArrayList<>();
-        List<String> deps = importer.getDependencies(projectRoot, warnings);
-        assertTrue(deps.isEmpty(),
-            "No bazel-bin/bazel-out → empty dependency list; got: " + deps);
-        assertTrue(warnings.stream().anyMatch(w ->
-            org.javalens.core.project.model.LoadWarning.BAZEL_NOT_BUILT.equals(w.code())),
-            "Must emit BAZEL_NOT_BUILT warning when no output dirs exist; got: " + warnings);
-    }
-
-    @Test
-    @DisplayName("getDependencies does not duplicate BAZEL_NOT_BUILT when one already exists in warnings")
-    void getDependencies_warningDeduplicated(@TempDir Path projectRoot) {
-        // The importer dedups its own warning emission against any prior pass that
-        // already added BAZEL_NOT_BUILT — useful for multi-module orchestration where
-        // multiple roots all fail the bazel-built check.
-        List<org.javalens.core.project.model.LoadWarning> warnings = new ArrayList<>();
-        warnings.add(new org.javalens.core.project.model.LoadWarning(
-            org.javalens.core.project.model.LoadWarning.BAZEL_NOT_BUILT,
-            "Prior warning",
-            "Hint",
-            null));
-        importer.getDependencies(projectRoot, warnings);
-
-        long count = warnings.stream().filter(w ->
-            org.javalens.core.project.model.LoadWarning.BAZEL_NOT_BUILT.equals(w.code())).count();
-        assertEquals(1, count,
-            "BAZEL_NOT_BUILT warning must not be duplicated when one already exists; got: " + count);
+    private static List<String> ids(BuildModel model) {
+        return model.modules().stream().map(BuildModule::id).toList();
     }
 }

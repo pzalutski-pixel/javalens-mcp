@@ -1,0 +1,2 @@
+# The toolchain default is replaced for every target without its own level.
+build --java_language_version=17

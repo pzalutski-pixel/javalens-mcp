@@ -1,0 +1,3 @@
+module(name = "fidelity_bazel", version = "1.0.0")
+
+bazel_dep(name = "rules_java", version = "9.1.0")

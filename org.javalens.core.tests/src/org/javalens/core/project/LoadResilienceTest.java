@@ -171,16 +171,6 @@ class LoadResilienceTest {
         public BuildModel resolve(Path projectRoot) {
             throw new IllegalStateException("boom");
         }
-
-        @Override
-        public String detectCompilerLevel(Path projectPath) {
-            return null;
-        }
-
-        @Override
-        public List<String> getDependencies(Path projectPath, List<LoadWarning> warnings) {
-            return List.of();
-        }
     }
 
     private static LoadWarning layoutAssumed(String buildSystem) {

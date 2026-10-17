@@ -1,9 +1,12 @@
 package org.javalens.core.buildsystem;
 
 import org.javalens.core.JdtServiceImpl;
+import org.javalens.core.fixtures.BazelBinary;
 import org.javalens.core.fixtures.ClasspathSnapshot;
 import org.javalens.core.fixtures.TestEnvironment;
 import org.javalens.core.fixtures.TestProjectHelper;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
@@ -34,6 +37,19 @@ class BazelSymlinkDedupTest {
 
     @RegisterExtension
     TestProjectHelper helper = new TestProjectHelper();
+
+    /** A Bazel binary that cannot start, so each load reads the output trees statically. */
+    private BazelBinary staticRead;
+
+    @BeforeEach
+    void readStatically() {
+        staticRead = BazelBinary.use(helper.getTempDirectory().resolve("no-such-bazel").toString());
+    }
+
+    @AfterEach
+    void restoreBazel() {
+        staticRead.close();
+    }
 
     @Test
     @DisplayName("bazel-bin symlink into bazel-out does not duplicate jars on the classpath")

@@ -1,0 +1,7 @@
+load("//:macros.bzl", "fidelity_library")
+
+fidelity_library(
+    name = "app",
+    srcs = glob(["src/main/java/**/*.java"]),
+    deps = ["//core"],
+)

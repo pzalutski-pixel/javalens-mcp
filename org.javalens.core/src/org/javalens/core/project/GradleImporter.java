@@ -408,12 +408,11 @@ public class GradleImporter implements BuildSystemImporter {
     /**
      * The structure read statically from {@code settings.gradle}, laid out by convention by
      * {@link BuildModelAssembler}, followed by {@code failure} and a
-     * {@link LoadWarning#BUILD_MODEL_STATIC}. This importer implements none
-     * of the per-concern methods the assembler composes, so the model has no classpath,
-     * processors or level, and Gradle is not run again.
+     * {@link LoadWarning#BUILD_MODEL_STATIC}. The model has no classpath, processors or
+     * level, and Gradle is not run again.
      */
     private BuildModel staticModel(Path projectRoot, List<LoadWarning> failure) {
-        BuildModel read = BuildModelAssembler.assemble(this, BuildSystem.GRADLE, Provenance.STATIC_READ, projectRoot);
+        BuildModel read = BuildModelAssembler.assemble(BuildSystem.GRADLE, Provenance.STATIC_READ, projectRoot);
         List<LoadWarning> warnings = new ArrayList<>(read.warnings());
         warnings.addAll(failure);
         warnings.add(new LoadWarning(LoadWarning.BUILD_MODEL_STATIC,

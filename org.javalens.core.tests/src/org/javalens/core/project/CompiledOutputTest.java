@@ -414,16 +414,6 @@ class CompiledOutputTest {
         public BuildModel resolve(Path projectRoot) {
             throw new IllegalStateException("boom");
         }
-
-        @Override
-        public String detectCompilerLevel(Path projectPath) {
-            return null;
-        }
-
-        @Override
-        public List<String> getDependencies(Path projectPath, List<LoadWarning> warnings) {
-            return List.of();
-        }
     }
 
     /** A plain-Java model at level 17 with these modules and classpath, and no warnings. */
@@ -451,16 +441,6 @@ class CompiledOutputTest {
         @Override
         public BuildModel resolve(Path projectRoot) {
             return model;
-        }
-
-        @Override
-        public String detectCompilerLevel(Path projectPath) {
-            return null;
-        }
-
-        @Override
-        public List<String> getDependencies(Path projectPath, List<LoadWarning> warnings) {
-            return List.of();
         }
     }
 
