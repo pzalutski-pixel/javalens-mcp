@@ -91,9 +91,9 @@ class ProductLoggingTest {
         mavenBinaryArg = "-Djavalens.maven.binary=" + absentMaven;
 
         loadingProjectLine = "[main] INFO org.javalens.mcp.tools.LoadProjectTool - Loading project: " + project;
-        mavenWarningLine = "[main] WARN org.javalens.core.project.MavenImporter - Cannot start Maven subprocess: "
+        mavenWarningLine = "[main] WARN org.javalens.core.project.MavenImporter - Cannot start Maven: "
             + startFailure(absentMaven, project);
-        loadWarningLine = "[main] WARN org.javalens.mcp.tools.LoadProjectTool - Project loaded with 1 warning(s)";
+        loadWarningLine = "[main] WARN org.javalens.mcp.tools.LoadProjectTool - Project loaded with 2 warning(s)";
     }
 
     @Test
@@ -212,7 +212,8 @@ class ProductLoggingTest {
 
     /**
      * stdout holds exactly the three responses, ids 1, 2 and 3, and nothing else; the load
-     * succeeded with exactly one warning, BUILD_TOOL_UNAVAILABLE.
+     * succeeded with exactly two warnings, BUILD_TOOL_UNAVAILABLE and the static read's
+     * BUILD_MODEL_STATIC.
      */
     private static void assertJsonRpcOnly(ProductProcess.Output out) throws IOException {
         assertEquals(0, out.exitCode(), "exit code");
@@ -231,7 +232,7 @@ class ProductLoggingTest {
         assertTrue(load.path("success").asBoolean(), "load_project: " + load);
         List<String> warningCodes = new ArrayList<>();
         load.path("data").path("warnings").forEach(warning -> warningCodes.add(warning.path("code").asText()));
-        assertEquals(List.of("BUILD_TOOL_UNAVAILABLE"), warningCodes, "load_project: " + load);
+        assertEquals(List.of("BUILD_TOOL_UNAVAILABLE", "BUILD_MODEL_STATIC"), warningCodes, "load_project: " + load);
     }
 
     /**
