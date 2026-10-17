@@ -82,7 +82,7 @@ Single-module and multi-module projects load end-to-end across Maven, Gradle, an
 | Bazel | `MODULE.bazel` / `WORKSPACE.bazel` / `WORKSPACE` | ✅ | ✅ | n/a | ✅ |
 | Plain Java | `src/` directory | n/a | ✅ | n/a | n/a |
 
-Gradle projects are read from Gradle's own model (projects, source sets, classpath, levels); when Gradle cannot run, `settings.gradle` is read as code, comments ignored. If `mvn` / `gradle` is missing or fails, `load_project` and `health_check` report a structured warning (e.g. `BUILD_TOOL_UNAVAILABLE`, `BUILD_TOOL_FAILED`) and a `buildModel` summary, so callers know the load is degraded.
+Maven, Gradle and Bazel projects are read from the build tool's own model (modules, source roots, classpath, levels, annotation processors), with nothing written into the project tree. When the tool cannot run, the build files are read as code, comments ignored, and `load_project` and `health_check` say so (`buildModel.source = static-read`, `BUILD_MODEL_STATIC`), along with every other structured warning (e.g. `BUILD_TOOL_UNAVAILABLE`, `BUILD_TOOL_FAILED`). A change to any file the build reads makes the next query report `RELOAD_REQUIRED`.
 
 ## Configuration
 
@@ -94,6 +94,7 @@ Gradle projects are read from Gradle's own model (projects, source sets, classpa
 | `JAVA_TOOL_OPTIONS` | JVM options, e.g. `-Xmx2g` for large projects | 512m |
 | `JAVALENS_LOG_LEVEL` | TRACE/DEBUG/INFO/WARN/ERROR; logs go to stderr | INFO |
 | `JAVALENS_LOMBOK_JAR` | Path to the Lombok agent jar attached at launch; overrides the bundled one | (bundled) |
+| `JAVALENS_MAVEN_ARGS` / `JAVALENS_GRADLE_ARGS` / `JAVALENS_BAZEL_ARGS` | Extra arguments for the build tool when it reads the model (profiles, properties, flags) | (none) |
 
 ## Documentation
 

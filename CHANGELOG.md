@@ -18,6 +18,10 @@
 
 - **A `gradle init` comment in a CRLF `settings.gradle` aborted `load_project` on Windows** (#34). JavaLens now takes the project structure, custom `projectDir`s, included builds, source sets, generated-source directories, classpath and per-project levels from Gradle itself, writing nothing into the project tree. When Gradle cannot run, `settings.gradle` / `settings.gradle.kts` is read as code, so comments and strings declare nothing. Content in a build file no longer aborts a load; problems become named load warnings.
 - A Gradle build with a settings file and no root build file, the layout `gradle init` generates, was loaded as plain Java, so Gradle was never asked for its classpath. A `settings.gradle` or `settings.gradle.kts` now marks a Gradle build.
+- **Maven projects are read from Maven's effective model.** Modules (a commented-out `<module>` is no module), `../` modules, source, test, build-helper and Kotlin directories, generated sources under the effective build directory, per-module classpaths, and levels as maven-compiler-plugin applies them: `release` before `source`, plugin configuration before properties (the reverse of what was applied before), inherited from parent poms. The project's own modules are linked as sources and never added again as jars or class folders. Annotation processors resolve in Maven's real local repository. A module Maven cannot resolve is named (`BUILD_TOOL_FAILED`) instead of the whole classpath being lost. Modules of an inactive profile, and Gradle projects of a `settings.gradle` beside the root pom, stay linked with `INCLUDED_OUTSIDE_BUILD`.
+- **Bazel projects are read from Bazel.** Java targets and their sources come from `bazel query`; each target's level comes from its javac action as javac takes it, including the toolchain default and `.bazelrc` (a commented-out `javacopts` no longer wins as "highest"); the classpath and processor path come from the javac actions. The project's own target jars are not added as libraries. Source roots follow the package each source declares, so non-conventional layouts load.
+- When a build tool cannot run, the build files are read as code: poms as XML, Gradle settings and Bazel BUILD files through a lexer, so comments and strings declare nothing; the load says so with `BUILD_MODEL_STATIC`.
+- `RELOAD_REQUIRED` covers every file the build reads, including ones created after the load: `gradle.properties`, version catalogs, `buildSrc`, scripts applied with `apply from`, `.mvn/maven.config`, `.bazelrc`, `.bzl` files and poms of modules outside the root. It watched ten fixed file names before.
 - `load_project` and `health_check` report a `buildModel` summary (build system, `build-tool` / `static-read` / `convention`, analysis level, modules) and every load warning, so a degraded load, including a `JAVA_PROJECT_PATH` auto-load, is visible.
 - Conventional source folders the build does not declare stay linked (`INCLUDED_OUTSIDE_BUILD`); compiled output is on the classpath only when it holds classes with no source (`COMPILED_OUTPUT_INCLUDED`), which removes duplicate `target.classes.*` types; modules declaring different levels are reported (`COMPLIANCE_LEVEL_MIXED`).
 - Relative paths given to tools resolve against the project root, not the server's working directory.
@@ -34,6 +38,7 @@
 - `find_possible_bugs` for a file that does not exist and `get_dependency_graph` for an unknown package now answer errors instead of empty successes.
 - Generated code that did not compile (`extract_variable` declaring `void`, `extract_interface` without imports, capture types) now compiles or is refused as JDT does.
 - Refactoring warnings no longer change order from one load to the next.
+- `rename_symbol` on the import list or on a library type or field answered `INTERNAL_ERROR`; it now refuses, naming it.
 
 ### Changed
 
@@ -42,7 +47,8 @@
 - `get_type_hierarchy` `maxDepth`, which limited list length, is renamed `maxResults`.
 - Removed: `get_complexity_metrics` `granularity` (every value gave the same answer), the `package` field of `get_dependency_graph` package nodes, and `get_type_hierarchy`'s `external` marker.
 - Build-tool warnings are uniform: `BUILD_TOOL_UNAVAILABLE`, `BUILD_TOOL_FAILED` and `BUILD_TOOL_TIMEOUT` replace `MAVEN_SUBPROCESS_FAILED`, `MAVEN_SUBPROCESS_TIMEOUT` and `GRADLE_SUBPROCESS_FAILED`.
-- npm releases are published through trusted publishing.
+- `JAVALENS_MAVEN_ARGS`, `JAVALENS_GRADLE_ARGS` and `JAVALENS_BAZEL_ARGS` pass extra arguments (profiles, properties, flags) to the build tool when it reads the model.
+- npm releases are published through trusted publishing, and the release build requires Maven, Gradle and Bazel, so their tests can no longer be skipped there.
 - README: Windows is not in the CI matrix (Linux and macOS); Windows line endings are covered by tests that write CRLF files explicitly.
 
 ## [1.5.1] - 2026-06-15

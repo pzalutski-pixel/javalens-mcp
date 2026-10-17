@@ -379,21 +379,30 @@ JavaLens loads three real build systems plus plain Java directories. Each is exe
 
 | System | Detection | Single-module | Multi-module / multi-project | Compiler compliance from build files | Generated sources | Annotation processors |
 |--------|-----------|:-:|:-:|:-:|:-:|:-:|
-| Maven | `pom.xml` | ✅ | ✅ (reactor classpath aggregation, cross-module navigation) | ✅ (`maven.compiler.release`/`source`/`target`) | ✅ (`target/generated-sources/*`) | ✅ (`<annotationProcessorPaths>` across the whole reactor) |
+| Maven | `pom.xml` | ✅ | ✅ (the reactor, `../` modules and per-module classpaths as Maven's effective model reports them; reactor modules are linked as sources, never as jars) | ✅ (each module's level as maven-compiler-plugin applies it: `release` before `source`, plugin configuration before properties, inherited from parents) | ✅ (subdirectories of each module's `generated-sources` under its effective build directory) | ✅ (`<annotationProcessorPaths>`, resolved in Maven's local repository) |
 | Gradle | `settings.gradle(.kts)` / `build.gradle(.kts)` | ✅ | ✅ (projects, custom `projectDir`s, included builds, source sets and classpaths as Gradle reports them) | ✅ (each project's `sourceCompatibility`) | ✅ (the generated-source directories Gradle reports) | ✅ (`annotationProcessor` configuration) |
-| Bazel | `MODULE.bazel` / `WORKSPACE.bazel` / `WORKSPACE` | ✅ | ✅ (every `BUILD.bazel` package scanned for sources; `bazel-bin` ↔ `bazel-out` symlink dedup) | ✅ (`javacopts` `-source`/`-target`/`--release` parsed across `BUILD.bazel` files) | n/a (Bazel actions write into `bazel-bin/`, not `target/generated-sources/`) | ✅ (any classpath jar with `META-INF/services/javax.annotation.processing.Processor` is auto-registered) |
+| Bazel | `MODULE.bazel` / `WORKSPACE.bazel` / `WORKSPACE` | ✅ | ✅ (the Java targets and their sources from `bazel query`; the classpath from each target's javac action) | ✅ (each javac action's level as javac takes it: the toolchain default, `.bazelrc` flags, then the target's `javacopts`) | n/a (Bazel actions write into `bazel-bin/`, not `target/generated-sources/`) | ✅ (each javac action's processor path) |
 | Plain Java | `src/` directory | ✅ | n/a | ✅ (falls back to `Runtime.version().feature()` when no build file) | n/a | n/a |
 
-For Gradle projects, JavaLens runs Gradle once during the load with an init script and takes the project structure, source sets, generated-source directories, classpath and per-project levels from what Gradle reports. Nothing is written into the project tree. When Gradle cannot run or fails before reporting the structure, JavaLens reads `settings.gradle` / `settings.gradle.kts` itself as code (comments and strings declare nothing) and lays each included project out by convention. Maven projects run `mvn` for the classpath.
+JavaLens asks the build tool itself during the load and takes the model from its answer, writing nothing into the project tree:
+
+- **Maven:** one run (`--fail-at-end`) of `help:effective-pom` and `dependency:build-classpath`. A module Maven cannot resolve (one that depends on a module of the same build that is not installed, typically) is named by a `BUILD_TOOL_FAILED`; the rest of the model is still Maven's. Modules declared only in an inactive profile, and Gradle projects of a `settings.gradle` beside the root pom, stay linked with `INCLUDED_OUTSIDE_BUILD`.
+- **Gradle:** one run with an init script that reports projects, custom `projectDir`s, included builds, source sets, generated-source directories, classpath and per-project levels.
+- **Bazel:** `bazel query` for the Java targets and sources and the build files, `bazel aquery` for each javac action, `bazel info execution_root`, all with `--lockfile_mode=off`.
+
+When the tool cannot run or reports no model, JavaLens reads the build files itself as code (comments and strings declare nothing: poms as XML, Gradle settings and Bazel BUILD files through a lexer), lays modules out by convention where the files say nothing, and reports `buildModel.source = static-read` with a `BUILD_MODEL_STATIC` warning naming what such a read cannot see.
+
+A change to any file the build reads, including one created after the load (`gradle.properties`, a version catalog, `buildSrc`, `.mvn/maven.config`, `.bazelrc`, a `.bzl` file, the pom of a module outside the root), makes the next query report `RELOAD_REQUIRED` naming it.
 
 `load_project` and `health_check` both report a `buildModel` summary (build system, where the structure came from: `build-tool`, `static-read` or `convention`, analysis level, modules) and every load warning, so a degraded load is visible wherever the agent looks, including projects auto-loaded through `JAVA_PROJECT_PATH`. Warning codes:
 
 | Code | Meaning |
 |------|---------|
 | `BUILD_TOOL_UNAVAILABLE` / `BUILD_TOOL_FAILED` / `BUILD_TOOL_TIMEOUT` | The build tool could not start, failed, or ran out of time; the message carries its last output |
+| `BUILD_MODEL_STATIC` | The build tool reported no model, so the build files were read statically; the message says what that cannot see |
 | `MODULE_NOT_LOADED` | A declared module or subproject was not loaded (directory missing, invalid path) |
 | `MODULE_LAYOUT_ASSUMED` | A module's source roots were assumed from the conventional layout |
-| `INCLUDED_OUTSIDE_BUILD` | A conventional source folder the build does not declare stays linked |
+| `INCLUDED_OUTSIDE_BUILD` | A conventional source folder the build does not declare, a module of an inactive Maven profile, or a Gradle project beside a Maven build, stays linked |
 | `COMPILED_OUTPUT_INCLUDED` | A module's compiled output holds classes with no source and stays on the classpath |
 | `COMPLIANCE_LEVEL_MIXED` / `COMPLIANCE_LEVEL_UNKNOWN` / `COMPLIANCE_LEVEL_UNSUPPORTED` | Modules declare different levels, none, or one outside JDT's range |
 | `APT_PROCESSOR_JARS_MISSING` | Declared annotation-processor jars are missing |
@@ -413,6 +422,9 @@ For Gradle projects, JavaLens runs Gradle once during the load with an init scri
 | `JAVALENS_LOG_LEVEL` | TRACE/DEBUG/INFO/WARN/ERROR (case-insensitive); logs go to stderr, stdout carries only JSON-RPC | INFO |
 | `JAVA_TOOL_OPTIONS` | JVM options, e.g. `-Xmx2g` for large projects | (default: 512m via eclipse.ini) |
 | `JAVALENS_LOMBOK_JAR` | Path to the Lombok agent jar attached at launch; overrides the bundled one | (bundled) |
+| `JAVALENS_MAVEN_ARGS` | Extra arguments for the Maven runs that read the model, e.g. `-Pextras -Dskip.x=true` (split like shell words) | (none) |
+| `JAVALENS_GRADLE_ARGS` | Extra arguments for the Gradle run that reads the model, e.g. `-Penv=ci` | (none) |
+| `JAVALENS_BAZEL_ARGS` | Extra build flags for `bazel aquery` and `bazel info`, e.g. `--config=ci` | (none) |
 
 ## Building from Source
 

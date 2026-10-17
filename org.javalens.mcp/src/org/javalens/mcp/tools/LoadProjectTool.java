@@ -113,7 +113,7 @@ public class LoadProjectTool implements Tool {
             SYNC (strict mode): answers are always verified against the files on disk -
             no reload is needed after editing, adding, or deleting source files. Call
             load_project only on first use, when a response reports RELOAD_REQUIRED
-            (a build file changed), or to rebuild everything from scratch.
+            (a file the build reads changed), or to rebuild everything from scratch.
             """;
     }
 
