@@ -126,6 +126,40 @@ class FidelityMavenTest {
     }
 
     @Test
+    @DisplayName("JAVALENS_MAVEN_ARGS=-Pextras activates the profile, so extras is a reactor module Maven reports, not a module included outside the build")
+    void mavenArgsActivateAProfile() throws Exception {
+        try (MavenBinary maven = MavenBinary.require("fidelity-maven with -Pextras")) {
+            String group = uniqueGroup();
+            Path root = prepare(group);
+            System.setProperty("JAVALENS_MAVEN_ARGS", "-Pextras");
+            BuildModel model;
+            try {
+                model = new org.javalens.core.project.ProjectImporter().resolveModel(root);
+            } finally {
+                System.clearProperty("JAVALENS_MAVEN_ARGS");
+            }
+
+            List<BuildModule> expected = new java.util.ArrayList<>(expectedModules(root, group, true).subList(0, 4));
+            expected.add(new BuildModule(group + ":extras", root.resolve("extras"),
+                List.of(root.resolve("extras/src/main/java")), List.of(),
+                List.of(root.resolve("extras/target/classes"), root.resolve("extras/target/test-classes")), "17", true));
+            expected.add(expectedModules(root, group, true).get(5));
+            BuildModel read = model;
+            assertAll(
+                () -> assertEquals(expected, read.modules(), "modules"),
+                () -> assertEquals(List.of(gradleOutsideBuild(), undeclaredCore(group),
+                        new LoadWarning(LoadWarning.COMPLIANCE_LEVEL_MIXED,
+                            "Modules declare different Java levels (" + group + ":reactor 17, " + group + ":core 17, "
+                                + group + ":app 21, " + group + ":outside 17, " + group + ":extras 17); the project is "
+                                + "analyzed at 21, the highest",
+                            "Code valid only at a lower level is analyzed at the highest level, so a module's own "
+                                + "level is not enforced."),
+                        LoadWarning.BUILD_TOOL_FAILED),
+                    codesAndModels(read.warnings()), "model warnings"));
+        }
+    }
+
+    @Test
     @DisplayName("Maven unavailable: the pom.xml files are read as XML, so the commented-out legacy module and release 8 are not read; levels come from the inherited properties and app's explicit release")
     void staticReadIgnoresComments() throws Exception {
         String group = uniqueGroup();

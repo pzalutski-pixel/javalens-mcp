@@ -29,7 +29,8 @@ import java.util.stream.Stream;
  * are written into a scratch directory deleted once the model is read, and every command runs
  * with {@code --lockfile_mode=off}, so nothing is written into the project tree.
  * {@link BazelModels} builds the model, with provenance {@link Provenance#BUILD_TOOL}.
- * Arguments in {@code JAVALENS_BAZEL_ARGS} are passed to every command.
+ * Arguments in {@code JAVALENS_BAZEL_ARGS} are build flags, passed to {@code aquery} and
+ * {@code info}; {@code query}, which is configuration-independent, takes none.
  *
  * <p>When Bazel does not answer, the model is read from the BUILD files
  * ({@link BazelModels#staticModel}), provenance {@link Provenance#STATIC_READ}, with the
@@ -150,7 +151,11 @@ public class BazelImporter implements BuildSystemImporter {
         full.add(bazel);
         full.addAll(List.of(command));
         full.add("--lockfile_mode=off");
-        full.addAll(BuildToolArgs.of(BuildToolArgs.BAZEL));
+        // query takes no build flags, and is configuration-independent; the configured
+        // commands, aquery and info, take them.
+        if (!command[0].equals("query")) {
+            full.addAll(BuildToolArgs.of(BuildToolArgs.BAZEL));
+        }
         BuildToolRunner.Result result = BuildToolRunner.run(full, projectRoot, timeout);
         output.addAll(result.retainedLines());
         String described = "bazel " + command[0];

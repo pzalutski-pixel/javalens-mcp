@@ -28,7 +28,8 @@ import java.util.stream.Stream;
  * it writes and Gradle's project cache all live in one scratch directory created for the
  * run and deleted once the model is read, so nothing is written into the project tree.
  * {@link GradleModelReader} builds the model from those files, with provenance
- * {@link Provenance#BUILD_TOOL}.
+ * {@link Provenance#BUILD_TOOL}. Arguments in {@code JAVALENS_GRADLE_ARGS} are passed to the
+ * run.
  *
  * <p>When the run does not produce the model, the model is the structure read statically
  * from {@code settings.gradle} as code ({@link #getSubprojects}) and laid out by convention, with
@@ -302,7 +303,7 @@ public class GradleImporter implements BuildSystemImporter {
         }
 
         String gradleBinary = resolveGradleBinary(projectRoot);
-        List<String> command = List.of(
+        List<String> command = new ArrayList<>(List.of(
             gradleBinary,
             "--init-script", initScript.toString(),
             MODEL_TASK,
@@ -311,7 +312,8 @@ public class GradleImporter implements BuildSystemImporter {
             "--no-configuration-cache",
             // Gradle keeps its per-build state here instead of in each build's .gradle
             // directory, so the run writes nothing into the project tree.
-            "--project-cache-dir", scratch.resolve("project-cache").toString());
+            "--project-cache-dir", scratch.resolve("project-cache").toString()));
+        command.addAll(BuildToolArgs.of(BuildToolArgs.GRADLE));
 
         log.info("Running Gradle to read the project model of {}", projectRoot);
         BuildToolRunner.Result result = BuildToolRunner.run(command, projectRoot, timeout);

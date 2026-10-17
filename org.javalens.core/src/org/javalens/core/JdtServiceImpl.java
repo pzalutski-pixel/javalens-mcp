@@ -364,13 +364,18 @@ public class JdtServiceImpl implements IJdtService {
 
     /**
      * Build the disk-truth stamps for verify-and-repair: stamp every source file
-     * under the mapped source roots plus the build files. A failure here degrades
-     * to manual-sync behavior with a warning rather than failing the load.
+     * under the mapped source roots, the build files found in the tree and the files
+     * the build model reports reading (including ones that do not exist yet, so their
+     * creation is caught), and every file under the directories it reports reading.
+     * A failure here degrades to manual-sync behavior with a warning rather than
+     * failing the load.
      */
     private void initializeDiskSync() {
         try {
+            List<Path> buildFiles = new ArrayList<>(collectBuildFiles());
+            buildFiles.addAll(buildModel.inputs().files());
             this.diskStampService = new DiskStampService(
-                List.copyOf(sourceRootFolders.keySet()), collectBuildFiles());
+                List.copyOf(sourceRootFolders.keySet()), buildFiles, buildModel.inputs().directories());
             this.diskStampService.stampAll();
         } catch (Exception e) {
             log.warn("Disk-sync stamping failed; falling back to manual sync: {}", e.getMessage());

@@ -206,13 +206,15 @@ final class GradleModelReader {
 
     /**
      * The files and directories the build reads: every settings file, then every module's
-     * build file, that exists; then, whether or not they exist, {@code gradle.properties} in
+     * build file, that exists, then every other Gradle script ({@code *.gradle},
+     * {@code *.gradle.kts}) under each build's root, which covers scripts applied with
+     * {@code apply from}; then, whether or not they exist, {@code gradle.properties} in
      * each module's directory (which covers each build's root), {@code gradle/libs.versions.toml}
      * in each build's root, and the root build's {@code gradle/wrapper/gradle-wrapper.properties};
      * and each build root's {@code buildSrc} directory. Builds and modules are in module
      * order; a path listed twice is kept at its first position.
      */
-    private BuildInputs inputs(List<OrderedBuild> order, List<BuildModule> modules) {
+    private BuildInputs inputs(List<OrderedBuild> order, List<BuildModule> modules) throws IOException {
         Set<Path> files = new LinkedHashSet<>();
         for (OrderedBuild ordered : order) {
             Path settings = ordered.build().settings();
@@ -227,6 +229,9 @@ final class GradleModelReader {
                 }
             }
         }
+        for (OrderedBuild ordered : order) {
+            files.addAll(gradleScripts(rebase(ordered.build().rootDir())));
+        }
         for (BuildModule module : modules) {
             files.add(module.dir().resolve("gradle.properties"));
         }
@@ -238,6 +243,35 @@ final class GradleModelReader {
 
         List<Path> directories = buildRoots.stream().map(buildRoot -> buildRoot.resolve("buildSrc")).toList();
         return new BuildInputs(List.copyOf(files), directories);
+    }
+
+    /** Directories a Gradle script walk skips: build output, Gradle's state, version control. */
+    private static final Set<String> SCRIPT_WALK_SKIPS = Set.of("build", ".gradle", ".git", "node_modules", "out",
+        "target");
+
+    /** Every {@code *.gradle} and {@code *.gradle.kts} file under {@code buildRoot}, in path order. */
+    private static List<Path> gradleScripts(Path buildRoot) throws IOException {
+        List<Path> scripts = new ArrayList<>();
+        java.nio.file.Files.walkFileTree(buildRoot, new java.nio.file.SimpleFileVisitor<>() {
+            @Override
+            public java.nio.file.FileVisitResult preVisitDirectory(Path dir,
+                    java.nio.file.attribute.BasicFileAttributes attrs) {
+                String name = dir.getFileName() == null ? "" : dir.getFileName().toString();
+                return !dir.equals(buildRoot) && (SCRIPT_WALK_SKIPS.contains(name) || name.startsWith("bazel-"))
+                    ? java.nio.file.FileVisitResult.SKIP_SUBTREE : java.nio.file.FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public java.nio.file.FileVisitResult visitFile(Path file, java.nio.file.attribute.BasicFileAttributes attrs) {
+                String name = file.getFileName().toString();
+                if (attrs.isRegularFile() && (name.endsWith(".gradle") || name.endsWith(".gradle.kts"))) {
+                    scripts.add(file.normalize());
+                }
+                return java.nio.file.FileVisitResult.CONTINUE;
+            }
+        });
+        scripts.sort(null);
+        return scripts;
     }
 
     /** {@code paths} rebased, keeping the directories that exist, each once. */

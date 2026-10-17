@@ -282,6 +282,26 @@ class FidelityGradleTest {
     }
 
     @Test
+    @DisplayName("JAVALENS_GRADLE_ARGS is passed to Gradle: a project property it sets decides the level Gradle reports")
+    void gradleArgsReachTheBuild() throws Exception {
+        try (GradleBinary gradle = GradleBinary.require("JAVALENS_GRADLE_ARGS")) {
+            Path root = Files.createDirectories(helper.getTempDirectory().resolve("gradle-args"));
+            Files.writeString(root.resolve("settings.gradle"), "rootProject.name = 'gradle-args'" + LF);
+            Files.writeString(root.resolve("build.gradle"), "plugins { id 'java' }" + LF
+                + "java { sourceCompatibility = JavaVersion.toVersion(findProperty('javalensLevel') ?: '17') }" + LF);
+            System.setProperty("JAVALENS_GRADLE_ARGS", "-PjavalensLevel=11");
+            BuildModel model;
+            try {
+                model = new GradleImporter().resolve(root);
+            } finally {
+                System.clearProperty("JAVALENS_GRADLE_ARGS");
+            }
+
+            assertEquals("11", model.analysisLevel(), "analysis level");
+        }
+    }
+
+    @Test
     @DisplayName("Gradle unavailable, CRLF or LF settings: the static read holds the root, app and lib at its literal projectDir; the commented-out includes, whose shared directory exists, are not modules")
     void staticReadIgnoresCommentedIncludes() throws Exception {
         String previous = System.getProperty("javalens.gradle.binary");

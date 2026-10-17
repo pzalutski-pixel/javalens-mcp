@@ -33,9 +33,12 @@ import java.util.Set;
  * is not a requirement, and MD5 is built-in and fast.
  *
  * <p>Scope: {@code *.java} files under the source roots (skipping build
- * output directories below a root) plus the explicit build-file list. A new
- * module added outside the known roots is not detectable here — that is a
- * project restructure, which is {@code load_project} territory.
+ * output directories below a root), the explicit build-file list (a listed file
+ * that does not exist at stamping is reported when it appears), and every file
+ * under the build directories (such as Gradle's {@code buildSrc}), whose
+ * additions, edits and deletions are build-file changes. A new module added
+ * outside the known roots is not detectable here: that is a project
+ * restructure, which is {@code load_project} territory.
  */
 public final class DiskStampService {
 
@@ -63,12 +66,18 @@ public final class DiskStampService {
 
     private final List<Path> sourceRoots;
     private final List<Path> buildFiles;
+    private final List<Path> buildDirectories;
     private final Map<Path, Stamp> sourceStamps = new HashMap<>();
     private final Map<Path, Stamp> buildStamps = new HashMap<>();
 
     public DiskStampService(List<Path> sourceRoots, List<Path> buildFiles) {
+        this(sourceRoots, buildFiles, List.of());
+    }
+
+    public DiskStampService(List<Path> sourceRoots, List<Path> buildFiles, List<Path> buildDirectories) {
         this.sourceRoots = sourceRoots.stream().map(DiskStampService::normalize).toList();
-        this.buildFiles = buildFiles.stream().map(DiskStampService::normalize).toList();
+        this.buildFiles = buildFiles.stream().map(DiskStampService::normalize).distinct().toList();
+        this.buildDirectories = buildDirectories.stream().map(DiskStampService::normalize).distinct().toList();
     }
 
     /** Build (or rebuild) all stamps from current disk content. */
@@ -80,6 +89,9 @@ public final class DiskStampService {
             if (Files.isRegularFile(buildFile)) {
                 buildStamps.put(buildFile, stampOf(buildFile));
             }
+        }
+        for (Path file : walkBuildDirectories()) {
+            buildStamps.put(file, stampOf(file));
         }
     }
 
@@ -149,8 +161,16 @@ public final class DiskStampService {
             }
         }
 
+        Set<Path> buildCandidates = new HashSet<>(buildFiles);
+        Set<Path> inBuildDirectories = walkBuildDirectories();
+        buildCandidates.addAll(inBuildDirectories);
+        for (Path known : buildStamps.keySet()) {
+            if (isInBuildDirectory(known)) {
+                buildCandidates.add(known);
+            }
+        }
         List<Path> buildChanged = new ArrayList<>();
-        for (Path buildFile : buildFiles) {
+        for (Path buildFile : buildCandidates) {
             Stamp known = buildStamps.get(buildFile);
             boolean exists = Files.isRegularFile(buildFile);
             if (known == null) {
@@ -177,7 +197,7 @@ public final class DiskStampService {
     public synchronized void restamp(Collection<Path> files) throws IOException {
         for (Path raw : files) {
             Path file = normalize(raw);
-            Map<Path, Stamp> map = buildFiles.contains(file) ? buildStamps : sourceStamps;
+            Map<Path, Stamp> map = buildFiles.contains(file) || isInBuildDirectory(file) ? buildStamps : sourceStamps;
             if (Files.isRegularFile(file)) {
                 map.put(file, stampOf(file));
             } else {
@@ -212,6 +232,36 @@ public final class DiskStampService {
             });
         }
         return files;
+    }
+
+    /** Every regular file under the build directories that exist, skipping build output directories. */
+    private Set<Path> walkBuildDirectories() throws IOException {
+        Set<Path> files = new HashSet<>();
+        for (Path root : buildDirectories) {
+            if (!Files.isDirectory(root)) continue;
+            Files.walkFileTree(root, new SimpleFileVisitor<>() {
+                @Override
+                public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
+                    if (!dir.equals(root) && (isSkippedDirectory(dir) || dir.getFileName().toString().equals(".gradle"))) {
+                        return FileVisitResult.SKIP_SUBTREE;
+                    }
+                    return FileVisitResult.CONTINUE;
+                }
+
+                @Override
+                public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+                    if (attrs.isRegularFile()) {
+                        files.add(normalize(file));
+                    }
+                    return FileVisitResult.CONTINUE;
+                }
+            });
+        }
+        return files;
+    }
+
+    private boolean isInBuildDirectory(Path file) {
+        return buildDirectories.stream().anyMatch(file::startsWith);
     }
 
     private static boolean isSkippedDirectory(Path dir) {

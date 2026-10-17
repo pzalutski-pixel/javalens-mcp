@@ -89,6 +89,28 @@ class FidelityBazelTest {
     }
 
     @Test
+    @DisplayName("JAVALENS_BAZEL_ARGS is passed to Bazel: --java_language_version=21 raises app's level, and core keeps its own --release 11")
+    void bazelArgsReachTheBuild() throws Exception {
+        try (BazelBinary bazel = BazelBinary.require("JAVALENS_BAZEL_ARGS")) {
+            Path root = helper.copyFixture(FIXTURE);
+            bazel.isolate(root, helper.getTempDirectory().resolve("_bazel"));
+            System.setProperty("JAVALENS_BAZEL_ARGS", "--java_language_version=21");
+            BuildModel model;
+            try {
+                model = new org.javalens.core.project.ProjectImporter().resolveModel(root);
+            } finally {
+                System.clearProperty("JAVALENS_BAZEL_ARGS");
+            }
+
+            BuildModel read = model;
+            assertAll(
+                () -> assertEquals(java.util.Arrays.asList("21", "11"),
+                    read.modules().stream().map(BuildModule::declaredLevel).toList(), "declared levels"),
+                () -> assertEquals("21", read.analysisLevel(), "analysis level"));
+        }
+    }
+
+    @Test
     @DisplayName("Bazel unavailable: the BUILD files are read as code, so core's commented-out release 21 is not read; packages are laid out by convention")
     void staticReadIgnoresComments() throws Exception {
         Path root = helper.copyFixture(FIXTURE);
