@@ -33,7 +33,28 @@ jobs:
     - name: Use an npm that supports trusted publishing
       run: npm install --global npm@11.17.0
 
+    # The build-system tests run Maven, Gradle and Bazel. They are installed as in ci.yml, and
+    # JAVALENS_TESTS_REQUIRE_TOOLS makes a missing tool fail the tag build instead of skipping
+    # its tests.
+    - name: Install Maven
+      run: sudo apt-get update && sudo apt-get install -y maven
+
+    # apt's Gradle on ubuntu-latest is 4.x, too old for the init script.
+    - name: Install Gradle
+      uses: gradle/actions/setup-gradle@v3
+      with:
+        gradle-version: '8.10.2'
+
+    - name: Install Bazel
+      uses: bazel-contrib/setup-bazel@0.8.5
+      with:
+        bazelisk-cache: true
+        disk-cache: true
+        repository-cache: true
+
     - name: Build and Test
+      env:
+        JAVALENS_TESTS_REQUIRE_TOOLS: "true"
       run: ./mvnw clean verify
 
     - name: Create Universal Distribution
