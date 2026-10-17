@@ -32,7 +32,7 @@ final class ConventionalFolders {
      * whose probe finds it, with one {@link LoadWarning#INCLUDED_OUTSIDE_BUILD} appended to
      * {@code warnings}.
      *
-     * <p>The {@code src/} fallback is probed only for a module that reports no root under its
+     * <p>The {@code src/} fallback is probed only for a module that reports no source root under its
      * directory, so a kept folder never contains one of the module's reported roots.
      */
     static List<BuildModule> keepUndeclared(Path projectRoot, List<BuildModule> modules, List<LoadWarning> warnings) {
@@ -46,9 +46,10 @@ final class ConventionalFolders {
         List<BuildModule> result = new ArrayList<>();
         for (BuildModule module : modules) {
             // The probe skips the src/ fallback when this list already holds a path under the
-            // module's directory, so it starts with the module's reported roots.
+            // module's directory, so it starts with the module's reported source roots. A
+            // generated root does not stand in for hand-written sources, as it never did in the
+            // layout probe.
             List<Path> probed = new ArrayList<>(module.sourceRoots());
-            probed.addAll(module.generatedSourceRoots());
             int reported = probed.size();
             LAYOUT.addConventionalSourcePaths(module.dir(), probed);
             List<Path> generatedProbed = new ArrayList<>();

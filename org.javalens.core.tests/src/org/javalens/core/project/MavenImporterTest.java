@@ -121,6 +121,23 @@ class MavenImporterTest {
         }
     }
 
+    @Test
+    @DisplayName("A Tycho module's source folders are the ones its build.properties declares, with no warning")
+    void tychoBuildPropertiesDeclareSourceFolders(@TempDir Path root) throws IOException {
+        write(root, "pom.xml", POM + "<artifactId>bundle</artifactId><packaging>eclipse-plugin</packaging></project>");
+        write(root, "build.properties", "# Tycho reads these\nsource.. = src/,\\\n   src-gen/\nbin.includes = META-INF/\n");
+        Files.createDirectories(root.resolve("src/p"));
+        Files.createDirectories(root.resolve("src-gen/q"));
+
+        BuildModel model = staticRead(root);
+
+        assertAll(
+            () -> assertEquals(List.of(List.of(root.resolve("src"), root.resolve("src-gen"))),
+                model.modules().stream().map(BuildModule::sourceRoots).toList(), "source roots"),
+            () -> assertEquals(List.of(LoadWarning.BUILD_TOOL_UNAVAILABLE, LoadWarning.BUILD_MODEL_STATIC),
+                codes(model), "warning codes"));
+    }
+
     // ========== Levels ==========
 
     @Test

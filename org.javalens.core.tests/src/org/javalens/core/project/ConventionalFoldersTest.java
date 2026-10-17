@@ -80,6 +80,25 @@ class ConventionalFoldersTest {
     }
 
     @Test
+    @DisplayName("A module that reports only a generated root still keeps its src/ fallback, as the layout probe always did")
+    void srcFallbackBesideOnlyAGeneratedRootIsKept(@TempDir Path root) throws IOException {
+        Path src = Files.createDirectories(root.resolve("src/pkg")).getParent();
+        Path generated = Files.createDirectories(root.resolve("target/generated-sources/annotations"));
+        List<LoadWarning> warnings = new ArrayList<>();
+
+        List<BuildModule> kept = ConventionalFolders.keepUndeclared(root,
+            List.of(module(":", root, List.of(), List.of(generated))), warnings);
+
+        assertAll(
+            () -> assertEquals(List.of(module(":", root, List.of(src), List.of(generated))), kept, "modules"),
+            () -> assertEquals(List.of(new LoadWarning(LoadWarning.INCLUDED_OUTSIDE_BUILD,
+                    "src is linked because it holds a conventional source layout, "
+                        + "but the build does not compile it as part of module ':'",
+                    REMEDIATION, ":")),
+                warnings, "warnings"));
+    }
+
+    @Test
     @DisplayName("A module that reports a root under its directory gets no src/ fallback, so no root is nested in another")
     void noSrcFallbackBesideAReportedRoot(@TempDir Path root) throws IOException {
         Path declared = Files.createDirectories(root.resolve("src/java"));

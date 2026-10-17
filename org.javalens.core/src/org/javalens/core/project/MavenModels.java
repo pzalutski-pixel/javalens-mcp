@@ -34,7 +34,8 @@ import java.util.stream.Stream;
  * <p>Modules are the reactor walked from the project root: each module's {@code <modules>}
  * entries name its child modules, relative to its pom. Each module's id is its
  * {@code groupId:artifactId}; its source roots are its source and test source directories,
- * then the build-helper and Kotlin source directories its pom adds, that exist; its generated
+ * then the build-helper and Kotlin source directories its pom adds, then the source folders a
+ * Tycho {@code build.properties} declares, that exist; its generated
  * roots are the subdirectories of its build directory's {@code generated-sources} and
  * {@code generated-test-sources}; its output directories are its output and test output
  * directories; its declared level is the level maven-compiler-plugin compiles it at
@@ -330,6 +331,7 @@ final class MavenModels {
         sources.add(path(dir, pom.testSourceDirectory()).orElse(dir.resolve("src/test/java")));
         pom.mainSources().forEach(source -> path(dir, source).ifPresent(sources::add));
         pom.testSources().forEach(source -> path(dir, source).ifPresent(sources::add));
+        tychoSourceFolders(dir).forEach(source -> path(dir, source).ifPresent(sources::add));
         List<Path> sourceRoots = sources.stream().filter(Files::isDirectory).distinct().toList();
 
         List<Path> generated = new ArrayList<>();
@@ -341,6 +343,31 @@ final class MavenModels {
             path(dir, pom.testOutputDirectory()).orElse(buildDir.resolve("test-classes")));
         String id = pom.artifactId() == null ? String.valueOf(dir.getFileName()) : pom.id();
         return new BuildModule(id, dir, sourceRoots, generated, outputs, pom.compilerLevel(), evaluated);
+    }
+
+    /**
+     * The source folders a Tycho module's {@code build.properties} declares: the
+     * comma-separated values of every {@code source.<library>} entry, which Tycho compiles in
+     * place of the pom's source directory. None when the module has no {@code build.properties}.
+     */
+    private static List<String> tychoSourceFolders(Path dir) {
+        Path buildProperties = dir.resolve("build.properties");
+        if (!Files.isRegularFile(buildProperties)) return List.of();
+        java.util.Properties properties = new java.util.Properties();
+        try (java.io.Reader reader = Files.newBufferedReader(buildProperties, java.nio.charset.StandardCharsets.ISO_8859_1)) {
+            properties.load(reader);
+        } catch (IOException e) {
+            throw new UncheckedIOException("The Tycho build.properties of " + dir + " could not be read: "
+                + e.getMessage(), e);
+        }
+        List<String> folders = new ArrayList<>();
+        properties.stringPropertyNames().stream().filter(key -> key.startsWith("source.")).sorted()
+            .forEach(key -> {
+                for (String folder : properties.getProperty(key).split(",")) {
+                    if (!folder.isBlank()) folders.add(folder.trim());
+                }
+            });
+        return folders;
     }
 
     /**
@@ -424,7 +451,8 @@ final class MavenModels {
     /**
      * The classpath Maven wrote for each module, in module order, each entry once. Entries
      * that are the reactor's own modules are left out, since their sources are linked: a
-     * module's directory, build directory or output directory, and a jar in a local
+     * module's directory, pom (which Maven lists for an unbuilt module of a packaging it does
+     * not know, such as Tycho's), build directory or output directory, and a jar in a local
      * repository at the reactor module's coordinates. A module with no classpath file
      * contributes nothing; the importer reports it.
      */
@@ -435,6 +463,7 @@ final class MavenModels {
             Path dir = module.dir();
             Path buildDir = buildDirectory(module);
             owned.add(realOf(dir));
+            owned.add(realOf(module.pomFile()));
             owned.add(realOf(buildDir));
             owned.add(realOf(path(dir, pom.outputDirectory()).orElse(buildDir.resolve("classes"))));
             owned.add(realOf(path(dir, pom.testOutputDirectory()).orElse(buildDir.resolve("test-classes"))));
