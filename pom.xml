@@ -6,7 +6,7 @@
 
     <groupId>org.javalens</groupId>
     <artifactId>org.javalens.parent</artifactId>
-    <version>1.5.2</version>
+    <version>1.5.3</version>
     <packaging>pom</packaging>
 
     <name>JavaLens :: Parent</name>

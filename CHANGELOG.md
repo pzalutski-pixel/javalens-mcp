@@ -1,6 +1,12 @@
 # Changelog
 
-## [1.5.2] - 2026-10-10
+## [1.5.3] - 2026-10-18
+
+### Fixed
+
+- `suggest_imports` and `get_quick_fixes` (and `diagnose_and_fix`, which uses it) offered types the project cannot import: types in JDK packages their module does not export, such as `apple.laf.JRSUIConstants.Widget` on macOS, whose import does not compile. At the same time they hid importable types by package name: types in packages containing `.internal.` (in `suggest_imports` also `.impl.`), including the project's own, and exported JDK packages under `sun.` and `com.sun.` such as `sun.misc.Unsafe` and `com.sun.net.httpserver.HttpServer`. A candidate is now exactly a type the compiler resolves from the project whose package its module exports to the project; a package's name no longer decides.
+
+## [1.5.2] - 2026-10-18
 
 ### Fixed: critical (destructive edits and silent wrong answers, present in 1.5.1)
 
@@ -422,6 +428,8 @@ Initial release of JavaLens MCP Server.
 - Maven and Gradle project support
 - 347 tests
 
+[1.5.3]: https://github.com/pzalutski-pixel/javalens-mcp/compare/v1.5.2...v1.5.3
+[1.5.2]: https://github.com/pzalutski-pixel/javalens-mcp/compare/v1.5.1...v1.5.2
 [1.5.1]: https://github.com/pzalutski-pixel/javalens-mcp/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/pzalutski-pixel/javalens-mcp/compare/v1.4.2...v1.5.0
 [1.4.2]: https://github.com/pzalutski-pixel/javalens-mcp/compare/v1.4.1...v1.4.2
