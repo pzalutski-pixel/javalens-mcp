@@ -3,7 +3,6 @@ package org.javalens.mcp.tools;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.jdt.core.ICompilationUnit;
-import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.compiler.IProblem;
 import org.eclipse.jdt.core.dom.AST;
@@ -12,12 +11,6 @@ import org.eclipse.jdt.core.dom.ASTParser;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.ImportDeclaration;
 import org.eclipse.jdt.core.dom.NodeFinder;
-import org.eclipse.jdt.core.search.IJavaSearchConstants;
-import org.eclipse.jdt.core.search.IJavaSearchScope;
-import org.eclipse.jdt.core.search.SearchEngine;
-import org.eclipse.jdt.core.search.SearchPattern;
-import org.eclipse.jdt.core.search.TypeNameMatch;
-import org.eclipse.jdt.core.search.TypeNameMatchRequestor;
 import org.javalens.core.Deadline;
 import org.javalens.core.IJdtService;
 import org.javalens.mcp.models.ResponseMeta;
@@ -73,8 +66,10 @@ public class GetQuickFixesTool extends AbstractTool {
             Supported fixes:
             - UndefinedType: Suggest imports for unresolved types, each fixId
               naming the type as an import does (add_import:pkg.Outer.Inner for a
-              member type); a type in the default package cannot be imported
-              and is never suggested. Every candidate is ranked by relevance
+              member type); a type in the default package, or in a package its
+              module does not export to the project (such as the JDK's internal
+              packages), cannot be imported and is never suggested; the package's
+              name never decides. Every candidate is ranked by relevance
               (equally relevant ones by name), then the 10 most relevant are listed
             - UnusedImport: Remove unused import
             - UnhandledException: Add throws or surround with try-catch
@@ -327,65 +322,26 @@ public class GetQuickFixesTool extends AbstractTool {
     }
 
     /**
-     * Every import fix for an unresolved type, ranked: by relevance (descending), then by the
-     * name the import gives.
+     * Every import fix for an unresolved type, one per type the project can import
+     * ({@link ImportCandidates}), ranked: by relevance (descending), then by the name the import
+     * gives.
      */
     private List<Map<String, Object>> suggestImportFixes(String typeName, IJdtService service,
                                                           IProblem problem) throws CoreException {
         List<Map<String, Object>> fixes = new ArrayList<>();
-
-        IJavaSearchScope scope = SearchEngine.createJavaSearchScope(
-            new IJavaElement[] { service.getJavaProject() },
-            IJavaSearchScope.SOURCES |
-            IJavaSearchScope.APPLICATION_LIBRARIES |
-            IJavaSearchScope.SYSTEM_LIBRARIES
-        );
-
-        SearchEngine engine = new SearchEngine();
         List<Map<String, Object>> candidates = new ArrayList<>();
 
-        TypeNameMatchRequestor requestor = new TypeNameMatchRequestor() {
-            @Override
-            public void acceptTypeNameMatch(TypeNameMatch match) {
-                IType type = match.getType();
-                String packageName = type.getPackageFragment().getElementName();
+        for (IType type : ImportCandidates.of(service.getJavaProject(), typeName)) {
+            String packageName = type.getPackageFragment().getElementName();
 
-                // An import names a type by its package (JLS 7.5): a type in the
-                // default package cannot be imported.
-                if (packageName.isEmpty()) {
-                    return;
-                }
-
-                // Skip internal packages
-                if (packageName.contains(".internal.") ||
-                    packageName.startsWith("sun.") ||
-                    packageName.startsWith("com.sun.")) {
-                    return;
-                }
-
-                int relevance = calculateRelevance(packageName);
-
-                Map<String, Object> candidate = new LinkedHashMap<>();
-                // An import names a member type by its canonical name, dots between
-                // the enclosing type and the member type (JLS 6.7, 7.5.1).
-                candidate.put("importName", type.getFullyQualifiedName('.'));
-                candidate.put("packageName", packageName);
-                candidate.put("relevance", relevance);
-                candidates.add(candidate);
-            }
-        };
-
-        engine.searchAllTypeNames(
-            null,
-            SearchPattern.R_EXACT_MATCH,
-            typeName.toCharArray(),
-            SearchPattern.R_EXACT_MATCH | SearchPattern.R_CASE_SENSITIVE,
-            IJavaSearchConstants.TYPE,
-            scope,
-            requestor,
-            IJavaSearchConstants.WAIT_UNTIL_READY_TO_SEARCH,
-            Deadline.monitor()
-        );
+            Map<String, Object> candidate = new LinkedHashMap<>();
+            // An import names a member type by its canonical name, dots between
+            // the enclosing type and the member type (JLS 6.7, 7.5.1).
+            candidate.put("importName", type.getFullyQualifiedName('.'));
+            candidate.put("packageName", packageName);
+            candidate.put("relevance", calculateRelevance(packageName));
+            candidates.add(candidate);
+        }
 
         // Rank every candidate: by relevance (descending), then by import name
         candidates.sort(Comparator.comparingInt((Map<String, Object> c) -> (int) c.get("relevance"))

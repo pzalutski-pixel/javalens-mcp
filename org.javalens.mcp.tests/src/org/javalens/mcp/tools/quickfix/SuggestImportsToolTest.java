@@ -141,8 +141,8 @@ class SuggestImportsToolTest {
     }
 
     @Test
-    @DisplayName("Internal packages (sun.*, com.sun.*, *.internal.*, *.impl.*) are filtered: com.sun.tools.javac.util.List is no candidate")
-    void internalPackages_filteredFromResults() {
+    @DisplayName("A type in a package its module exports only to other modules is no candidate: com.sun.tools.javac.util.List")
+    void unexportedPackage_noCandidate() {
         ObjectNode args = objectMapper.createObjectNode();
         args.put("typeName", "List");
         args.put("maxResults", 100);
@@ -175,7 +175,8 @@ class SuggestImportsToolTest {
 
     /*
      * The JDK 21 types named List are java.util.List (java.base), java.awt.List (java.desktop)
-     * and com.sun.tools.javac.util.List (jdk.compiler), which the com.sun. filter leaves out;
+     * and com.sun.tools.javac.util.List (jdk.compiler, which exports com.sun.tools.javac.util
+     * only to jdk.jshell, jdk.jdeps and jdk.javadoc, so the project cannot import it);
      * simple-maven declares none. The JDK declares no Calculator.
      */
     private static final Map<String, Object> JAVA_UTIL_LIST =

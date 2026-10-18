@@ -1,15 +1,7 @@
 package org.javalens.mcp.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IType;
-import org.eclipse.jdt.core.search.IJavaSearchConstants;
-import org.eclipse.jdt.core.search.IJavaSearchScope;
-import org.eclipse.jdt.core.search.SearchEngine;
-import org.eclipse.jdt.core.search.SearchPattern;
-import org.eclipse.jdt.core.search.TypeNameMatch;
-import org.eclipse.jdt.core.search.TypeNameMatchRequestor;
-import org.javalens.core.Deadline;
 import org.javalens.core.IJdtService;
 import org.javalens.mcp.models.ResponseMeta;
 import org.javalens.mcp.models.ToolResponse;
@@ -26,8 +18,8 @@ import java.util.function.Supplier;
 /**
  * Find import candidates for an unresolved type name.
  *
- * Searches across project sources, JDK, and libraries to find types
- * matching the simple name, then ranks them by relevance.
+ * Every type of the simple name that the project can import ({@link ImportCandidates}), from
+ * project sources, JDK, and libraries, ranked by relevance.
  */
 public class SuggestImportsTool extends AbstractTool {
 
@@ -51,7 +43,10 @@ public class SuggestImportsTool extends AbstractTool {
             OUTPUT: List of matching types with fully qualified names and relevance
 
             Searches project sources, JDK, and libraries for types matching
-            the simple name. Every candidate is ranked by relevance (java.util
+            the simple name that the project can import: a type in the default
+            package, or in a package its module does not export to the project
+            (such as the JDK's internal packages), is never a candidate; the
+            package's name never decides. Every candidate is ranked by relevance (java.util
             types ranked higher than java.awt, etc.; equally relevant ones by
             fully qualified name), then the first maxResults are returned.
             totalCandidates and meta.totalCount count every candidate;
@@ -85,57 +80,11 @@ public class SuggestImportsTool extends AbstractTool {
         try {
             List<Map<String, Object>> candidates = new ArrayList<>();
 
-            // Create search scope including sources, JDK, and libraries
-            IJavaSearchScope scope = SearchEngine.createJavaSearchScope(
-                new IJavaElement[] { service.getJavaProject() },
-                IJavaSearchScope.SOURCES |
-                IJavaSearchScope.APPLICATION_LIBRARIES |
-                IJavaSearchScope.SYSTEM_LIBRARIES
-            );
-
-            SearchEngine engine = new SearchEngine();
-
-            // Collect every matching type: the most relevant can come last in search order. Each
-            // is read once the search is done, so a type JDT cannot read fails the answer.
-            List<IType> matched = new ArrayList<>();
-            TypeNameMatchRequestor requestor = new TypeNameMatchRequestor() {
-                @Override
-                public void acceptTypeNameMatch(TypeNameMatch match) {
-                    matched.add(match.getType());
-                }
-            };
-
-            // Search for exact type name match
-            engine.searchAllTypeNames(
-                null,  // any package
-                SearchPattern.R_EXACT_MATCH,
-                typeName.toCharArray(),
-                SearchPattern.R_EXACT_MATCH | SearchPattern.R_CASE_SENSITIVE,
-                IJavaSearchConstants.TYPE,
-                scope,
-                requestor,
-                IJavaSearchConstants.WAIT_UNTIL_READY_TO_SEARCH,
-                Deadline.monitor()
-            );
-
-            for (IType type : matched) {
+            // Every importable type is ranked before the cut: the most relevant can come last in
+            // search order. A type JDT cannot read fails the answer.
+            for (IType type : ImportCandidates.of(service.getJavaProject(), typeName)) {
                 String fqn = type.getFullyQualifiedName();
                 String packageName = type.getPackageFragment().getElementName();
-
-                // An import names a type by its package (JLS 7.5): a type in the
-                // default package cannot be imported.
-                if (packageName.isEmpty()) {
-                    continue;
-                }
-
-                // Skip internal/impl packages
-                if (packageName.contains(".internal.") ||
-                    packageName.contains(".impl.") ||
-                    packageName.startsWith("sun.") ||
-                    packageName.startsWith("com.sun.")) {
-                    continue;
-                }
-
                 int relevance = calculateRelevance(fqn, packageName);
 
                 Map<String, Object> candidate = new LinkedHashMap<>();
